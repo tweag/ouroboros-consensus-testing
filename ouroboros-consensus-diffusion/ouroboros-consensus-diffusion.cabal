@@ -324,3 +324,11 @@ test-suite consensus-test
     typed-protocols,
     unstable-diffusion-testlib,
     vector,
+
+executable conformance-test-runner
+  import: common-lib
+  hs-source-dirs: app/conformance-test-runner
+  main-is: Main.hs
+  --other-modules:
+  build-depends:
+    base,
