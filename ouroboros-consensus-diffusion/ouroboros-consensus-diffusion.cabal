@@ -272,6 +272,7 @@ test-suite consensus-test
 
   build-depends:
     QuickCheck,
+    aeson,
     base,
     binary,
     bytestring,
