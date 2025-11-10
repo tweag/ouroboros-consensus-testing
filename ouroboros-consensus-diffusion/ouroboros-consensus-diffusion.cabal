@@ -222,12 +222,10 @@ test-suite mock-test
     unstable-diffusion-testlib,
     unstable-mock-testlib,
 
-test-suite consensus-test
-  import: common-test
-  type: exitcode-stdio-1.0
+library unstable-consensus-conformance-testlib
+  import: common-lib
   hs-source-dirs: test/consensus-test
-  main-is: Main.hs
-  other-modules:
+  exposed-modules:
     Test.Consensus.BlockTree
     Test.Consensus.GSM
     Test.Consensus.GSM.Model
@@ -325,6 +323,18 @@ test-suite consensus-test
     unstable-diffusion-testlib,
     vector,
 
+test-suite consensus-test
+  import: common-test
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test/consensus-test-main
+  main-is: Main.hs
+
+  build-depends:
+    base,
+    ouroboros-consensus:unstable-consensus-testlib,
+    tasty,
+    unstable-consensus-conformance-testlib
+
 executable conformance-test-runner
   import: common-lib
   hs-source-dirs: app/conformance-test-runner
@@ -332,3 +342,9 @@ executable conformance-test-runner
   --other-modules:
   build-depends:
     base,
+    containers,
+    ouroboros-network,
+    ouroboros-consensus,
+    unstable-consensus-conformance-testlib,
+    aeson,
+    bytestring,
