@@ -39,6 +39,7 @@ module Test.Consensus.PointSchedule.Peers
   , updatePeer
   ) where
 
+import Data.Aeson (ToJSON(toEncoding), FromJSON, genericToEncoding, defaultOptions)
 import Data.Hashable (Hashable)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -78,6 +79,11 @@ instance CondenseList PeerId where
 
 instance Hashable PeerId
 
+instance ToJSON PeerId where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON PeerId
+
 -- | General-purpose functor associated with a peer.
 data Peer a
   = Peer
@@ -111,7 +117,12 @@ data Peers a = Peers
   { honestPeers :: Map Int a
   , adversarialPeers :: Map Int a
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON a => ToJSON (Peers a) where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON a => FromJSON (Peers a)
 
 -- | Variant of 'honestPeers' that returns a map with 'PeerId's as keys.
 honestPeers' :: Peers a -> Map PeerId a
