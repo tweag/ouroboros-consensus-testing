@@ -1,5 +1,6 @@
 module Main (main) where
 
+import qualified Cardano.Tools.ImmDBServer.Diffusion as ImmDBServer
 import Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
