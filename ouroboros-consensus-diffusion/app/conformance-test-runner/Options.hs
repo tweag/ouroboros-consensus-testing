@@ -2,17 +2,13 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Command line argument parser for the test runner.
-module Options (execParser, options, Options (..), TestFile) where
+module Options (execParser, options, Options (..)) where
 
 import Options.Applicative
 import Ouroboros.Network.PeerSelection (PortNumber)
 
--- | TODO: Place holder for an actual file input.
--- Remove after the file format and its parser are defined.
-data TestFile = TestFile deriving Read
-
 data Options = Options
-  { optTestFile :: TestFile
+  { optTestFile :: FilePath
   , optOutputTopologyFile :: String
   , optPort :: PortNumber
   }

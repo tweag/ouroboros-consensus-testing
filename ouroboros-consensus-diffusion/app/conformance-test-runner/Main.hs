@@ -8,7 +8,6 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Options
   ( Options (..)
-  , TestFile
   , execParser
   , options
   )
@@ -25,11 +24,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Test.Consensus.PointSchedule
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
-
--- | TODO: Place holder for the actual file parser.
--- Implement after the file format is defined.
-parseTestFile :: TestFile -> PointSchedule blk
-parseTestFile = const testPointSchedule
 
 testPointSchedule :: PointSchedule blk
 testPointSchedule =
@@ -76,6 +70,7 @@ makeTopology ports =
 main :: IO ()
 main = do
   opts <- execParser options
-  let pointSchedule = parseTestFile (optTestFile opts)
-      simPeerMap = buildPeerMap (optPort opts) pointSchedule
+  contents <- BSL8.readFile (optTestFile opts)
+  pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
+  let simPeerMap = buildPeerMap (optPort opts) pointSchedule
   BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
