@@ -276,6 +276,7 @@ library unstable-consensus-conformance-testlib
 
   build-depends:
     QuickCheck,
+    aeson,
     base,
     binary,
     bytestring,
