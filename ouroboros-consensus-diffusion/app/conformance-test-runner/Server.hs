@@ -15,13 +15,11 @@ import Data.Void (Void)
 import MiniProtocols (immDBServer)
 import qualified Network.Mux as Mux
 import Network.Socket (SockAddr (..))
-import Ouroboros.Consensus.Block
 import Ouroboros.Consensus.Config.SupportsNode
 import Ouroboros.Consensus.Mock.Ledger
 import Ouroboros.Consensus.Mock.Node
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
-import Ouroboros.Consensus.Util
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.IOManager (withIOManager)
 import Ouroboros.Network.Mux
@@ -65,18 +63,20 @@ serve sockAddr application = withIOManager \iocp ->
 
 run ::
   forall blk.
-  ( GetPrevHash blk
-  , ShowProxy blk
-  , SupportedNetworkProtocolVersion blk
+  ( SupportedNetworkProtocolVersion blk
   , SerialiseNodeToNodeConstraints blk
   , ConfigSupportsNode blk
   , blk ~ SimpleBlock SimpleMockCrypto SimplePraosRuleExt
   ) =>
   SockAddr ->
+  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
+  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
   IO Void
-run sockAddr = withRegistry \_registry ->
+run sockAddr csChanTMV bfChanTMV = withRegistry \_registry ->
   serve sockAddr
     $ immDBServer @_ @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt)
+      csChanTMV
+      bfChanTMV
       SimpleCodecConfig
       encodeRemoteAddress
       decodeRemoteAddress

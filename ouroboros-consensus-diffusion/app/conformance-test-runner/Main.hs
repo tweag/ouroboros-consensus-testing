@@ -5,7 +5,6 @@
 module Main (main) where
 
 import qualified Cardano.Tools.ImmDBServer.Diffusion as ImmDBServer
-import Control.Concurrent.Async (async, waitAny)
 import Control.ResourceRegistry
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson
@@ -22,6 +21,7 @@ import Options
   , execParser
   , options
   )
+import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
   , LocalRootPeersGroups (..)
@@ -93,17 +93,20 @@ runServer :: IO ()
 runServer = do
   let peerMap = testMap
 
-  withRegistry $ \registry -> do
-    peerSim <-
-      makePeerSimulatorResources
-        nullTracer
-        undefined
-        (NonEmpty.fromList $ M.keys peerMap)
+  peerServers <-
+    for peerMap $ \port -> do
+      csChannelTMV <- newEmptyTMVarIO
+      bfChannelTMV <- newEmptyTMVarIO
 
-    z <-
-      for peerMap $ \port -> do
-        putStrLn $ "starting server on " <> show port
-        let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
-        async $ run sockAddr
-    _ <- waitAny $ toList z
-    pure ()
+      putStrLn $ "starting server on " <> show port
+      let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
+      thread <- async $ run sockAddr csChannelTMV bfChannelTMV
+      pure ((csChannelTMV, bfChannelTMV), thread)
+
+  peerChannels <- atomically $ do
+    for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
+      csChan <- takeTMVar csChanTMV
+      bfChan <- takeTMVar bfChanTMV
+      pure (csChan, bfChan)
+
+  pure ()

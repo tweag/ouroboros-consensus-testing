@@ -343,7 +343,6 @@ executable conformance-test-runner
     ouroboros-network-api,
     unstable-consensus-conformance-testlib,
     aeson,
-    async,
     bytestring,
     fs-api,
     ouroboros-network-framework,
@@ -354,3 +353,4 @@ executable conformance-test-runner
     ouroboros-network-protocols,
     cborg,
     ouroboros-consensus-diffusion,
+    io-classes,

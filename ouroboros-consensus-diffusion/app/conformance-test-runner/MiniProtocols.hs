@@ -17,7 +17,6 @@ module MiniProtocols (immDBServer) where
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import Control.Monad (forever)
-import Control.ResourceRegistry
 import Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
@@ -25,18 +24,11 @@ import Data.Void (Void)
 import GHC.Generics (Generic)
 import qualified Network.Mux as Mux
 import Ouroboros.Consensus.Block
-import Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
-  ( blockFetchServer'
-  )
-import Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-  ( chainSyncServerForFollower
-  )
 import Ouroboros.Consensus.Network.NodeToNode (Codecs (..))
 import qualified Ouroboros.Consensus.Network.NodeToNode as Consensus.N2N
 import Ouroboros.Consensus.Node (stdVersionDataNTN)
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
-import Ouroboros.Consensus.Util
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Driver (runPeer)
 import Ouroboros.Network.KeepAlive (keepAliveServer)
@@ -62,11 +54,11 @@ import Ouroboros.Network.Protocol.KeepAlive.Server
 immDBServer ::
   forall m blk addr.
   ( IOLike m
-  , HasHeader blk
-  , ShowProxy blk
   , SerialiseNodeToNodeConstraints blk
   , SupportedNetworkProtocolVersion blk
   ) =>
+  StrictTMVar m (Mux.Channel m BL.ByteString) ->
+  StrictTMVar m (Mux.Channel m BL.ByteString) ->
   CodecConfig blk ->
   (NodeToNodeVersion -> addr -> CBOR.Encoding) ->
   (NodeToNodeVersion -> forall s. CBOR.Decoder s addr) ->
@@ -75,7 +67,7 @@ immDBServer ::
     NodeToNodeVersion
     NodeToNodeVersionData
     (OuroborosApplicationWithMinimalCtx 'Mux.ResponderMode addr BL.ByteString m Void ())
-immDBServer codecCfg encAddr decAddr networkMagic = do
+immDBServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
   forAllVersions application
  where
   forAllVersions ::
@@ -108,52 +100,42 @@ immDBServer codecCfg encAddr decAddr networkMagic = do
           Mux.StartOnDemandAny
           N2N.keepAliveMiniProtocolNum
           N2N.keepAliveProtocolLimits
-          keepAliveProt
+          $ MiniProtocolCb
+          $ \_ctx channel ->
+            runPeer nullTracer cKeepAliveCodec channel $
+              keepAliveServerPeer keepAliveServer
       , mkMiniProtocol
           Mux.StartOnDemand
           N2N.chainSyncMiniProtocolNum
           N2N.chainSyncProtocolLimits
-          chainSyncProt
+          $ MiniProtocolCb
+          $ \_ctx channel -> do
+            atomically $
+              putTMVar csChanTMV channel
+            pure ((), Nothing)
       , mkMiniProtocol
           Mux.StartOnDemand
           N2N.blockFetchMiniProtocolNum
           N2N.blockFetchProtocolLimits
-          blockFetchProt
+          $ MiniProtocolCb
+          $ \_ctx channel -> do
+            atomically $
+              putTMVar bfChanTMV channel
+            pure ((), Nothing)
       , mkMiniProtocol
           Mux.StartOnDemand
           N2N.txSubmissionMiniProtocolNum
           N2N.txSubmissionProtocolLimits
-          txSubmissionProt
+          $ MiniProtocolCb
+          $ \_ctx _channel -> forever $ threadDelay 10
       ]
      where
       Consensus.N2N.Codecs
         { cKeepAliveCodec
-        , cChainSyncCodecSerialised
-        , cBlockFetchCodecSerialised
+        -- , cChainSyncCodecSerialised
+        -- , cBlockFetchCodecSerialised
         } =
           Consensus.N2N.defaultCodecs codecCfg blockVersion encAddr decAddr version
-
-      keepAliveProt =
-        MiniProtocolCb $ \_ctx channel ->
-          runPeer nullTracer cKeepAliveCodec channel $
-            keepAliveServerPeer keepAliveServer
-      chainSyncProt =
-        MiniProtocolCb $ \_ctx channel ->
-          undefined
-      -- withRegistry $
-      --   runPeer nullTracer cChainSyncCodecSerialised channel
-      --     . chainSyncServerPeer
-      --     . chainSyncServer immDB ChainDB.getSerialisedHeaderWithPoint
-      blockFetchProt =
-        MiniProtocolCb $ \_ctx channel ->
-          undefined
-      -- withRegistry $
-      --   runPeer nullTracer cBlockFetchCodecSerialised channel
-      --     . blockFetchServerPeer
-      --     . blockFetchServer immDB ChainDB.getSerialisedBlockWithPoint
-      txSubmissionProt =
-        -- never reply, there is no timeout
-        MiniProtocolCb $ \_ctx _channel -> forever $ threadDelay 10
 
     mkMiniProtocol miniProtocolStart miniProtocolNum limits proto =
       MiniProtocol
