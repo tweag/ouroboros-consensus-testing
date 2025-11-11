@@ -333,10 +333,11 @@ executable conformance-test-runner
   import: common-lib
   hs-source-dirs: app/conformance-test-runner
   main-is: Main.hs
-  --other-modules:
+  other-modules: Options
   build-depends:
     base,
     containers,
+    optparse-applicative,
     ouroboros-network:{ouroboros-network, orphan-instances},
     ouroboros-consensus,
     unstable-consensus-conformance-testlib,
