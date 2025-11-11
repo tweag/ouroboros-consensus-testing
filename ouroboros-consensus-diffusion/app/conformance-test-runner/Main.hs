@@ -1,12 +1,22 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+
 module Main (main) where
 
 import qualified Cardano.Tools.ImmDBServer.Diffusion as ImmDBServer
+import Control.Concurrent.Async (async, waitAny)
+import Control.ResourceRegistry
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
 import Data.Foldable
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Traversable
+import qualified Network.Socket as Socket
 import Options
   ( Options (..)
   , execParser
@@ -23,6 +33,9 @@ import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
+import Server (run)
+import Test.Consensus.PeerSimulator.Resources
+import Test.Consensus.PeerSimulator.Run
 import Test.Consensus.PointSchedule
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
@@ -75,3 +88,22 @@ main = do
   pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
   let simPeerMap = buildPeerMap (optPort opts) pointSchedule
   BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
+
+runServer :: IO ()
+runServer = do
+  let peerMap = testMap
+
+  withRegistry $ \registry -> do
+    peerSim <-
+      makePeerSimulatorResources
+        nullTracer
+        undefined
+        (NonEmpty.fromList $ M.keys peerMap)
+
+    z <-
+      for peerMap $ \port -> do
+        putStrLn $ "starting server on " <> show port
+        let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
+        async $ run sockAddr
+    _ <- waitAny $ toList z
+    pure ()
