@@ -6,6 +6,12 @@ import Data.Coerce
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as M
+import Options
+  ( Options (..)
+  , TestFile
+  , execParser
+  , options
+  )
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
   , LocalRootPeersGroups (..)
@@ -18,15 +24,23 @@ import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Test.Consensus.PointSchedule
-import Test.Consensus.PointSchedule.Peers (PeerId (..), getPeerIds)
+import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
-testMap :: Map PeerId PortNumber
-testMap =
-  M.fromList
-    [ (HonestPeer 1, 6001)
-    , (HonestPeer 2, 6002)
-    , (AdversarialPeer 1, 6003)
-    ]
+-- | TODO: Place holder for the actual file parser.
+-- Implement after the file format is defined.
+parseTestFile :: TestFile -> PointSchedule blk
+parseTestFile = const testPointSchedule
+
+testPointSchedule :: PointSchedule blk
+testPointSchedule =
+  PointSchedule
+    { psSchedule =
+        Peers
+          (M.fromList [(1, undefined), (2, undefined)])
+          (M.fromList [(1, undefined)])
+    , psStartOrder = []
+    , psMinEndTime = undefined
+    }
 
 buildPeerMap :: PortNumber -> PointSchedule blk -> Map PeerId PortNumber
 buildPeerMap firstPort = M.fromList . flip zip [firstPort ..] . getPeerIds . psSchedule
@@ -60,4 +74,8 @@ makeTopology ports =
   num_peers = length ports
 
 main :: IO ()
-main = BSL8.putStrLn $ encode $ makeTopology testMap
+main = do
+  opts <- execParser options
+  let pointSchedule = parseTestFile (optTestFile opts)
+      simPeerMap = buildPeerMap (optPort opts) pointSchedule
+  BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
