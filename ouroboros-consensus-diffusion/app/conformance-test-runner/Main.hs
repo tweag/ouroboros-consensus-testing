@@ -95,14 +95,19 @@ runServer = do
 
   peerServers <-
     for peerMap $ \port -> do
+      -- Make a TMVar for the chainsync and blockfetch channels exposed through
+      -- the miniprotocols. These get threaded into the server, which will fill
+      -- them once the NUT has connected.
       csChannelTMV <- newEmptyTMVarIO
       bfChannelTMV <- newEmptyTMVarIO
 
       putStrLn $ "starting server on " <> show port
       let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
-      thread <- async $ run sockAddr csChannelTMV bfChannelTMV
+      thread <- async $ run csChannelTMV bfChannelTMV sockAddr
       pure ((csChannelTMV, bfChannelTMV), thread)
 
+  -- Now, take each of the resulting TMVars. This effectively blocks until the
+  -- NUT has connected.
   peerChannels <- atomically $ do
     for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
       csChan <- takeTMVar csChanTMV

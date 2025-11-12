@@ -12,7 +12,7 @@ import Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
-import MiniProtocols (immDBServer)
+import MiniProtocols (peerSimServer)
 import qualified Network.Mux as Mux
 import Network.Socket (SockAddr (..))
 import Ouroboros.Consensus.Config.SupportsNode
@@ -68,13 +68,15 @@ run ::
   , ConfigSupportsNode blk
   , blk ~ SimpleBlock SimpleMockCrypto SimplePraosRuleExt
   ) =>
+  -- | A TMVar for the chainsync channel that we will fill in once the node connects.
+  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
+  -- | A TMVar for the blockfetch channel that we will fill in once the node connects.
+  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
   SockAddr ->
-  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
-  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
   IO Void
-run sockAddr csChanTMV bfChanTMV = withRegistry \_registry ->
+run csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
   serve sockAddr
-    $ immDBServer @_ @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt)
+    $ peerSimServer @_ @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt)
       csChanTMV
       bfChanTMV
       SimpleCodecConfig

@@ -11,8 +11,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
--- | Implement ChainSync and BlockFetch servers on top of just the immutable DB.
-module MiniProtocols (immDBServer) where
+-- | Implements a server that waits for an incoming connection to ChainSync or
+-- BlockFetch, and forwards the resulting channels to a TMVar so they can be
+-- picked up by the peer simulator.
+module MiniProtocols (peerSimServer) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
@@ -52,7 +54,7 @@ import Ouroboros.Network.Protocol.KeepAlive.Server
   ( keepAliveServerPeer
   )
 
-immDBServer ::
+peerSimServer ::
   forall m blk addr.
   ( IOLike m
   , SerialiseNodeToNodeConstraints blk
@@ -69,7 +71,7 @@ immDBServer ::
     NodeToNodeVersion
     NodeToNodeVersionData
     (OuroborosApplicationWithMinimalCtx 'Mux.ResponderMode addr BL.ByteString m Void ())
-immDBServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
+peerSimServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
   forAllVersions application
  where
   forAllVersions ::
