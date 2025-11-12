@@ -17,6 +17,7 @@ module MiniProtocols (immDBServer) where
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import Control.Monad (forever)
+import Control.Monad.Class.MonadSay
 import Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
@@ -56,6 +57,7 @@ immDBServer ::
   ( IOLike m
   , SerialiseNodeToNodeConstraints blk
   , SupportedNetworkProtocolVersion blk
+  , MonadSay m
   ) =>
   StrictTMVar m (Mux.Channel m BL.ByteString) ->
   StrictTMVar m (Mux.Channel m BL.ByteString) ->
@@ -110,6 +112,7 @@ immDBServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
           N2N.chainSyncProtocolLimits
           $ MiniProtocolCb
           $ \_ctx channel -> do
+            say "hello from cs"
             atomically $
               putTMVar csChanTMV channel
             pure ((), Nothing)
@@ -119,6 +122,7 @@ immDBServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
           N2N.blockFetchProtocolLimits
           $ MiniProtocolCb
           $ \_ctx channel -> do
+            say "hello from bf"
             atomically $
               putTMVar bfChanTMV channel
             pure ((), Nothing)
