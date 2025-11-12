@@ -1,17 +1,9 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-
 module Main (main) where
 
-import qualified Cardano.Tools.ImmDBServer.Diffusion as ImmDBServer
-import Control.ResourceRegistry
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
-import Data.Aeson
+import Data.Aeson (encode, throwDecode)
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
 import Data.Foldable
-import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Traversable
@@ -31,12 +23,10 @@ import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
-import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Server (run)
-import Test.Consensus.PeerSimulator.Resources
-import Test.Consensus.PeerSimulator.Run
-import Test.Consensus.PointSchedule
+import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
 testPointSchedule :: PointSchedule blk
@@ -91,7 +81,7 @@ main = do
 
 runServer :: IO ()
 runServer = do
-  let peerMap = testMap
+  let peerMap = buildPeerMap 6001 testPointSchedule
 
   peerServers <-
     for peerMap $ \port -> do
@@ -108,7 +98,7 @@ runServer = do
 
   -- Now, take each of the resulting TMVars. This effectively blocks until the
   -- NUT has connected.
-  peerChannels <- atomically $ do
+  _peerChannels <- atomically $ do
     for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
       csChan <- takeTMVar csChanTMV
       bfChan <- takeTMVar bfChanTMV

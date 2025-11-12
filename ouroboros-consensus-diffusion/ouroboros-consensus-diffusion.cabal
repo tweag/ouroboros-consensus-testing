@@ -333,7 +333,10 @@ executable conformance-test-runner
   import: common-lib
   hs-source-dirs: app/conformance-test-runner
   main-is: Main.hs
-  other-modules: Options
+  other-modules:
+    Options
+    Server
+    MiniProtocols
   build-depends:
     base,
     containers,
@@ -344,7 +347,6 @@ executable conformance-test-runner
     unstable-consensus-conformance-testlib,
     aeson,
     bytestring,
-    fs-api,
     ouroboros-network-framework,
     network,
     network-mux,

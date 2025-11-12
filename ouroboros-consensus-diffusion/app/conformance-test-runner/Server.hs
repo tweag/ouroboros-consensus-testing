@@ -17,7 +17,7 @@ import qualified Network.Mux as Mux
 import Network.Socket (SockAddr (..))
 import Ouroboros.Consensus.Config.SupportsNode
 import Ouroboros.Consensus.Mock.Ledger
-import Ouroboros.Consensus.Mock.Node
+import Ouroboros.Consensus.Mock.Node ()
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
 import Ouroboros.Consensus.Util.IOLike
