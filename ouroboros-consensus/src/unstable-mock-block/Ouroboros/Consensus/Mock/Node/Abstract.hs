@@ -37,7 +37,7 @@ class ( MockProtocolSpecific c ext
 -- different IDs from each other and from regular protocols.
 constructMockNetworkMagic :: HasCallStack => NetworkMagic
 constructMockNetworkMagic =
-    NetworkMagic $ fromIntegral $ hash (prettyCallStack callStack)
+  NetworkMagic $ fromIntegral $ 764824073
 
 instance RunMockBlock c ext
       => ConfigSupportsNode (SimpleBlock c ext) where

@@ -39,8 +39,8 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 -------------------------------------------------------------------------------}
 
 instance SupportedNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
-  supportedNodeToNodeVersions   _ = Map.singleton maxBound ()
-  supportedNodeToClientVersions _ = Map.singleton maxBound ()
+  supportedNodeToNodeVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
+  supportedNodeToClientVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
 
   latestReleasedNodeVersion = latestReleasedNodeVersionDefault
 
