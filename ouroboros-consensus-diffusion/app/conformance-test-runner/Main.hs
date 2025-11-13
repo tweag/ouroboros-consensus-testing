@@ -1,16 +1,19 @@
 module Main (main) where
 
-import Data.Aeson
+import Data.Aeson (encode, throwDecode)
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Traversable
+import qualified Network.Socket as Socket
 import Options
   ( Options (..)
   , execParser
   , options
   )
+import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
   , LocalRootPeersGroups (..)
@@ -20,9 +23,10 @@ import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
-import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
-import Test.Consensus.PointSchedule
+import Server (run)
+import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
 testPointSchedule :: PointSchedule blk
@@ -74,3 +78,30 @@ main = do
   pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
   let simPeerMap = buildPeerMap (optPort opts) pointSchedule
   BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
+
+runServer :: IO ()
+runServer = do
+  let peerMap = buildPeerMap 6001 testPointSchedule
+
+  peerServers <-
+    for peerMap $ \port -> do
+      -- Make a TMVar for the chainsync and blockfetch channels exposed through
+      -- the miniprotocols. These get threaded into the server, which will fill
+      -- them once the NUT has connected.
+      csChannelTMV <- newEmptyTMVarIO
+      bfChannelTMV <- newEmptyTMVarIO
+
+      putStrLn $ "starting server on " <> show port
+      let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
+      thread <- async $ run csChannelTMV bfChannelTMV sockAddr
+      pure ((csChannelTMV, bfChannelTMV), thread)
+
+  -- Now, take each of the resulting TMVars. This effectively blocks until the
+  -- NUT has connected.
+  _peerChannels <- atomically $ do
+    for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
+      csChan <- takeTMVar csChanTMV
+      bfChan <- takeTMVar bfChanTMV
+      pure (csChan, bfChan)
+
+  pure ()
