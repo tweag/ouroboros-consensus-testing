@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -10,10 +9,6 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- Orphan instances for 'Time' were introduced temporarily (no pun intended)
--- to implement generic 'ToJSON' and 'FromJSON' instances for 'PointSchedule'.
--- Once implemented by hand, they should be removed.
-{-# OPTIONS_GHC -Worphans #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -66,7 +61,6 @@ import Control.Monad.Class.MonadTime.SI
   , diffTime
   )
 import Control.Monad.ST (ST)
-import Data.Aeson (ToJSON(toEncoding), FromJSON, genericToEncoding, defaultOptions)
 import Data.Bifunctor (first)
 import Data.Functor (($>))
 import Data.List (mapAccumL, partition, scanl')
@@ -74,7 +68,6 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import Data.Time (DiffTime)
 import Data.Word (Word64)
-import GHC.Generics
 import Network.TypedProtocol
 import Ouroboros.Consensus.Block.Abstract (withOriginToMaybe)
 import Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -220,21 +213,6 @@ data PointSchedule blk = PointSchedule
   -- If no point in the schedule is larger than 'psMinEndTime',
   -- the simulation will still run until this time is reached.
   }
-  deriving (Generic)
-
-instance ToJSON blk => ToJSON (PointSchedule blk) where
-  toEncoding = genericToEncoding defaultOptions
-
-instance FromJSON blk => FromJSON (PointSchedule blk)
-
--- | TODO(xavier): Remove orphan instance after writing the 'PointSchedule'
--- instance above by hand.
-instance ToJSON Time where
-  toEncoding = genericToEncoding defaultOptions
-
--- | TODO(xavier): Remove orphan instance after writing the 'PointSchedule'
--- instance above by hand.
-instance FromJSON Time
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]

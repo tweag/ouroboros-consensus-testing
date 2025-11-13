@@ -23,6 +23,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLe
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Server (run)
 import System.Environment (getArgs)
+import Test.Consensus.OrphanInstances ()
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
