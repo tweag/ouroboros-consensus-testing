@@ -1,11 +1,17 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Main (main) where
 
 import Data.Aeson (encode, throwDecode)
+import Data.Bits (Ior (..))
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Set (Set)
 import Data.Traversable
 import qualified Network.Socket as Socket
 import Options
@@ -26,8 +32,30 @@ import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
 import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Server (run)
+import System.Exit (ExitCode (..))
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
+
+data ExitStatus = InternalError | BadUsage | Flags (Set StatusFlag)
+
+pattern Success :: ExitStatus
+pattern Success <- Flags (null -> True)
+  where
+    Success = Flags mempty
+
+data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
+
+exitStatusToCode :: ExitStatus -> ExitCode
+exitStatusToCode = \case
+  Success -> ExitSuccess
+  InternalError -> ExitFailure 1
+  BadUsage -> ExitFailure 2
+  Flags flags -> ExitFailure $ getIor $ foldMap flagToCode flags
+ where
+  flagToCode :: StatusFlag -> Ior Int
+  flagToCode = \case
+    TestFailed -> Ior 4
+    ContinueShrinking -> Ior 8
 
 testPointSchedule :: PointSchedule blk
 testPointSchedule =
