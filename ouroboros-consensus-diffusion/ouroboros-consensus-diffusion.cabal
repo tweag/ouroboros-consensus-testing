@@ -223,8 +223,8 @@ test-suite mock-test
     unstable-mock-testlib,
 
 library unstable-consensus-conformance-testlib
-  visibility: public
   import: common-lib
+  visibility: public
   hs-source-dirs: test/consensus-test
   exposed-modules:
     Test.Consensus.BlockTree
