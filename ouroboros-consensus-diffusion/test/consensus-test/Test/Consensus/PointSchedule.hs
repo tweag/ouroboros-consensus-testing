@@ -33,6 +33,7 @@ module Test.Consensus.PointSchedule (
   , PointSchedule (..)
   , PointsGeneratorParams (..)
   , RunGenesisTestResult (..)
+  , deforestBlockTree
   , enrichedWith
   , ensureScheduleDuration
   , genesisNodeState
@@ -56,11 +57,14 @@ import           Control.Monad.ST (ST)
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
+import           Data.Map (Map)
+import qualified Data.Map as M
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)
 import           Data.Word (Word64)
-import           Ouroboros.Consensus.Block.Abstract (withOriginToMaybe)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash,
+                     withOriginToMaybe)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
 import           Ouroboros.Consensus.Network.NodeToNode (ChainSyncTimeout (..))
@@ -92,6 +96,7 @@ import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.TersePrinting (terseFragment)
 import           Test.Util.TestBlock (TestBlock)
 import           Text.Printf (printf)
+
 
 prettyPointSchedule ::
   forall blk.
@@ -526,6 +531,10 @@ data GenesisTest blk schedule = GenesisTest
     gtExtraHonestPeers   :: Word,
     gtSchedule           :: schedule
   }
+
+
+deforestBlockTree :: HasHeader blk => BlockTree blk -> Map (HeaderHash blk) (AF.AnchoredFragment blk)
+deforestBlockTree = undefined
 
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
