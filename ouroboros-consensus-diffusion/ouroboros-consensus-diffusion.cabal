@@ -340,13 +340,27 @@ executable conformance-test-runner
   import: common-lib
   hs-source-dirs: app/conformance-test-runner
   main-is: Main.hs
-  other-modules: Options
+  other-modules:
+    Options
+    Server
+    MiniProtocols
   build-depends:
     base,
     containers,
     ouroboros-network,
     optparse-applicative,
-    ouroboros-consensus,
+    ouroboros-network,
+    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block},
+    ouroboros-network-api,
     unstable-consensus-conformance-testlib,
     aeson,
     bytestring,
+    ouroboros-network-framework,
+    network,
+    network-mux,
+    contra-tracer,
+    resource-registry,
+    ouroboros-network-protocols,
+    cborg,
+    ouroboros-consensus-diffusion,
+    io-classes,
