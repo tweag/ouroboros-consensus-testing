@@ -36,6 +36,8 @@ import System.Exit (ExitCode (..))
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
+-- | Exit statuses for the test runner. 'Success' is represented
+-- by an empty set of 'StatusFlags'.
 data ExitStatus = InternalError | BadUsage | Flags (Set StatusFlag)
 
 pattern Success :: ExitStatus
@@ -43,6 +45,10 @@ pattern Success <- Flags (null -> True)
   where
     Success = Flags mempty
 
+-- | A 'ContinueShrinking' flag is returned whenever the 'TestFailed' or got
+-- 'Success' with a non-empty shrink index as input, unless no more shrinking
+-- on the input is possible. It is intended to signal the user to manually
+-- pump the shrinker.
 data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
 
 exitStatusToCode :: ExitStatus -> ExitCode
@@ -50,6 +56,7 @@ exitStatusToCode = \case
   Success -> ExitSuccess
   InternalError -> ExitFailure 1
   BadUsage -> ExitFailure 2
+  -- Flags are combined using bit-wise OR.
   Flags flags -> ExitFailure $ getIor $ foldMap flagToCode flags
  where
   flagToCode :: StatusFlag -> Ior Int
