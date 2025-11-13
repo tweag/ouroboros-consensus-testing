@@ -922,20 +922,20 @@ instance Serialise (RealPoint (TestBlockWith ptype)) where
 -- 'ConvertRawHash' expects a constant-size hash. As a compromise, we allow to
 -- encode hashes with a block length of up to 100.
 instance ConvertRawHash (TestBlockWith ptype) where
-  -- 8 + 100000 * 8: size of the list, and its elements, one Word64 each
-  hashSize _ = 800008
+  -- 8 + 1000 * 8: size of the list, and its elements, one Word64 each
+  hashSize _ = 808
   toRawHash _ (TestHash h)
-      | len > 100000 = error $ "SMASH too long: " <> show (len, h)
+      | len > 100 = error $ "SMASH too long: " <> show (len, h)
       | otherwise      = BL.toStrict . Put.runPut $ do
           Put.putWord64le (fromIntegral len)
           for_ h Put.putWord64le
-          replicateM_ (100000 - len) $ Put.putWord64le 0
+          replicateM_ (100 - len) $ Put.putWord64le 0
     where
       len = length h
   fromRawHash _ bs = flip Get.runGet (BL.fromStrict bs) $ do
       len <- fromIntegral <$> Get.getWord64le
       (NE.nonEmpty -> Just h, rs) <-
-        splitAt len <$> replicateM 100000 Get.getWord64le
+        splitAt len <$> replicateM 100 Get.getWord64le
       guard $ all (0 ==) rs
       pure $ TestHash h
 
