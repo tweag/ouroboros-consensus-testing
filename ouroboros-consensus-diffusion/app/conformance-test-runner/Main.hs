@@ -98,8 +98,12 @@ runServer = do
   -- NUT has connected.
   _peerChannels <- atomically $ do
     for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
-      csChan <- takeTMVar csChanTMV
-      bfChan <- takeTMVar bfChanTMV
+      csChan <- readTMVar csChanTMV
+      bfChan <- readTMVar bfChanTMV
       pure (csChan, bfChan)
+
+  for_ peerServers $ uninterruptibleCancel . snd
+
+  putStrLn "took everything"
 
   pure ()
