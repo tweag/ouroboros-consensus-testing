@@ -22,11 +22,9 @@ import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Control.Monad.Trans (lift)
 import           Control.Monad.Writer.Strict (MonadWriter (tell),
                      WriterT (runWriterT))
-import           Data.List (isSuffixOf)
-import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Maybe (fromJust, fromMaybe)
-import           Ouroboros.Consensus.Block (HasHeader, HeaderHash,
-                     Point (GenesisPoint), blockHash, getHeader, withOrigin)
+import           Ouroboros.Consensus.Block (GetHeader, HasHeader,
+                     Point (GenesisPoint), getHeader, withOrigin)
 import           Ouroboros.Consensus.Util.IOLike (IOLike, STM, StrictTVar,
                      readTVar, writeTVar)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -36,7 +34,7 @@ import           Ouroboros.Network.Block (Tip (TipGenesis), blockPoint,
 import           Ouroboros.Network.BlockFetch.ClientState
                      (ChainRange (ChainRange))
 import qualified Test.Consensus.BlockTree as BT
-import           Test.Consensus.BlockTree (BlockTree)
+import           Test.Consensus.BlockTree (BlockTree, isAncestorOf)
 import           Test.Consensus.Network.AnchoredFragment.Extras (intersectWith)
 import           Test.Consensus.PeerSimulator.ScheduledBlockFetchServer
                      (BlockFetch (..), SendBlocks (..))
@@ -48,31 +46,6 @@ import           Test.Consensus.PeerSimulator.Trace
                      TraceScheduledChainSyncServerEvent (..))
 import           Test.Consensus.PointSchedule.NodeState
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, TestHash (TestHash))
-
--- | More efficient implementation of a check used in some of the handlers,
--- determining whether the first argument is on the chain that ends in the
--- second argument.
--- We would usually call @withinFragmentBounds@ for this, but since we're
--- using 'TestBlock', looking at the hash is cheaper.
---
--- TODO: Unify with 'Test.UtilTestBlock.isAncestorOf' which basically does the
--- same thing except not on 'WithOrigin'.
-isAncestorOf ::
-  HasHeader blk1 =>
-  HasHeader blk2 =>
-  HeaderHash blk1 ~ TestHash =>
-  HeaderHash blk2 ~ TestHash =>
-  WithOrigin blk1 ->
-  WithOrigin blk2 ->
-  Bool
-isAncestorOf (At ancestor) (At descendant) =
-  isSuffixOf (NonEmpty.toList hashA) (NonEmpty.toList hashD)
-  where
-    TestHash hashA = blockHash ancestor
-    TestHash hashD = blockHash descendant
-isAncestorOf (At _) Origin = False
-isAncestorOf Origin _ = True
 
 -- | Handle a @MsgFindIntersect@ message.
 --
@@ -106,12 +79,12 @@ handlerFindIntersection currentIntersection blockTree clientPoints points = do
 -- - header point before intersection (special case for the point scheduler architecture)
 -- - Anchor != intersection
 handlerRequestNext ::
-  forall m.
-  (IOLike m) =>
-  StrictTVar m (Point TestBlock) ->
-  BlockTree TestBlock ->
-  NodeState TestBlock ->
-  STM m (Maybe (RequestNext TestBlock), [TraceScheduledChainSyncServerEvent (NodeState TestBlock) TestBlock])
+  forall m blk.
+  (IOLike m, HasHeader blk, GetHeader blk, Eq blk) =>
+  StrictTVar m (Point blk) ->
+  BlockTree blk ->
+  NodeState blk ->
+  STM m (Maybe (RequestNext blk), [TraceScheduledChainSyncServerEvent (NodeState blk) blk])
 handlerRequestNext currentIntersection blockTree points =
   runWriterT $ do
     intersection <- lift $ readTVar currentIntersection
@@ -119,12 +92,12 @@ handlerRequestNext currentIntersection blockTree points =
     withHeader intersection (nsHeader points)
   where
     withHeader ::
-      Point TestBlock ->
-      WithOrigin TestBlock ->
+      Point blk ->
+      WithOrigin blk ->
       WriterT
-        [TraceScheduledChainSyncServerEvent (NodeState TestBlock) TestBlock]
+        [TraceScheduledChainSyncServerEvent (NodeState blk) blk]
         (STM m)
-        (Maybe (RequestNext TestBlock))
+        (Maybe (RequestNext blk))
     withHeader intersection h =
       maybe noPathError analysePath (BT.findPath intersection hp blockTree)
       where
@@ -139,7 +112,7 @@ handlerRequestNext currentIntersection blockTree points =
       -- also the tip point or a descendent of it (because we served our whole
       -- chain, or we are stalling as an adversarial behaviour), then we ask the
       -- client to wait; otherwise we just do nothing.
-      (BT.PathAnchoredAtSource True, AF.Empty _) | isAncestorOf (nsTip points) (nsHeader points) -> do
+      (BT.PathAnchoredAtSource True, AF.Empty _) | isAncestorOf blockTree (nsTip points) (nsHeader points) -> do
         trace TraceChainIsFullyServed
         pure (Just AwaitReply)
       (BT.PathAnchoredAtSource True, AF.Empty _) -> do
@@ -302,12 +275,13 @@ The cases to consider follow:
 
 -}
 handlerSendBlocks ::
-  forall m .
-  IOLike m =>
-  [TestBlock] ->
-  NodeState TestBlock ->
-  STM m (Maybe (SendBlocks TestBlock), [TraceScheduledBlockFetchServerEvent (NodeState TestBlock) TestBlock])
-handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
+  forall m blk.
+  (IOLike m, HasHeader blk, Eq blk) =>
+  BlockTree blk ->
+  [blk] ->
+  NodeState blk ->
+  STM m (Maybe (SendBlocks blk), [TraceScheduledBlockFetchServerEvent (NodeState blk) blk])
+handlerSendBlocks bt blocks NodeState {nsHeader, nsBlock} =
   runWriterT (checkDone blocks)
   where
     checkDone = \case
@@ -318,7 +292,7 @@ handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
         blocksLeft next future
 
     blocksLeft next future
-      | isAncestorOf (At next) nsBlock
+      | isAncestorOf bt (At next) nsBlock
       || compensateForScheduleRollback next
       = do
         trace $ TraceSendingBlock next
@@ -347,8 +321,8 @@ handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
     --
     -- Precondition: @not (isAncestorOf (At next) bp)@
     compensateForScheduleRollback next =
-      not (isAncestorOf (At next) nsHeader)
-        && isAncestorOf nsBlock nsHeader
-        && not (isAncestorOf nsBlock (At next))
+      not (isAncestorOf bt (At next) nsHeader)
+        && isAncestorOf bt nsBlock nsHeader
+        && not (isAncestorOf bt nsBlock (At next))
 
     trace = tell . pure

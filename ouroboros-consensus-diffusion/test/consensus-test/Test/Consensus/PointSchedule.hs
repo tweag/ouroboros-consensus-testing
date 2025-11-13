@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -28,6 +29,7 @@ module Test.Consensus.PointSchedule (
   , GenesisTest (..)
   , GenesisTestFull
   , GenesisWindow (..)
+  , HasPointScheduleTestParams (..)
   , LoPBucketParams (..)
   , PeerSchedule
   , PointSchedule (..)
@@ -60,12 +62,17 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)
 import           Data.Word (Word64)
-import           Ouroboros.Consensus.Block.Abstract (withOriginToMaybe)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader,
+                     withOriginToMaybe)
+import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
 import           Ouroboros.Consensus.Network.NodeToNode (ChainSyncTimeout (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo)
 import           Ouroboros.Consensus.Protocol.Abstract
                      (SecurityParam (SecurityParam), maxRollbacks)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkInfo)
 import           Ouroboros.Consensus.Util.Condense (CondenseList (..),
                      PaddingDirection (..), condenseListWithPadding)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -89,8 +96,7 @@ import           Test.Consensus.PointSchedule.SinglePeer.Indices
 import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta))
 import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
-import           Test.Util.TersePrinting (terseFragment)
-import           Test.Util.TestBlock (TestBlock)
+import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
 
 prettyPointSchedule ::
@@ -530,12 +536,12 @@ data GenesisTest blk schedule = GenesisTest
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
 -- | All the data describing the result of a test
-data RunGenesisTestResult = RunGenesisTestResult
+data RunGenesisTestResult blk = RunGenesisTestResult
   { rgtrTrace     :: String,
-    rgtrStateView :: StateView TestBlock
+    rgtrStateView :: StateView blk
   }
 
-prettyGenesisTest :: (schedule -> [String]) -> GenesisTest TestBlock schedule -> [String]
+prettyGenesisTest :: (HasHeader blk, Terse blk) => (schedule -> [String]) -> GenesisTest blk schedule -> [String]
 prettyGenesisTest prettySchedule genesisTest =
   [ "GenesisTest:"
   , "  gtSecurityParam: " ++ show (maxRollbacks gtSecurityParam)
@@ -610,3 +616,17 @@ ensureScheduleDuration gt PointSchedule{psSchedule, psStartOrder, psMinEndTime} 
            ])
     peerCount = length (peersList psSchedule)
     adversaryCount = Map.size (adversarialPeers psSchedule)
+
+
+
+-- | This class exists to house some of the functions required of a block
+-- type in order to be used by point schedule tests in 'nodeLifecycle'. It
+-- was introduced to help generalize the tests from TestBlocks to live block
+-- types. It has no laws, and all these functions have in common is that
+-- they provide bits of state required to run the tests that did not already
+-- have a class to live in.
+class HasPointScheduleTestParams blk where
+  data ProtocolInfoArgs blk
+  getProtocolInfoArgs :: IO (ProtocolInfoArgs blk)
+  mkProtocolInfo :: SecurityParam -> ForecastRange -> GenesisWindow -> ProtocolInfoArgs blk -> ProtocolInfo blk
+  getChunkInfoFromTopLevelConfig :: TopLevelConfig blk -> ChunkInfo

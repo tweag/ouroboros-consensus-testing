@@ -1,4 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+-- Necessary to give the 'HasPointScheduleTestParams' instance for 'TestBlockWith'.
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Consensus.PeerSimulator.Config (defaultCfg) where
 
@@ -13,18 +16,21 @@ import           Ouroboros.Consensus.HardFork.History
 import qualified Ouroboros.Consensus.HardFork.History.EraParams as HardFork
 import           Ouroboros.Consensus.Ledger.SupportsProtocol (GenesisWindow)
 import           Ouroboros.Consensus.Node.ProtocolInfo
-                     (NumCoreNodes (NumCoreNodes))
+                     (NumCoreNodes (NumCoreNodes), ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (CoreNodeId),
                      NodeId (CoreId))
 import           Ouroboros.Consensus.Protocol.BFT
                      (BftParams (BftParams, bftNumNodes, bftSecurityParam),
                      ConsensusConfig (BftConfig, bftParams, bftSignKey, bftVerKeys))
-import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange))
+import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange),
+                     HasPointScheduleTestParams (..))
+import           Test.Util.ChainDB (mkTestChunkInfo)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (BlockConfig (TestBlockConfig),
                      CodecConfig (TestBlockCodecConfig),
                      StorageConfig (TestBlockStorageConfig), TestBlock,
-                     TestBlockLedgerConfig (..))
+                     TestBlockLedgerConfig (..), TestBlockWith (..),
+                     testInitExtLedger)
 
 -- REVIEW: this has not been deliberately chosen
 defaultCfg :: SecurityParam -> ForecastRange -> GenesisWindow -> TopLevelConfig TestBlock
@@ -55,3 +61,19 @@ defaultCfg secParam (ForecastRange sfor) sgen = TopLevelConfig {
     eraParams = (HardFork.defaultEraParams secParam slotLength) {eraGenesisWin = sgen}
 
     numCoreNodes = NumCoreNodes 2
+
+-- | If you are here because you tried to implement `HasPointScheduleTestParams` for
+-- some type `TestBlockWith Foo` and got an overlapping instance warning, the `a ~ ()`
+-- constraint is only here to get your attention. The tests should remain as block
+-- polymorphic as possible, so /maybe/ there should be a class for the types `a` that
+-- can appear in `TestBlockWith a`. But we in the past do not know what that class
+-- should look like! So the choice is yours: if what you need from this class can be
+-- made polymorphic in `a`, consider adding a class. If not, specialize this instance.
+instance (a ~ ()) => HasPointScheduleTestParams (TestBlockWith a) where
+  data ProtocolInfoArgs (TestBlockWith a) = TestBlockProtocolInfoArgs
+  getProtocolInfoArgs = pure TestBlockProtocolInfoArgs
+  mkProtocolInfo k forecast window _ = ProtocolInfo
+    { pInfoConfig = defaultCfg k forecast window
+    , pInfoInitLedger = testInitExtLedger
+    }
+  getChunkInfoFromTopLevelConfig = mkTestChunkInfo

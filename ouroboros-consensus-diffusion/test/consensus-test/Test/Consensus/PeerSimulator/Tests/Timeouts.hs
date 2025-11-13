@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Test.Consensus.PeerSimulator.Tests.Timeouts (tests) where
@@ -27,6 +28,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
+import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv (adjustQuickCheckTests)
 
 tests :: TestTree
@@ -37,7 +39,7 @@ tests = testGroup "timeouts" [
 
 prop_timeouts :: Bool -> Property
 prop_timeouts mustTimeout = do
-  forAllGenesisTest
+  forAllGenesisTest @TestBlock
 
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
