@@ -46,8 +46,11 @@ module Test.Consensus.PointSchedule (
   , prettyPointSchedule
   , stToGen
   , uniformPoints
+  , deforestBlockTree
   ) where
 
+import qualified Data.Map as M
+import Data.Map (Map)
 import           Cardano.Ledger.BaseTypes (unNonZero)
 import           Cardano.Slotting.Time (SlotLength)
 import           Control.Monad (replicateM)
@@ -93,6 +96,8 @@ import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.TersePrinting (terseFragment)
 import           Test.Util.TestBlock (TestBlock)
 import           Text.Printf (printf)
+import Ouroboros.Consensus.Block.Abstract (HeaderHash, HasHeader)
+
 
 prettyPointSchedule ::
   forall blk.
@@ -527,6 +532,10 @@ data GenesisTest blk schedule = GenesisTest
     gtExtraHonestPeers   :: Word,
     gtSchedule           :: schedule
   }
+
+
+deforestBlockTree :: HasHeader blk => BlockTree blk -> Map (HeaderHash blk) (AF.AnchoredFragment blk)
+deforestBlockTree = undefined
 
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 

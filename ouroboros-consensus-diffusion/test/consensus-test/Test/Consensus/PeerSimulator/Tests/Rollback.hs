@@ -5,6 +5,7 @@
 
 module Test.Consensus.PeerSimulator.Tests.Rollback (tests) where
 
+import qualified Data.Map as M
 import           Cardano.Ledger.BaseTypes (unNonZero)
 import           Control.Monad.Class.MonadTime.SI (Time (Time))
 import           Ouroboros.Consensus.Block (ChainHash (..), Header)
@@ -27,7 +28,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, unTestHash)
 import           Test.Util.TestEnv (adjustQuickCheckTests)
 
 tests :: TestTree
@@ -61,7 +61,7 @@ prop_rollback = do
     -- No shrinking because the schedule is tiny and hand-crafted
     (\_ _ -> [])
 
-    (\_ -> not . hashOnTrunk . AF.headHash . svSelectedChain)
+    (\test -> not . hashOnTrunk (gtBlockTree test) . AF.headHash . svSelectedChain)
 
 -- @prop_cannotRollback@ tests that the selection of the node under test *does
 -- not* change branches when sent a rollback to a block strictly older than 'k'
@@ -78,7 +78,7 @@ prop_cannotRollback =
     -- No shrinking because the schedule is tiny and hand-crafted
     (\_ _ -> [])
 
-    (\_ -> hashOnTrunk . AF.headHash . svSelectedChain)
+    (\test -> hashOnTrunk (gtBlockTree test) . AF.headHash . svSelectedChain)
 
 -- | A schedule that advertises all the points of the trunk up until the nth
 -- block after the intersection, then switches to the first alternative
@@ -107,8 +107,9 @@ rollbackSchedule n blockTree =
     banalSchedulePoints' :: blk -> [SchedulePoint blk]
     banalSchedulePoints' block = [scheduleTipPoint block, scheduleHeaderPoint block, scheduleBlockPoint block]
 
--- | Given a hash, checks whether it is on the trunk of the block tree, that is
--- if it only contains zeroes.
-hashOnTrunk :: ChainHash (Header TestBlock) -> Bool
-hashOnTrunk GenesisHash      = True
-hashOnTrunk (BlockHash hash) = all (== 0) $ unTestHash hash
+hashOnTrunk :: (AF.HasHeader blk, Eq blk) => BlockTree blk -> ChainHash (Header blk) -> Bool
+hashOnTrunk _ GenesisHash      = True
+hashOnTrunk bt (BlockHash hash) = do
+  case M.lookup hash (deforestBlockTree bt) of
+    Nothing -> error "impossible! hash not at all in block tree"
+    Just path -> AF.isPrefixOf path $ btTrunk bt
