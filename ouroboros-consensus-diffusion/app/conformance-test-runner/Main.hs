@@ -15,13 +15,6 @@ import Data.Set (Set)
 import Data.Traversable
 import qualified Network.Socket as Socket
 import Options
-  ( Options (..)
-  , defaultPrefs
-  , execParserPure
-  , handleParseResult
-  , options
-  , overFailure
-  )
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
@@ -39,14 +32,14 @@ import System.Exit (ExitCode (..))
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
--- | Exit statuses for the test runner. 'Success' is represented
+-- | Exit statuses for the test runner. 'TestPassed' is represented
 -- by an empty set of 'StatusFlags'.
 data ExitStatus = InternalError | BadUsage | Flags (Set StatusFlag)
 
-pattern Success :: ExitStatus
-pattern Success <- Flags (null -> True)
+pattern TestPassed :: ExitStatus
+pattern TestPassed <- Flags (null -> True)
   where
-    Success = Flags mempty
+    TestPassed = Flags mempty
 
 -- | A 'ContinueShrinking' flag is returned whenever the 'TestFailed' or got
 -- 'Success' with a non-empty shrink index as input, unless no more shrinking
@@ -56,7 +49,7 @@ data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
 
 exitStatusToCode :: ExitStatus -> ExitCode
 exitStatusToCode = \case
-  Success -> ExitSuccess
+  TestPassed -> ExitSuccess
   InternalError -> ExitFailure 1
   BadUsage -> ExitFailure 2
   -- Flags are combined using bit-wise OR.
