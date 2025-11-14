@@ -1,21 +1,14 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE ViewPatterns #-}
-
 module Main (main) where
 
 import Data.Aeson (encode, throwDecode)
-import Data.Bits (Ior (..))
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Set (Set)
 import Data.Traversable
 import qualified Network.Socket as Socket
-import Options (Options (..), options)
-import qualified Options.Applicative as Opts
+import Options (Options (..), parseOptions)
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
@@ -30,38 +23,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLe
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Server (run)
 import System.Environment (getArgs)
-import System.Exit (ExitCode (..), exitSuccess, exitWith)
-import System.IO (hPutStrLn, stderr)
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
-
--- | Exit statuses for the test runner. 'Success' is represented
--- by an empty set of 'StatusFlags'.
-data ExitStatus = InternalError | BadUsage | Flags (Set StatusFlag)
-
-pattern Success :: ExitStatus
-pattern Success <- Flags (null -> True)
-  where
-    Success = Flags mempty
-
--- | A 'ContinueShrinking' flag is returned whenever the 'TestFailed' or got
--- 'Success' with a non-empty shrink index as input, unless no more shrinking
--- on the input is possible. It is intended to signal the user to manually
--- pump the shrinker.
-data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
-
-exitStatusToCode :: ExitStatus -> ExitCode
-exitStatusToCode = \case
-  Success -> ExitSuccess
-  InternalError -> ExitFailure 1
-  BadUsage -> ExitFailure 2
-  -- Flags are combined using bit-wise OR.
-  Flags flags -> ExitFailure $ getIor $ foldMap flagToCode flags
- where
-  flagToCode :: StatusFlag -> Ior Int
-  flagToCode = \case
-    TestFailed -> Ior 4
-    ContinueShrinking -> Ior 8
 
 testPointSchedule :: PointSchedule blk
 testPointSchedule =
@@ -108,21 +71,11 @@ makeTopology ports =
 main :: IO ()
 main = do
   args <- getArgs
-  case Opts.execParserPure Opts.defaultPrefs options args of
-    Opts.Success opts -> do
-      contents <- BSL8.readFile (optTestFile opts)
-      pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
-      let simPeerMap = buildPeerMap (optPort opts) pointSchedule
-      BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
-    Opts.Failure failure -> do
-      let (msg, _) = Opts.renderFailure failure "conformance-test-runner"
-      hPutStrLn stderr msg
-      exitWith $ exitStatusToCode BadUsage
-    Opts.CompletionInvoked compl -> do
-      -- Completion handler
-      msg <- Opts.execCompletion compl "conformance-test-runner"
-      putStr msg
-      exitSuccess
+  parseOptions args $ \opts -> do
+    contents <- BSL8.readFile (optTestFile opts)
+    pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
+    let simPeerMap = buildPeerMap (optPort opts) pointSchedule
+    BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
 
 runServer :: IO ()
 runServer = do
