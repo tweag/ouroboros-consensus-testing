@@ -16,8 +16,11 @@ import Data.Traversable
 import qualified Network.Socket as Socket
 import Options
   ( Options (..)
-  , execParser
+  , defaultPrefs
+  , execParserPure
+  , handleParseResult
   , options
+  , overFailure
   )
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
@@ -108,7 +111,10 @@ makeTopology ports =
 
 main :: IO ()
 main = do
-  opts <- execParser options
+  let arguments = ["TEST_FILE"]
+      handler = id
+      result = execParserPure defaultPrefs options arguments
+  opts <- handleParseResult $ overFailure handler result
   contents <- BSL8.readFile (optTestFile opts)
   pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
   let simPeerMap = buildPeerMap (optPort opts) pointSchedule

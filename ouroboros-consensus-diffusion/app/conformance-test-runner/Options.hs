@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Command line argument parser for the test runner.
-module Options (execParser, options, Options (..)) where
+module Options (execParserPure, handleParseResult, overFailure, defaultPrefs, options, Options (..)) where
 
 import Options.Applicative
 import Ouroboros.Network.PeerSelection (PortNumber)
