@@ -116,7 +116,7 @@ main = do
     Failure failure -> do
       let (msg, _) = renderFailure failure "conformance-test-runner"
       hPutStrLn stderr msg
-      exitWith (exitStatusToCode BadUsage)
+      exitWith $ exitStatusToCode BadUsage
     CompletionInvoked compl -> do
       -- Completion handler
       msg <- execCompletion compl "conformance-test-runner"
