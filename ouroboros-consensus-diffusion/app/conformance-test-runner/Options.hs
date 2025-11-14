@@ -2,10 +2,36 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Command line argument parser for the test runner.
-module Options (execParser, options, Options (..)) where
+module Options (parseOptions, Options (..)) where
 
+import ExitCodes
 import Options.Applicative
+  ( CompletionResult (execCompletion)
+  , Parser
+  , ParserInfo
+  , ParserResult (CompletionInvoked, Failure)
+  , auto
+  , defaultPrefs
+  , execParserPure
+  , fullDesc
+  , header
+  , help
+  , helper
+  , info
+  , long
+  , metavar
+  , option
+  , progDesc
+  , renderFailure
+  , short
+  , strArgument
+  , strOption
+  , value
+  , (<**>)
+  )
+import qualified Options.Applicative as O
 import Ouroboros.Network.PeerSelection (PortNumber)
+import System.IO (hPutStrLn, stderr)
 
 data Options = Options
   { optTestFile :: FilePath
@@ -31,7 +57,7 @@ options =
 
 optsP :: Parser Options
 optsP = do
-  optTestFile <- argument auto (metavar "TEST_FILE")
+  optTestFile <- strArgument $ metavar "TEST_FILE"
   optOutputTopologyFile <-
     strOption
       ( mconcat
@@ -54,3 +80,17 @@ optsP = do
           ]
       )
   pure Options{..}
+
+parseOptions :: [String] -> IO (Options)
+parseOptions args =
+  case execParserPure defaultPrefs options args of
+    O.Success opts -> pure opts
+    Failure failure -> do
+      let (msg, _) = renderFailure failure "conformance-test-runner"
+      hPutStrLn stderr msg
+      exitWithStatus BadUsage
+    CompletionInvoked compl -> do
+      -- Completion handler
+      msg <- execCompletion compl "conformance-test-runner"
+      putStr msg
+      exitWithStatus Success
