@@ -1,5 +1,9 @@
 module Main (main) where
 
+import qualified Data.Map.Merge.Lazy as M
+import Test.Consensus.PeerSimulator.Resources (PeerSimulatorResources(..), makePeerSimulatorResources)
+import Control.Tracer (nullTracer)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Aeson (encode, throwDecode)
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import Data.Coerce
@@ -77,29 +81,34 @@ main = do
   let simPeerMap = buildPeerMap (optPort opts) pointSchedule
   BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
 
+zipMaps :: Ord k => Map k a -> Map k b -> Map k (a, b)
+zipMaps = M.merge M.dropMissing M.dropMissing $ M.zipWithMatched $ const (,)
+
 runServer :: IO ()
 runServer = do
   let peerMap = buildPeerMap 6001 testPointSchedule
 
+  peerSim <- makePeerSimulatorResources nullTracer undefined $ NonEmpty.fromList $ M.keys peerMap
+
   peerServers <-
-    for peerMap $ \port -> do
+    for (zipMaps peerMap $ psrPeers peerSim) $ \(port, res) -> do
       -- Make a TMVar for the chainsync and blockfetch channels exposed through
       -- the miniprotocols. These get threaded into the server, which will fill
       -- them once the NUT has connected.
-      csChannelTMV <- newEmptyTMVarIO
-      bfChannelTMV <- newEmptyTMVarIO
+      csChannelTMV <- newTVarIO False
+      bfChannelTMV <- newTVarIO False
 
       putStrLn $ "starting server on " <> show port
       let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
-      thread <- async $ run csChannelTMV bfChannelTMV sockAddr
+      thread <- async $ run res csChannelTMV bfChannelTMV sockAddr
       pure ((csChannelTMV, bfChannelTMV), thread)
 
   -- Now, take each of the resulting TMVars. This effectively blocks until the
   -- NUT has connected.
   _peerChannels <- atomically $ do
     for peerServers $ \((csChanTMV, bfChanTMV), _thread) -> do
-      csChan <- readTMVar csChanTMV
-      bfChan <- readTMVar bfChanTMV
+      csChan <- readTVar csChanTMV
+      bfChan <- readTVar bfChanTMV
       pure (csChan, bfChan)
 
   for_ peerServers $ uninterruptibleCancel . snd

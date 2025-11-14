@@ -16,6 +16,10 @@
 -- picked up by the peer simulator.
 module MiniProtocols (peerSimServer) where
 
+import Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Util.ShowProxy (ShowProxy)
+import Ouroboros.Network.Protocol.ChainSync.Server
+import Test.Consensus.PeerSimulator.Resources (PeerResources (..), ChainSyncResources (..), BlockFetchResources (..))
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import Control.Monad (forever)
@@ -59,10 +63,13 @@ peerSimServer ::
   ( IOLike m
   , SerialiseNodeToNodeConstraints blk
   , SupportedNetworkProtocolVersion blk
+  , ShowProxy blk
+  , ShowProxy (Header blk)
   , MonadSay m
   ) =>
-  StrictTMVar m (Mux.Channel m BL.ByteString) ->
-  StrictTMVar m (Mux.Channel m BL.ByteString) ->
+  PeerResources m blk ->
+  StrictTVar m Bool ->
+  StrictTVar m Bool ->
   CodecConfig blk ->
   (NodeToNodeVersion -> addr -> CBOR.Encoding) ->
   (NodeToNodeVersion -> forall s. CBOR.Decoder s addr) ->
@@ -71,7 +78,7 @@ peerSimServer ::
     NodeToNodeVersion
     NodeToNodeVersionData
     (OuroborosApplicationWithMinimalCtx 'Mux.ResponderMode addr BL.ByteString m Void ())
-peerSimServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
+peerSimServer res csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
   forAllVersions application
  where
   forAllVersions ::
@@ -115,9 +122,9 @@ peerSimServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
           $ MiniProtocolCb
           $ \_ctx channel -> do
             say "hello from cs"
-            atomically $
-              putTMVar csChanTMV channel
-            pure ((), Nothing)
+            atomically $ writeTVar csChanTMV True
+            runPeer nullTracer cChainSyncCodec channel
+              $ chainSyncServerPeer $ csrServer $ prChainSync res
       , mkMiniProtocol
           Mux.StartOnDemand
           N2N.blockFetchMiniProtocolNum
@@ -125,9 +132,9 @@ peerSimServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
           $ MiniProtocolCb
           $ \_ctx channel -> do
             say "hello from bf"
-            atomically $
-              putTMVar bfChanTMV channel
-            pure ((), Nothing)
+            atomically $ writeTVar bfChanTMV True
+            runPeer nullTracer cBlockFetchCodec channel
+              $ blockFetchServerPeer $ bfrServer $ prBlockFetch res
       , mkMiniProtocol
           Mux.StartOnDemand
           N2N.txSubmissionMiniProtocolNum
@@ -138,8 +145,8 @@ peerSimServer csChanTMV bfChanTMV codecCfg encAddr decAddr networkMagic = do
      where
       Consensus.N2N.Codecs
         { cKeepAliveCodec
-        -- , cChainSyncCodecSerialised
-        -- , cBlockFetchCodecSerialised
+        , cChainSyncCodec
+        , cBlockFetchCodec
         } =
           Consensus.N2N.defaultCodecs codecCfg blockVersion encAddr decAddr version
 

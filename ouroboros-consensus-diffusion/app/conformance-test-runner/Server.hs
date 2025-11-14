@@ -7,6 +7,7 @@
 
 module Server (run) where
 
+import Test.Consensus.PeerSimulator.Resources (PeerResources)
 import Control.ResourceRegistry
 import Control.Tracer
 import qualified Data.ByteString.Lazy as BL
@@ -68,15 +69,17 @@ run ::
   , ConfigSupportsNode blk
   , blk ~ SimpleBlock SimpleMockCrypto SimplePraosRuleExt
   ) =>
+  PeerResources IO blk ->
   -- | A TMVar for the chainsync channel that we will fill in once the node connects.
-  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
+  StrictTVar IO Bool ->
   -- | A TMVar for the blockfetch channel that we will fill in once the node connects.
-  StrictTMVar IO (Mux.Channel IO BL.ByteString) ->
+  StrictTVar IO Bool ->
   SockAddr ->
   IO Void
-run csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
+run res csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
   serve sockAddr
     $ peerSimServer @_ @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt)
+      res
       csChanTMV
       bfChanTMV
       SimpleCodecConfig
