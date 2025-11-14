@@ -28,7 +28,9 @@ import Ouroboros.Network.PeerSelection (PeerAdvertise (..), PortNumber)
 import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..), WarmValency (..))
 import Server (run)
-import System.Exit (ExitCode (..))
+import System.Environment (getArgs)
+import System.Exit (ExitCode (..), exitSuccess, exitWith)
+import System.IO (hPutStrLn, stderr)
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
@@ -104,14 +106,22 @@ makeTopology ports =
 
 main :: IO ()
 main = do
-  let arguments = ["TEST_FILE"]
-      handler = id
-      result = execParserPure defaultPrefs options arguments
-  opts <- handleParseResult $ overFailure handler result
-  contents <- BSL8.readFile (optTestFile opts)
-  pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
-  let simPeerMap = buildPeerMap (optPort opts) pointSchedule
-  BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
+  args <- getArgs
+  case execParserPure defaultPrefs options args of
+    Success opts -> do
+      contents <- BSL8.readFile (optTestFile opts)
+      pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
+      let simPeerMap = buildPeerMap (optPort opts) pointSchedule
+      BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
+    Failure failure -> do
+      let (msg, _) = renderFailure failure "conformance-test-runner"
+      hPutStrLn stderr msg
+      exitWith (exitStatusToCode BadUsage)
+    CompletionInvoked compl -> do
+      -- Completion handler
+      msg <- execCompletion compl "conformance-test-runner"
+      putStr msg
+      exitSuccess
 
 runServer :: IO ()
 runServer = do
