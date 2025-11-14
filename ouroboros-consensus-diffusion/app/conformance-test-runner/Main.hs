@@ -14,7 +14,8 @@ import qualified Data.Map as M
 import Data.Set (Set)
 import Data.Traversable
 import qualified Network.Socket as Socket
-import Options
+import Options (Options (..), options)
+import qualified Options.Applicative as Opts
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.Diffusion.Topology
   ( LocalRootPeersGroup (..)
@@ -34,14 +35,14 @@ import System.IO (hPutStrLn, stderr)
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
 
--- | Exit statuses for the test runner. 'TestPassed' is represented
+-- | Exit statuses for the test runner. 'Success' is represented
 -- by an empty set of 'StatusFlags'.
 data ExitStatus = InternalError | BadUsage | Flags (Set StatusFlag)
 
-pattern TestPassed :: ExitStatus
-pattern TestPassed <- Flags (null -> True)
+pattern Success :: ExitStatus
+pattern Success <- Flags (null -> True)
   where
-    TestPassed = Flags mempty
+    Success = Flags mempty
 
 -- | A 'ContinueShrinking' flag is returned whenever the 'TestFailed' or got
 -- 'Success' with a non-empty shrink index as input, unless no more shrinking
@@ -51,7 +52,7 @@ data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
 
 exitStatusToCode :: ExitStatus -> ExitCode
 exitStatusToCode = \case
-  TestPassed -> ExitSuccess
+  Success -> ExitSuccess
   InternalError -> ExitFailure 1
   BadUsage -> ExitFailure 2
   -- Flags are combined using bit-wise OR.
@@ -107,19 +108,19 @@ makeTopology ports =
 main :: IO ()
 main = do
   args <- getArgs
-  case execParserPure defaultPrefs options args of
-    Success opts -> do
+  case Opts.execParserPure Opts.defaultPrefs options args of
+    Opts.Success opts -> do
       contents <- BSL8.readFile (optTestFile opts)
       pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
       let simPeerMap = buildPeerMap (optPort opts) pointSchedule
       BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
-    Failure failure -> do
-      let (msg, _) = renderFailure failure "conformance-test-runner"
+    Opts.Failure failure -> do
+      let (msg, _) = Opts.renderFailure failure "conformance-test-runner"
       hPutStrLn stderr msg
       exitWith $ exitStatusToCode BadUsage
-    CompletionInvoked compl -> do
+    Opts.CompletionInvoked compl -> do
       -- Completion handler
-      msg <- execCompletion compl "conformance-test-runner"
+      msg <- Opts.execCompletion compl "conformance-test-runner"
       putStr msg
       exitSuccess
 
