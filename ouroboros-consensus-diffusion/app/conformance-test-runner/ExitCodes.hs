@@ -25,14 +25,14 @@ pattern Success <- Flags (null -> True)
 data StatusFlag = TestFailed | ContinueShrinking deriving (Eq, Ord)
 
 exitWithStatus :: ExitStatus -> IO a
-exitWithStatus = \case
-  Success -> exitWith ExitSuccess
-  InternalError -> exitWith $ ExitFailure 1
-  BadUsage -> exitWith $ ExitFailure 2
+exitWithStatus = exitWith . \case
+  Success -> ExitSuccess
+  InternalError -> ExitFailure 1
+  BadUsage -> ExitFailure 2
   -- Flags are combined using bit-wise OR.
-  Flags flags -> exitWith $ ExitFailure $ getIor $ foldMap flagToCode flags
+  Flags flags -> ExitFailure $ getIor $ foldMap flagToCode flags
  where
   flagToCode :: StatusFlag -> Ior Int
-  flagToCode = \case
-    TestFailed -> Ior 4
-    ContinueShrinking -> Ior 8
+  flagToCode = Ior . \case
+    TestFailed -> 4
+    ContinueShrinking -> 8
