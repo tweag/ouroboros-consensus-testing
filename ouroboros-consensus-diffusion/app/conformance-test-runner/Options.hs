@@ -31,7 +31,7 @@ options =
 
 optsP :: Parser Options
 optsP = do
-  optTestFile <- argument auto (metavar "TEST_FILE")
+  optTestFile <- argument str (metavar "TEST_FILE")
   optOutputTopologyFile <-
     strOption
       ( mconcat
