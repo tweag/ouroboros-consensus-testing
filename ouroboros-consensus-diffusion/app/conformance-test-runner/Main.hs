@@ -71,11 +71,11 @@ makeTopology ports =
 main :: IO ()
 main = do
   args <- getArgs
-  parseOptions args $ \opts -> do
-    contents <- BSL8.readFile (optTestFile opts)
-    pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
-    let simPeerMap = buildPeerMap (optPort opts) pointSchedule
-    BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
+  opts <- parseOptions args
+  contents <- BSL8.readFile (optTestFile opts)
+  pointSchedule <- throwDecode contents :: IO (PointSchedule Bool)
+  let simPeerMap = buildPeerMap (optPort opts) pointSchedule
+  BSL8.writeFile (optOutputTopologyFile opts) (encode $ makeTopology simPeerMap)
 
 runServer :: IO ()
 runServer = do

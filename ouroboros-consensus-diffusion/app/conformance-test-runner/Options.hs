@@ -81,10 +81,10 @@ optsP = do
       )
   pure Options{..}
 
-parseOptions :: [String] -> (Options -> IO ()) -> IO ()
-parseOptions args program =
+parseOptions :: [String] -> IO (Options)
+parseOptions args =
   case execParserPure defaultPrefs options args of
-    O.Success opts -> program opts
+    O.Success opts -> pure opts
     Failure failure -> do
       let (msg, _) = renderFailure failure "conformance-test-runner"
       hPutStrLn stderr msg
