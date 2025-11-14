@@ -334,6 +334,7 @@ executable conformance-test-runner
   hs-source-dirs: app/conformance-test-runner
   main-is: Main.hs
   other-modules:
+    ExitCodes
     Options
     Server
     MiniProtocols
