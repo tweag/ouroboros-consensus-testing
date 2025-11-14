@@ -7,6 +7,8 @@
 
 module Server (run) where
 
+import Ouroboros.Consensus.Node.Serialisation
+import Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import Test.Consensus.PeerSimulator.Resources (PeerResources)
 import Control.ResourceRegistry
 import Control.Tracer
@@ -35,6 +37,8 @@ import qualified Ouroboros.Network.Protocol.Handshake as Handshake
 import qualified Ouroboros.Network.Server.Simple as Server
 import qualified Ouroboros.Network.Snocket as Snocket
 import Ouroboros.Network.Socket (SomeResponderApplication (..), configureSocket)
+import Test.Util.TestBlock (TestBlock)
+import qualified Test.Util.TestBlock as TB
 
 -- | Glue code for using just the bits from the Diffusion Layer that we need in
 -- this context.
@@ -68,7 +72,7 @@ run ::
   ( SupportedNetworkProtocolVersion blk
   , SerialiseNodeToNodeConstraints blk
   , ConfigSupportsNode blk
-  , blk ~ SimpleBlock SimpleMockCrypto SimplePraosRuleExt
+  , blk ~ TestBlock
   ) =>
   PeerResources IO blk ->
   -- | A TMVar for the chainsync channel that we will fill in once the node connects.
@@ -79,11 +83,11 @@ run ::
   IO Void
 run res csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
   serve sockAddr
-    $ peerSimServer @_ @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt)
+    $ peerSimServer @_ @TestBlock
       res
       csChanTMV
       bfChanTMV
-      SimpleCodecConfig
+      TB.TestBlockCodecConfig
       encodeRemoteAddress
       decodeRemoteAddress
-    $ getNetworkMagic @(SimpleBlock SimpleMockCrypto SimplePraosRuleExt) SimpleBlockConfig
+    $ getNetworkMagic @TestBlock $ TB.TestBlockConfig $ NumCoreNodes 0
