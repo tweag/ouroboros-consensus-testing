@@ -226,6 +226,13 @@ data Validity = Valid | Invalid
   deriving stock (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
+
+instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
+  supportedNodeToNodeVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
+  supportedNodeToClientVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
+
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 -- | Test block parametrized on the payload type
 --
 -- For blocks without payload see the 'TestBlock' type alias.

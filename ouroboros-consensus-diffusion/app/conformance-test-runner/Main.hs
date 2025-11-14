@@ -1,3 +1,7 @@
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+
 module Main (main) where
 
 import qualified Data.Map.Merge.Lazy as M
@@ -29,6 +33,9 @@ import Server (run)
 import System.Environment (getArgs)
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
+import Test.Util.TestBlock
+import Ouroboros.Consensus.Node.Serialisation
+import Ouroboros.Consensus.Block.Abstract
 
 testPointSchedule :: PointSchedule blk
 testPointSchedule =
@@ -83,6 +90,8 @@ main = do
 
 zipMaps :: Ord k => Map k a -> Map k b -> Map k (a, b)
 zipMaps = M.merge M.dropMissing M.dropMissing $ M.zipWithMatched $ const (,)
+
+instance SerialiseNodeToNode TestBlock (Header TestBlock)
 
 runServer :: IO ()
 runServer = do
