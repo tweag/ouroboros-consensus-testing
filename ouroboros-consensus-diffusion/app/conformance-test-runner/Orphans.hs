@@ -37,7 +37,7 @@ import Test.Util.TestBlock
 -- * Target instances
 
 instance SerialiseNodeToNodeConstraints TestBlock where
-  estimateBlockSize = undefined
+  estimateBlockSize = const 0
 
 -- ** Instances needed to fulfill the constrainst for @SerializeNodeToNodeContraints TestBlock@
 
@@ -77,7 +77,3 @@ instance Serialise (GenTxId TestBlock)
 
 deriving instance Generic (SerialisedHeader TestBlock)
 instance Serialise (SerialisedHeader TestBlock)
-
-instance Serialise (GenDepPair Serialised (NestedCtxt Header TestBlock)) where
-  encode = undefined
-  decode = undefined
