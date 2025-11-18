@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -69,15 +68,16 @@ instance SerialiseNodeToNode TestBlock (GenTxId TestBlock)
 
 data instance GenTx TestBlock
 data instance TxId (GenTx TestBlock)
-
-deriving instance Serialise (GenTx TestBlock)
 deriving instance Generic (GenTx TestBlock)
 
+instance Serialise (GenTx TestBlock)
+
 deriving instance Generic (GenTxId TestBlock)
-deriving instance Serialise (GenTxId TestBlock)
+instance Serialise (GenTxId TestBlock)
 
-deriving instance Serialise (SerialisedHeader TestBlock)
 deriving instance Generic (SerialisedHeader TestBlock)
+instance Serialise (SerialisedHeader TestBlock)
 
-deriving instance Generic (GenDepPair Serialised (NestedCtxt Header TestBlock))
-deriving instance Serialise (GenDepPair Serialised (NestedCtxt Header TestBlock))
+instance Serialise (GenDepPair Serialised (NestedCtxt Header TestBlock)) where
+  encode = undefined
+  decode = undefined
