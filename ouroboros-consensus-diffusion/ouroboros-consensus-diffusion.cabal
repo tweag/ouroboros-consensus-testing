@@ -344,7 +344,7 @@ executable conformance-test-runner
     containers,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, orphan-instances},
-    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block},
+    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block, unstable-consensus-testlib},
     ouroboros-network-api,
     unstable-consensus-conformance-testlib,
     aeson,
