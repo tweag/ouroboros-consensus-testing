@@ -245,6 +245,7 @@ library unstable-consensus-conformance-testlib
     Test.Consensus.IOSimQSM.Test.StateMachine.Sequential
     Test.Consensus.Network.AnchoredFragment.Extras
     Test.Consensus.Node
+    Test.Consensus.OrphanInstances
     Test.Consensus.PeerSimulator.BlockFetch
     Test.Consensus.PeerSimulator.CSJInvariants
     Test.Consensus.PeerSimulator.ChainSync

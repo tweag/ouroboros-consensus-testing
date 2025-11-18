@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,10 +7,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- Orphan instances for 'Time' were introduced temporarily (no pun intended)
--- to implement generic 'ToJSON' and 'FromJSON' instances for 'PointSchedule'.
--- Once implemented by hand, they should be removed.
-{-# OPTIONS_GHC -Worphans #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -62,7 +57,6 @@ import           Control.Monad.ST (ST)
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
-import Data.Aeson (ToJSON(toEncoding), FromJSON, genericToEncoding, defaultOptions)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)
@@ -75,7 +69,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
                      (SecurityParam (SecurityParam), maxRollbacks)
 import           Ouroboros.Consensus.Util.Condense (CondenseList (..),
                      PaddingDirection (..), condenseListWithPadding)
-import GHC.Generics
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (withOrigin)
@@ -187,21 +180,6 @@ data PointSchedule blk = PointSchedule {
     -- the simulation will still run until this time is reached.
     psMinEndTime :: Time
   }
-  deriving (Generic)
-
-instance ToJSON blk => ToJSON (PointSchedule blk) where
-  toEncoding = genericToEncoding defaultOptions
-
-instance FromJSON blk => FromJSON (PointSchedule blk)
-
--- | TODO(xavier): Remove orphan instance after writing the 'PointSchedule'
--- instance above by hand.
-instance ToJSON Time where
-  toEncoding = genericToEncoding defaultOptions
-
--- | TODO(xavier): Remove orphan instance after writing the 'PointSchedule'
--- instance above by hand.
-instance FromJSON Time
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]

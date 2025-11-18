@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 -- | This module contains functions for generating random point schedules.
 --
 -- A point schedule is a set of tables, having one table per simulated peer.
@@ -103,9 +102,7 @@ import           Control.Monad.Class.MonadTime.SI (Time)
 import           Data.List (mapAccumL)
 import           Data.Time.Clock (DiffTime)
 import           Data.Vector (Vector)
-import Data.Aeson (ToJSON(toEncoding), FromJSON, genericToEncoding, defaultOptions)
 import qualified Data.Vector as Vector
-import GHC.Generics
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (unBlockNo), blockSlot)
 import qualified System.Random.Stateful as R (StatefulGen)
@@ -118,12 +115,7 @@ data SchedulePoint blk
   = ScheduleTipPoint (WithOrigin blk)
   | ScheduleHeaderPoint (WithOrigin blk)
   | ScheduleBlockPoint (WithOrigin blk)
-  deriving (Eq, Show, Generic)
-
-instance ToJSON blk => ToJSON (SchedulePoint blk) where
-  toEncoding = genericToEncoding defaultOptions
-
-instance FromJSON blk => FromJSON (SchedulePoint blk)
+  deriving (Eq, Show)
 
 scheduleTipPoint :: blk -> SchedulePoint blk
 scheduleTipPoint = ScheduleTipPoint . At
