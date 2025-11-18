@@ -20,6 +20,7 @@ import Ouroboros.Consensus.Mock.Ledger
 import Ouroboros.Consensus.Mock.Node ()
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
+import Orphans ()
 import Ouroboros.Consensus.Util.IOLike
 import Ouroboros.Network.IOManager (withIOManager)
 import Ouroboros.Network.Mux
