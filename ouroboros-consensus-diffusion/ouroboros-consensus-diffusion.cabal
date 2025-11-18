@@ -337,6 +337,7 @@ executable conformance-test-runner
   other-modules:
     ExitCodes
     Options
+    Orphans
     Server
     MiniProtocols
   build-depends:
@@ -344,7 +345,7 @@ executable conformance-test-runner
     containers,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, orphan-instances},
-    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block},
+    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block, unstable-consensus-testlib},
     ouroboros-network-api,
     unstable-consensus-conformance-testlib,
     aeson,
@@ -354,6 +355,7 @@ executable conformance-test-runner
     network-mux,
     contra-tracer,
     resource-registry,
+    serialise,
     ouroboros-network-protocols,
     cborg,
     ouroboros-consensus-diffusion,
