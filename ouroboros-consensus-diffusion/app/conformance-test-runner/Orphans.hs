@@ -75,5 +75,6 @@ instance Serialise (GenTx TestBlock)
 deriving instance Generic (GenTxId TestBlock)
 instance Serialise (GenTxId TestBlock)
 
-deriving instance Generic (SerialisedHeader TestBlock)
-instance Serialise (SerialisedHeader TestBlock)
+instance Serialise (SerialisedHeader TestBlock) where
+  encode = encodeTrivialSerialisedHeader
+  decode = decodeTrivialSerialisedHeader
