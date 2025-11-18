@@ -30,7 +30,7 @@ import Options.Applicative
   , (<**>)
   )
 import qualified Options.Applicative as O
-import Ouroboros.Network.PeerSelection (PortNumber)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
 import System.IO (hPutStrLn, stderr)
 
 data Options = Options

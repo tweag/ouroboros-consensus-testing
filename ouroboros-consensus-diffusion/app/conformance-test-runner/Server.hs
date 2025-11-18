@@ -7,6 +7,7 @@
 
 module Server (run) where
 
+import           Ouroboros.Network.ErrorPolicy (nullErrorPolicies)
 import Ouroboros.Consensus.Node.Serialisation
 import Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import Test.Consensus.PeerSimulator.Resources (PeerResources)
@@ -34,7 +35,6 @@ import Ouroboros.Network.PeerSelection.PeerSharing.Codec
   )
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import qualified Ouroboros.Network.Protocol.Handshake as Handshake
-import qualified Ouroboros.Network.Server.Simple as Server
 import qualified Ouroboros.Network.Snocket as Snocket
 import Ouroboros.Network.Socket (SomeResponderApplication (..), configureSocket)
 import Test.Util.TestBlock (TestBlock)
@@ -50,23 +50,32 @@ serve ::
     N2N.NodeToNodeVersionData
     (OuroborosApplicationWithMinimalCtx 'Mux.ResponderMode SockAddr BL.ByteString IO Void ()) ->
   IO Void
-serve incomingTV sockAddr application = withIOManager \iocp ->
-  Server.with
-    (Snocket.socketSnocket iocp)
-    Snocket.makeSocketBearer
-    (\sock addr -> configureSocket sock (Just addr))
-    sockAddr
-    HandshakeArguments
-      { haHandshakeTracer = show >$< stdoutTracer
-      , haBearerTracer = show >$< stdoutTracer
-      , haHandshakeCodec = Handshake.nodeToNodeHandshakeCodec
-      , haVersionDataCodec = Handshake.cborTermVersionDataCodec N2N.nodeToNodeCodecCBORTerm
-      , haAcceptVersion = Handshake.acceptableVersion
-      , haQueryVersion = Handshake.queryVersion
-      , haTimeLimits = Handshake.timeLimitsHandshake
+serve _ sockAddr application = withIOManager \iocp -> do
+  let sn = Snocket.socketSnocket iocp
+      family = Snocket.addrFamily sn sockAddr
+  bracket (Snocket.open sn family) (Snocket.close sn) \socket -> do
+    networkMutableState <- N2N.newNetworkMutableState
+    configureSocket socket (Just sockAddr)
+    Snocket.bind sn socket sockAddr
+    Snocket.listen sn socket
+    N2N.withServer
+      sn
+      N2N.nullNetworkServerTracers
+        { N2N.nstHandshakeTracer = show >$< stdoutTracer
+        , N2N.nstErrorPolicyTracer = show >$< stdoutTracer
+        }
+      networkMutableState
+      acceptedConnectionsLimit
+      socket
+      application
+      nullErrorPolicies
+ where
+  acceptedConnectionsLimit =
+    N2N.AcceptedConnectionsLimit
+      { N2N.acceptedConnectionsHardLimit = maxBound
+      , N2N.acceptedConnectionsSoftLimit = maxBound
+      , N2N.acceptedConnectionsDelay = 0
       }
-    (SomeResponderApplication <$> application)
-    (\incoming serverAsync -> atomically (tryPutTMVar incomingTV incoming) *> wait serverAsync)
 
 run ::
   forall blk.
