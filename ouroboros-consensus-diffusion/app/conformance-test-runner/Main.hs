@@ -34,9 +34,6 @@ import System.Environment (getArgs)
 import Test.Consensus.OrphanInstances ()
 import Test.Consensus.PointSchedule (PointSchedule (..))
 import Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (Peers), getPeerIds)
-import Test.Util.TestBlock
-import Ouroboros.Consensus.Node.Serialisation
-import Ouroboros.Consensus.Block.Abstract
 
 testPointSchedule :: PointSchedule blk
 testPointSchedule =
@@ -92,13 +89,13 @@ main = do
 zipMaps :: Ord k => Map k a -> Map k b -> Map k (a, b)
 zipMaps = M.merge M.dropMissing M.dropMissing $ M.zipWithMatched $ const (,)
 
-instance SerialiseNodeToNode TestBlock (Header TestBlock)
-
 runServer :: IO ()
 runServer = do
   let peerMap = buildPeerMap 6001 testPointSchedule
 
   peerSim <- makePeerSimulatorResources nullTracer undefined $ NonEmpty.fromList $ M.keys peerMap
+
+  incomingTMV <- newEmptyTMVarIO
 
   peerServers <-
     for (zipMaps peerMap $ psrPeers peerSim) $ \(port, res) -> do
@@ -110,7 +107,7 @@ runServer = do
 
       putStrLn $ "starting server on " <> show port
       let sockAddr = Socket.SockAddrInet port $ Socket.tupleToHostAddress (127, 0, 0, 1)
-      thread <- async $ run res csChannelTMV bfChannelTMV sockAddr
+      thread <- async $ run res incomingTMV csChannelTMV bfChannelTMV sockAddr
       pure ((csChannelTMV, bfChannelTMV), thread)
 
   -- Now, take each of the resulting TMVars. This effectively blocks until the

@@ -43,13 +43,14 @@ import qualified Test.Util.TestBlock as TB
 -- | Glue code for using just the bits from the Diffusion Layer that we need in
 -- this context.
 serve ::
+  StrictTMVar IO SockAddr ->
   SockAddr ->
   N2N.Versions
     N2N.NodeToNodeVersion
     N2N.NodeToNodeVersionData
     (OuroborosApplicationWithMinimalCtx 'Mux.ResponderMode SockAddr BL.ByteString IO Void ()) ->
   IO Void
-serve sockAddr application = withIOManager \iocp ->
+serve incomingTV sockAddr application = withIOManager \iocp ->
   Server.with
     (Snocket.socketSnocket iocp)
     Snocket.makeSocketBearer
@@ -65,7 +66,7 @@ serve sockAddr application = withIOManager \iocp ->
       , haTimeLimits = Handshake.timeLimitsHandshake
       }
     (SomeResponderApplication <$> application)
-    (\_ serverAsync -> wait serverAsync)
+    (\incoming serverAsync -> atomically (tryPutTMVar incomingTV incoming) *> wait serverAsync)
 
 run ::
   forall blk.
@@ -75,14 +76,16 @@ run ::
   , blk ~ TestBlock
   ) =>
   PeerResources IO blk ->
+  -- | A TMVar for the connecting peer
+  StrictTMVar IO SockAddr ->
   -- | A TMVar for the chainsync channel that we will fill in once the node connects.
   StrictTVar IO Bool ->
   -- | A TMVar for the blockfetch channel that we will fill in once the node connects.
   StrictTVar IO Bool ->
   SockAddr ->
   IO Void
-run res csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
-  serve sockAddr
+run res incomingTV csChanTMV bfChanTMV sockAddr = withRegistry \_registry ->
+  serve incomingTV sockAddr
     $ peerSimServer @_ @TestBlock
       res
       csChanTMV
