@@ -223,6 +223,7 @@ test-suite mock-test
     unstable-mock-testlib,
 
 library unstable-consensus-conformance-testlib
+  visibility: public
   import: common-lib
   hs-source-dirs: test/consensus-test
   exposed-modules:
