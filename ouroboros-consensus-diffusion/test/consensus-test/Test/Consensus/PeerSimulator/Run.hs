@@ -10,6 +10,8 @@ module Test.Consensus.PeerSimulator.Run (
   , defaultSchedulerConfig
   , runPointSchedule
   , runScheduler
+  , startNode
+  , nodeLifecycle
   ) where
 
 import           Control.Monad (foldM, forM, void, when)
