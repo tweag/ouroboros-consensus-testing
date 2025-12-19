@@ -252,7 +252,7 @@ prettyBlockTree blockTree =
 nonemptyPrefixesOf
   :: (AF.HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
 nonemptyPrefixesOf frag =
-  fmap (AF.fromOldestFirst (AF.anchor frag)) . tail . inits . AF.toOldestFirst $ frag
+  fmap (AF.fromOldestFirst (AF.anchor frag)) . drop 1 . inits . AF.toOldestFirst $ frag
 
 -- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
 -- from the anchor of the tree to that block.
@@ -268,7 +268,7 @@ deforestBlockTree (BlockTree trunk branches) =
     branchPrefixes branch =
       let anchor = AF.anchor $ btbPrefix branch
       in fmap (AF.fromOldestFirst anchor . mappend (AF.toOldestFirst $ btbPrefix branch)) .
-          tail . inits . AF.toOldestFirst $ btbSuffix branch
+          drop 1 . inits . AF.toOldestFirst $ btbSuffix branch
 
     allPrefixes :: [AF.AnchoredFragment blk]
     allPrefixes = nonemptyPrefixesOf trunk <> concatMap branchPrefixes branches
@@ -277,8 +277,8 @@ deforestBlockTree (BlockTree trunk branches) =
       :: AF.AnchoredFragment blk
       -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
       -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
-    addPrefix fragment map = case fragment of
-      AF.Empty _ -> map
-      _ AF.:> tip -> M.insert (blockHash tip) fragment map
+    addPrefix fragment mapSoFar = case fragment of
+      AF.Empty _ -> mapSoFar
+      _ AF.:> tip -> M.insert (blockHash tip) fragment mapSoFar
 
   in foldr addPrefix mempty allPrefixes

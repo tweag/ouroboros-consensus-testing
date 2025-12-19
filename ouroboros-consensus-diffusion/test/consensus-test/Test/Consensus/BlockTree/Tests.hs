@@ -175,6 +175,9 @@ insertIfMaximalBy cmp u =
 -- | Detect if one list is a permutation of another; duplicates allowed.
 -- (Remember that `L.delete` only removes the first occurrence.)
 --
+-- Sorting first and comparing for equality would be asymptotically better,
+-- but we need this for lists of blocks which may not have an `Ord` instance.
+--
 -- Examples:
 --   isPermutation [1,2,3] [1,2,3]   == True
 --   isPermutation [1,2,3] [1,3,2]   == True
