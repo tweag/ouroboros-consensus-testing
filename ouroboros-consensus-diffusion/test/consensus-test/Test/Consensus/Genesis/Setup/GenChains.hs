@@ -2,11 +2,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Test.Consensus.Genesis.Setup.GenChains (
     GenesisTest (..)
+  , IssueTestBlock (..)
   , genChains
   , genChainsWithExtraHonestPeers
   ) where
@@ -45,7 +48,8 @@ import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Extras (unsafeMapSuchThatJust)
 import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock hiding (blockTree)
+import qualified Test.Util.TestBlock as TB
+import           Test.Util.TestBlock (TestBlock, TestBlockWith (..))
 
 -- | Random generator for an honest chain recipe and schema.
 genHonestChainSchema :: QC.Gen (Asc, H.HonestRecipe, H.SomeHonestChainSchema)
@@ -95,8 +99,9 @@ genAlternativeChainSchema (testRecipeH, arHonest) =
         let H.ChainSchema _ v = A.uniformAdversarialChain (Just alternativeAsc) testRecipeA'' seed
         pure $ Just (prefixCount, Vector.toList (getVector v))
 
-genChains :: QC.Gen Word -> QC.Gen (GenesisTest TestBlock ())
+genChains :: (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
 genChains  = genChainsWithExtraHonestPeers (pure 0)
+
 
 -- | Random generator for a block tree. The block tree contains one trunk (the
 -- “honest” chain) and as many branches as given as a parameter (the
@@ -109,16 +114,23 @@ genChains  = genChainsWithExtraHonestPeers (pure 0)
 --                     ╰─────3──4─────5
 -- For now, the @extraHonestPeers@ generator is only used to fill the GenesisTest field.
 -- However, in the future it could also be used to generate "short forks" near the tip of the trunk.
-genChainsWithExtraHonestPeers :: QC.Gen Word -> QC.Gen Word -> QC.Gen (GenesisTest TestBlock ())
+genChainsWithExtraHonestPeers
+  :: forall blk
+   . (HasHeader blk, IssueTestBlock blk)
+  => QC.Gen Word
+  -- ^ Number of extra honest peers
+  -> QC.Gen Word
+  -- ^ Number of forks
+  -> QC.Gen (GenesisTest blk ())
 genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
   (_, honestRecipe, someHonestChainSchema) <- genHonestChainSchema
 
   H.SomeHonestChainSchema _ _ honestChainSchema <- pure someHonestChainSchema
   let ChainSchema _ vH = honestChainSchema
-      goodChain = mkTestFragment goodBlocks
+      slotsH = Vector.toList (getVector vH)
       -- blocks for the good chain in reversed order
       goodBlocks = mkTestBlocks [] slotsH 0
-      slotsH = Vector.toList (getVector vH)
+      goodChain = mkTestFragment goodBlocks
       HonestRecipe (Kcp kcp) (Scg scg) delta _len = honestRecipe
 
   numForks <- genNumForks
@@ -147,29 +159,60 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
     }
 
   where
-    genAdversarialFragment :: [TestBlock] -> Int -> (Int, [S]) -> AnchoredFragment TestBlock
+    genAdversarialFragment :: [blk] -> Int -> (Int, [S]) -> AnchoredFragment blk
     genAdversarialFragment goodBlocks forkNo (prefixCount, slotsA)
       = mkTestFragment (mkTestBlocks prefix slotsA forkNo)
       where
         -- blocks in the common prefix in reversed order
         prefix = drop (length goodBlocks - prefixCount) goodBlocks
 
-    mkTestFragment :: [TestBlock] -> AnchoredFragment TestBlock
+    mkTestFragment :: [blk] -> AnchoredFragment blk
     mkTestFragment =
       AF.fromNewestFirst AF.AnchorGenesis
 
-    mkTestBlocks :: [TestBlock] -> [S] -> Int -> [TestBlock]
+    mkTestBlocks :: [blk] -> [S] -> Int -> [blk]
     mkTestBlocks pre active forkNo =
       fst (List.foldl' folder ([], 0) active)
       where
+        folder :: ([blk], SlotNo) -> S -> ([blk], SlotNo)
         folder (chain, inc) s | S.test S.notInverted s = (issue inc chain, 0)
                               | otherwise = (chain, inc + 1)
-        issue inc (h : t) = incSlot inc (successorBlock h) : h : t
-        issue inc [] | [] <- pre = [incSlot inc ((firstBlock (fromIntegral forkNo)) {tbSlot = 0})]
-                     | h : t <- pre = incSlot inc (modifyFork (const (fromIntegral forkNo)) (successorBlock h)) : h : t
+        issue :: SlotNo -> [blk] -> [blk]
+        issue inc (h : t) = successorBlock Nothing inc h : h : t
+        issue inc [] =
+          case pre of
+            []      -> [firstBlock forkNo inc]
+            (h : t) -> successorBlock (Just forkNo) inc h : h : t
 
-    incSlot :: SlotNo -> TestBlock -> TestBlock
-    incSlot n b = b { tbSlot = tbSlot b + n }
+-- | Class of block types for which we can issue test blocks.
+class IssueTestBlock blk where
+  firstBlock
+    :: Int
+    -- ^ The fork number
+    -> SlotNo
+    -- ^ The amount of lapsed slots before this block was issued.
+    -> blk
+  successorBlock
+    :: Maybe Int
+    -- ^ A new fork number, if this block should fork off the trunk.
+    -> SlotNo
+    -- ^ The amount of lapsed slots before this block was issued.
+    -> blk
+    -> blk
+
+instance IssueTestBlock TestBlock where
+  firstBlock fork slot =
+    incSlot slot $
+      TB.firstBlock $
+        fromIntegral fork
+  successorBlock fork slot blk =
+    incSlot slot $
+      TB.modifyFork (maybe id (const . fromIntegral) fork) $
+        TB.successorBlock blk
+
+-- | Increment the slot number on a 'TestBlock'.
+incSlot :: SlotNo -> TestBlock -> TestBlock
+incSlot s tb = tb { tbSlot = tbSlot tb + s }
 
 chainSyncTimeouts :: ChainSyncTimeout
 chainSyncTimeouts =
