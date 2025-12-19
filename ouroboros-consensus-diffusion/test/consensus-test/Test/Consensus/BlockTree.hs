@@ -233,28 +233,28 @@ prettyBlockTree blockTree =
 
 
 
--- An AnchoredFragment is a list where the last element (the anchor) is a "ghost".
+-- An `AF.AnchoredFragment` is a list where the last element (the anchor) is a ghost.
 -- Here they represent the partial ancestry of a block, where the anchor is either
--- Genesis (start of the chain, not itself an actual block) or the hash of a block.
+-- `Genesis` (start of the chain, not itself an actual block) or the hash of a block.
 -- Say we have blocks B1 through B5 (each succeeded by the next) and anchor A. You
 -- can think of the chain as growing **from left to right** like this:
 --
 --                      A :> B1 :> B2 :> B3 :> B4 :> B5
 --
--- nonemptyPrefixesOf builds the list of prefixes of an AnchoredFragment with at
+-- nonemptyPrefixesOf builds the list of prefixes of an `AF.AnchoredFragment` with at
 -- least one non-anchor entry. The name is a little confusing because the way we
 -- usually think of cons-lists these would be suffixes:
 --
 --              A :> B1     A :> B1 :> B2     A :> B1 :> B2 :> B3
 --        A :> B1 :> B2 :> B3 :> B4     A :> B1 :> B2 :> B3 :> B4 :> B5
 --
--- However this is consistent with Ouroboros.Network.AnchoredSeq.isPrefixOf.
+-- However this is consistent with `Ouroboros.Network.AnchoredSeq.isPrefixOf`.
 nonemptyPrefixesOf
   :: (AF.HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
 nonemptyPrefixesOf frag =
   fmap (AF.fromOldestFirst (AF.anchor frag)) . tail . inits . AF.toOldestFirst $ frag
 
--- Constructs a map from each block in the tree to the (unique) AnchoredFragment
+-- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
 -- from the anchor of the tree to that block.
 deforestBlockTree
   :: forall blk. (HasHeader blk)

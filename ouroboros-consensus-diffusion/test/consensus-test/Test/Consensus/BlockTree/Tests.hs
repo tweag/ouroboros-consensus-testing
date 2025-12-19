@@ -65,19 +65,19 @@ tests =
 
 
 
--- | The nonempty prefixes of an AnchoredFragment are in fact prefixes.
+-- | The nonempty prefixes of an `AF.AnchoredFragment` are in fact prefixes.
 prop_nonemptyPrefixesOf_nonemptyPrefixesArePrefixes
   :: (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
 prop_nonemptyPrefixesOf_nonemptyPrefixesArePrefixes fragment =
   QC.property . all (flip AF.isPrefixOf fragment) . nonemptyPrefixesOf $ fragment
 
--- | The nonempty prefixes of an AnchoredFragment are in fact nonempty.
+-- | The nonempty prefixes of an `AF.AnchoredFragment` are in fact nonempty.
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreNonempty
   :: (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreNonempty fragment =
   QC.property . all (not . AF.null) . nonemptyPrefixesOf $ fragment
 
--- | The nonempty prefixes of an AnchoredFragment are unique.
+-- | The nonempty prefixes of an `AF.AnchoredFragment` are unique.
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreUnique
   :: forall blk. (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreUnique fragment =
@@ -132,7 +132,7 @@ prop_deforestBlockTree_fullBranchesAreBranches tree =
         (elem thisChain (deforestBlockTree tree)) && restOk
   in QC.property . foldr inDeforestation True $ fmap btbFull $ btBranches tree
 
--- | Every block header from the BlockTree is in the deforestation map.
+-- | Every block header from the `BlockTree` is in the deforestation map.
 prop_deforestBlockTree_everyHeaderHashIsInTheMap
   :: forall blk. (Eq blk, HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_everyHeaderHashIsInTheMap tree@(BlockTree trunk branches) =
@@ -147,7 +147,7 @@ prop_deforestBlockTree_everyHeaderHashIsInTheMap tree@(BlockTree trunk branches)
 
   in QC.property $ all (flip M.member $ deforestBlockTree tree) allHeaderHashes
 
--- | An AnchoredFragment is /prefix maximal/ in a list if it is not a nontrivial
+-- | An `AF.AnchoredFragment` is /prefix maximal/ in a list if it is not a nontrivial
 -- prefix of another fragment in the list. After deforesting a tree, the maximal
 -- prefixes in the result are precisely the trunk and branches of the tree in
 -- some order.
@@ -173,7 +173,7 @@ insertIfMaximalBy cmp u =
   in go
 
 -- | Detect if one list is a permutation of another; duplicates allowed.
--- (Remember that Data.List.delete only removes the first occurrence.)
+-- (Remember that `L.delete` only removes the first occurrence.)
 --
 -- Examples:
 --   isPermutation [1,2,3] [1,2,3]   == True
