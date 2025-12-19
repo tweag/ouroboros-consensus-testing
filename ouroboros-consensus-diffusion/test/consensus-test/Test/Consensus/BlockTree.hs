@@ -23,13 +23,14 @@ module Test.Consensus.BlockTree (
   , mkTrunk
   , prettyBlockTree
   , deforestBlockTree
+  , nonemptyPrefixesOf
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo))
 import           Data.Foldable (asum)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
-import           Data.List (sortOn, unfoldr)
+import           Data.List (sortOn, insert, inits)
 import qualified Data.Map as M
 import           Data.Maybe (fromJust, fromMaybe, mapMaybe)
 import           Data.Ord (Down (Down))
@@ -232,37 +233,6 @@ prettyBlockTree blockTree =
 
 
 
--- | Non-recursively decompose an AnchoredFragment.
---
--- This is shaped like `maybe`, `either`, and `list` (from Data.List.Extra),
--- which are really the universal maps on `Maybe a`, `Either a b`, and `[a]`
--- when those types are treated as coproducts instead of initial algebras.
---
--- Example: List a ~= 1 + (a, List a). Given maps f and g as in the diagram,
--- the universal property of coproducts gives a unique map h == list f g.
---
---                           in            cons
---                      1 ------> List a <----- (a, List a)
---                      |           :               |
---                    f |         h : list f g      | g
---                      v           v               v
---                      U ========= U  ============ U
---
--- HOWEVER I am 99% sure there is /not/ an equivalently natural function for
--- AnchoredFragments; the main hangup is that even though AnchoredFragment
--- is similar to `Anchor blk + (blk, List blk)` as a set of values, the `cons`
--- operation for AnchoredFragment has the wrong type--it returns a Maybe
--- since the validity condition must be satisfied. For this reason the cons
--- branch provides the whole fragment as well as the tip and tail and we
--- make no claims about universality or uniqueness.
-decomposeAnchoredFragment
-  :: (HasHeader blk)
-  => (AF.AnchoredFragment blk -> (blk, AF.AnchoredFragment blk) -> u)
-  -> (AF.Anchor blk -> u) -> AF.AnchoredFragment blk -> u
-decomposeAnchoredFragment atTip atAnchor fragment = case fragment of
-  AF.Empty a -> atAnchor a
-  rest AF.:> tip -> atTip fragment (tip, rest)
-
 -- An AnchoredFragment is a list where the last element (the anchor) is a "ghost".
 -- Here they represent the partial ancestry of a block, where the anchor is either
 -- Genesis (start of the chain, not itself an actual block) or the hash of a block.
@@ -281,8 +251,8 @@ decomposeAnchoredFragment atTip atAnchor fragment = case fragment of
 -- However this is consistent with Ouroboros.Network.AnchoredSeq.isPrefixOf.
 nonemptyPrefixesOf
   :: (AF.HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
-nonemptyPrefixesOf = unfoldr $ decomposeAnchoredFragment
-  (\fragment (_, rest) -> Just (fragment, rest)) (const Nothing)
+nonemptyPrefixesOf frag =
+  fmap (AF.fromOldestFirst (AF.anchor frag)) . tail . inits . AF.toOldestFirst $ frag
 
 -- Constructs a map from each block in the tree to the (unique) AnchoredFragment
 -- from the anchor of the tree to that block.
@@ -291,20 +261,24 @@ deforestBlockTree
   => BlockTree blk -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
 deforestBlockTree (BlockTree trunk branches) =
   let
-    -- Take all the nonempty prefixes of the branch suffix, then
-    -- join with the branch prefix on the left. This gives the
+    -- Take all the nonempty prefixes of the branch's suffix, then
+    -- catenate with the branch prefix on the left. This gives the
     -- path to the root for all the non-trunk blocks in the branch.
-    --
-    -- Catenation of AnchoredFragments (with `join`) returns a
-    -- `Maybe` because the anchor of the right argument must
-    -- correspond to the tip of the left argument. The invariants
-    -- on `BlockTree` mean this should always be the case here.
     branchPrefixes :: BlockTreeBranch blk -> [AF.AnchoredFragment blk]
-    branchPrefixes branch = mapMaybe (AF.join $ btbPrefix branch) $
-      nonemptyPrefixesOf $ btbSuffix branch
+    branchPrefixes branch =
+      let anchor = AF.anchor $ btbPrefix branch
+      in fmap (AF.fromOldestFirst anchor . mappend (AF.toOldestFirst $ btbPrefix branch)) .
+          tail . inits . AF.toOldestFirst $ btbSuffix branch
 
     allPrefixes :: [AF.AnchoredFragment blk]
     allPrefixes = nonemptyPrefixesOf trunk <> concatMap branchPrefixes branches
 
-  in flip foldMap allPrefixes $ decomposeAnchoredFragment
-      (\fragment (tip, _) -> M.singleton (blockHash tip) fragment) (const mempty)
+    addPrefix
+      :: AF.AnchoredFragment blk
+      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+    addPrefix fragment map = case fragment of
+      AF.Empty _ -> map
+      _ AF.:> tip -> M.insert (blockHash tip) fragment map
+
+  in foldr addPrefix mempty allPrefixes

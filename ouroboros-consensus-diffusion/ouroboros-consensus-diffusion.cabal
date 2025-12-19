@@ -228,6 +228,7 @@ library unstable-consensus-conformance-testlib
   hs-source-dirs: test/consensus-test
   exposed-modules:
     Test.Consensus.BlockTree
+    Test.Consensus.BlockTree.Tests
     Test.Consensus.GSM
     Test.Consensus.GSM.Model
     Test.Consensus.Genesis.Setup
