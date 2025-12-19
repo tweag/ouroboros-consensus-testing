@@ -78,7 +78,7 @@ import           Ouroboros.Network.Point (withOrigin)
 import qualified System.Random.Stateful as Random
 import           System.Random.Stateful (STGenM, StatefulGen, runSTGen_)
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
-                     allFragments, prettyBlockTree)
+                     allFragments, prettyBlockTree, deforestBlockTree)
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
@@ -532,10 +532,6 @@ data GenesisTest blk schedule = GenesisTest
     gtExtraHonestPeers   :: Word,
     gtSchedule           :: schedule
   }
-
-
-deforestBlockTree :: HasHeader blk => BlockTree blk -> Map (HeaderHash blk) (AF.AnchoredFragment blk)
-deforestBlockTree = undefined
 
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 

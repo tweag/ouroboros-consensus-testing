@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -21,20 +22,26 @@ module Test.Consensus.BlockTree (
   , findPath
   , mkTrunk
   , prettyBlockTree
+  , deforestBlockTree
+  , nonemptyPrefixesOf
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo))
 import           Data.Foldable (asum)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
-import           Data.List (sortOn)
-import           Data.Maybe (fromJust, fromMaybe)
+import           Data.List (sortOn, insert, inits)
+import qualified Data.Map as M
+import           Data.Maybe (fromJust, fromMaybe, mapMaybe)
 import           Data.Ord (Down (Down))
+import           Data.Proxy
 import qualified Data.Vector as Vector
-import           Ouroboros.Consensus.Block.Abstract (blockNo, blockSlot,
-                     fromWithOrigin, pointSlot, unBlockNo)
+import           Ouroboros.Consensus.Block.Abstract (blockNo, blockSlot, blockHash,
+                     fromWithOrigin, pointSlot, unBlockNo, HeaderHash, HasHeader)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Text.Printf (printf)
+import qualified Test.QuickCheck as QC
+import qualified Test.Util.TestBlock
 
 -- | Represent a branch of a block tree by a prefix and a suffix. The full
 -- fragment (the prefix and suffix catenated) and the trunk suffix (the rest of
@@ -223,3 +230,55 @@ prettyBlockTree blockTree =
       case AF.anchor frag of
         AF.AnchorGenesis     -> 0
         AF.Anchor slotNo _ _ -> slotNo + 1
+
+
+
+-- An `AF.AnchoredFragment` is a list where the last element (the anchor) is a ghost.
+-- Here they represent the partial ancestry of a block, where the anchor is either
+-- `Genesis` (start of the chain, not itself an actual block) or the hash of a block.
+-- Say we have blocks B1 through B5 (each succeeded by the next) and anchor A. You
+-- can think of the chain as growing **from left to right** like this:
+--
+--                      A :> B1 :> B2 :> B3 :> B4 :> B5
+--
+-- nonemptyPrefixesOf builds the list of prefixes of an `AF.AnchoredFragment` with at
+-- least one non-anchor entry. The name is a little confusing because the way we
+-- usually think of cons-lists these would be suffixes:
+--
+--              A :> B1     A :> B1 :> B2     A :> B1 :> B2 :> B3
+--        A :> B1 :> B2 :> B3 :> B4     A :> B1 :> B2 :> B3 :> B4 :> B5
+--
+-- However this is consistent with `Ouroboros.Network.AnchoredSeq.isPrefixOf`.
+nonemptyPrefixesOf
+  :: (AF.HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
+nonemptyPrefixesOf frag =
+  fmap (AF.fromOldestFirst (AF.anchor frag)) . drop 1 . inits . AF.toOldestFirst $ frag
+
+-- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
+-- from the anchor of the tree to that block.
+deforestBlockTree
+  :: forall blk. (HasHeader blk)
+  => BlockTree blk -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+deforestBlockTree (BlockTree trunk branches) =
+  let
+    -- Take all the nonempty prefixes of the branch's suffix, then
+    -- catenate with the branch prefix on the left. This gives the
+    -- path to the root for all the non-trunk blocks in the branch.
+    branchPrefixes :: BlockTreeBranch blk -> [AF.AnchoredFragment blk]
+    branchPrefixes branch =
+      let anchor = AF.anchor $ btbPrefix branch
+      in fmap (AF.fromOldestFirst anchor . mappend (AF.toOldestFirst $ btbPrefix branch)) .
+          drop 1 . inits . AF.toOldestFirst $ btbSuffix branch
+
+    allPrefixes :: [AF.AnchoredFragment blk]
+    allPrefixes = nonemptyPrefixesOf trunk <> concatMap branchPrefixes branches
+
+    addPrefix
+      :: AF.AnchoredFragment blk
+      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+    addPrefix fragment mapSoFar = case fragment of
+      AF.Empty _ -> mapSoFar
+      _ AF.:> tip -> M.insert (blockHash tip) fragment mapSoFar
+
+  in foldr addPrefix mempty allPrefixes
