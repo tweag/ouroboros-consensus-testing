@@ -4,13 +4,11 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.BlockTree.Tests {- (tests) -} where
+module Test.Consensus.BlockTree.Tests (tests) where
 
 import           Data.Function (on)
 import qualified Data.List as L
 import qualified Data.Map as M
-import           Data.Proxy
-import qualified Data.Set as S
 import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockHash)
@@ -18,11 +16,11 @@ import           Test.Consensus.BlockTree
 import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest(..), genChains)
 import           Test.QuickCheck
 import qualified Test.QuickCheck as QC
-import           Test.QuickCheck.Random
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv
+
 
 
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
@@ -73,29 +71,27 @@ prop_nonemptyPrefixesOf_nonemptyPrefixesArePrefixes fragment =
 
 -- | The nonempty prefixes of an `AF.AnchoredFragment` are in fact nonempty.
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreNonempty
-  :: (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
+  :: (HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreNonempty fragment =
   QC.property . all (not . AF.null) . nonemptyPrefixesOf $ fragment
 
 -- | The nonempty prefixes of an `AF.AnchoredFragment` are unique.
 prop_nonemptyPrefixesOf_nonemptyPrefixesAreUnique
-  :: forall blk. (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
-prop_nonemptyPrefixesOf_nonemptyPrefixesAreUnique fragment =
-  let
-    isNew :: forall u. (Eq u) => u -> ([u], Bool) -> ([u], Bool)
-    isNew u (seen, restOk) =
-      if not (elem u seen) && restOk
-        then (u:seen, True)
-        else (seen, False)
-  in QC.property . snd . foldr isNew ([], True) . nonemptyPrefixesOf $ fragment
+  :: forall blk. (HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
+prop_nonemptyPrefixesOf_nonemptyPrefixesAreUnique =
+  QC.property . noDuplicates . fmap (fmap blockHash . AF.toOldestFirst) . nonemptyPrefixesOf
+
+noDuplicates :: (Ord a) => [a] -> Bool
+noDuplicates =
+  let tally k = M.insertWith (+) k (1 :: Int)
+  in all (== 1) . M.elems . foldr tally mempty
 
 -- | All the nonempty prefixes should share the original fragment's anchor.
 prop_nonemptyPrefixesOf_allShareInputAnchor
   :: (HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
-prop_nonemptyPrefixesOf_allShareInputAnchor originalFragment =
-  let sharesTrunkAnchor thisFragment restOk =
-        (((==) `on` AF.anchor) thisFragment originalFragment) && restOk
-  in QC.property . foldr sharesTrunkAnchor True . nonemptyPrefixesOf $ originalFragment
+prop_nonemptyPrefixesOf_allShareInputAnchor fragment =
+  let sharesTrunkAnchor = ((==) `on` AF.anchor) fragment
+  in QC.property . all sharesTrunkAnchor . nonemptyPrefixesOf $ fragment
 
 
 
@@ -104,42 +100,36 @@ prop_nonemptyPrefixesOf_allShareInputAnchor originalFragment =
 prop_deforestBlockTree_headPointsAreDistinct
   :: (HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_headPointsAreDistinct =
-  let headPointsDistinct thisChain (restOk, seenSoFar) =
-        let hP = AF.headPoint thisChain
-        in ((not $ elem hP seenSoFar) && restOk, hP : seenSoFar)
-  in QC.property . fst . foldr headPointsDistinct (True, mempty) . deforestBlockTree
+  QC.property . noDuplicates . fmap AF.headPoint . M.elems . deforestBlockTree
 
 -- | The deforested branches are all populated.
 prop_deforestBlockTree_imagesAreNonempty
   :: (HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_imagesAreNonempty =
-  let chainsNotEmpty thisChain restOk = not (AF.null thisChain) && restOk
-  in QC.property . foldr chainsNotEmpty True . deforestBlockTree
+  QC.property . all (not . AF.null) . deforestBlockTree
 
 -- | All the deforested branches share the trunk's anchor.
 prop_deforestBlockTree_allShareTrunkAnchor
   :: (HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_allShareTrunkAnchor tree =
-  let sharesTrunkAnchor thisChain restOk =
-        (((==) `on` AF.anchor) thisChain (btTrunk tree)) && restOk
-  in QC.property . foldr sharesTrunkAnchor True . deforestBlockTree $ tree
+  let sharesTrunkAnchor = ((==) `on` AF.anchor) (btTrunk tree)
+  in QC.property . all sharesTrunkAnchor . deforestBlockTree $ tree
 
 -- | Full branches are in the deforestation.
 prop_deforestBlockTree_fullBranchesAreBranches
   :: (Eq blk, HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_fullBranchesAreBranches tree =
-  let inDeforestation thisChain restOk =
-        (elem thisChain (deforestBlockTree tree)) && restOk
-  in QC.property . foldr inDeforestation True $ fmap btbFull $ btBranches tree
+  let inDeforestation = flip elem (deforestBlockTree tree)
+  in QC.property . all inDeforestation . fmap btbFull . btBranches $ tree
 
 -- | Every block header from the `BlockTree` is in the deforestation map.
 prop_deforestBlockTree_everyHeaderHashIsInTheMap
-  :: forall blk. (Eq blk, HasHeader blk) => BlockTree blk -> QC.Property
+  :: forall blk. (HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_everyHeaderHashIsInTheMap tree@(BlockTree trunk branches) =
   let
     allBranchHeaderHashes :: BlockTreeBranch blk -> [HeaderHash blk]
-    allBranchHeaderHashes (BlockTreeBranch prefix suffix trunk full) =
-      fmap blockHash $ concatMap AF.toOldestFirst [ prefix, suffix, trunk, full ]
+    allBranchHeaderHashes (BlockTreeBranch prefix suffix restOfTrunk full) =
+      fmap blockHash $ concatMap AF.toOldestFirst [ prefix, suffix, restOfTrunk, full ]
 
     allHeaderHashes :: [HeaderHash blk]
     allHeaderHashes = fmap blockHash (AF.toOldestFirst trunk) <>
@@ -152,39 +142,22 @@ prop_deforestBlockTree_everyHeaderHashIsInTheMap tree@(BlockTree trunk branches)
 -- prefixes in the result are precisely the trunk and branches of the tree in
 -- some order.
 prop_deforestBlockTree_prefixMaximalPrefixesAreBranches
-  :: forall blk. (Eq blk, HasHeader blk) => BlockTree blk -> QC.Property
+  :: forall blk. (Ord blk, HasHeader blk) => BlockTree blk -> QC.Property
 prop_deforestBlockTree_prefixMaximalPrefixesAreBranches tree@(BlockTree trunk branches) =
-  QC.property $ isPermutation
+  QC.property $ ((==) `on` (L.sort . fmap AF.toOldestFirst))
     (foldr (insertIfMaximalBy AF.isPrefixOf) [] $ deforestBlockTree tree)
     (trunk : fmap btbFull branches)
 
 -- | If u is smaller than any of the elements of xs, return xs.
 -- Otherwise, remove any elements of xs smaller than u and append
--- u to the remainder on the right.
+-- u to the remainder on the right. cmp is analogous to `<`.
 insertIfMaximalBy :: forall u. (u -> u -> Bool) -> u -> [u] -> [u]
-insertIfMaximalBy cmp u =
+insertIfMaximalBy lessThan u =
   let
     go xs = case xs of
       [] -> [u]
-      x:rest -> if cmp x u
-        then go rest
-        else x : if cmp u x
-          then rest else go rest
+      x:rest -> case x `lessThan` u of
+        True -> go rest
+        False -> x : case u `lessThan` x of
+          True -> rest; False -> go rest
   in go
-
--- | Detect if one list is a permutation of another; duplicates allowed.
--- (Remember that `L.delete` only removes the first occurrence.)
---
--- Sorting first and comparing for equality would be asymptotically better,
--- but we need this for lists of blocks which may not have an `Ord` instance.
---
--- Examples:
---   isPermutation [1,2,3] [1,2,3]   == True
---   isPermutation [1,2,3] [1,3,2]   == True
---   isPermutation [1,2,3] [1,2,4]   == False
---   isPermutation [1,2,3] [1,2,3,3] == False
---   isPermutation []      []        == True  -- fun fact, this is why 0! = 1
-isPermutation :: (Eq u) => [u] -> [u] -> Bool
-isPermutation xs ys = ((&&) `on` null)
-  (foldr L.delete ys xs) -- find any ys not in xs
-  (foldr L.delete xs ys) -- find any xs not in ys
