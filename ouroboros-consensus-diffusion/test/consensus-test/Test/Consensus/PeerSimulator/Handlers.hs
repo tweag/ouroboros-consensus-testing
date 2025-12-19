@@ -25,7 +25,7 @@ import           Control.Monad.Writer.Strict (MonadWriter (tell),
 import           Data.List (isSuffixOf)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Maybe (fromJust, fromMaybe)
-import           Ouroboros.Consensus.Block (HasHeader, HeaderHash,
+import           Ouroboros.Consensus.Block (GetHeader, HasHeader, HeaderHash,
                      Point (GenesisPoint), blockHash, getHeader, withOrigin)
 import           Ouroboros.Consensus.Util.IOLike (IOLike, STM, StrictTVar,
                      readTVar, writeTVar)
@@ -48,7 +48,6 @@ import           Test.Consensus.PeerSimulator.Trace
                      TraceScheduledChainSyncServerEvent (..))
 import           Test.Consensus.PointSchedule.NodeState
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, TestHash (TestHash))
 
 -- | More efficient implementation of a check used in some of the handlers,
 -- determining whether the first argument is on the chain that ends in the
@@ -61,18 +60,18 @@ import           Test.Util.TestBlock (TestBlock, TestHash (TestHash))
 isAncestorOf ::
   HasHeader blk1 =>
   HasHeader blk2 =>
-  HeaderHash blk1 ~ TestHash =>
-  HeaderHash blk2 ~ TestHash =>
+  -- HeaderHash blk1 ~ TestHash =>
+  -- HeaderHash blk2 ~ TestHash =>
   WithOrigin blk1 ->
   WithOrigin blk2 ->
   Bool
-isAncestorOf (At ancestor) (At descendant) =
-  isSuffixOf (NonEmpty.toList hashA) (NonEmpty.toList hashD)
-  where
-    TestHash hashA = blockHash ancestor
-    TestHash hashD = blockHash descendant
-isAncestorOf (At _) Origin = False
-isAncestorOf Origin _ = True
+isAncestorOf (At ancestor) (At descendant) = undefined
+  -- isSuffixOf (NonEmpty.toList hashA) (NonEmpty.toList hashD)
+  -- where
+  --   TestHash hashA = blockHash ancestor
+  --   TestHash hashD = blockHash descendant
+isAncestorOf (At _) Origin                 = False
+isAncestorOf Origin _                      = True
 
 -- | Handle a @MsgFindIntersect@ message.
 --
@@ -106,12 +105,12 @@ handlerFindIntersection currentIntersection blockTree clientPoints points = do
 -- - header point before intersection (special case for the point scheduler architecture)
 -- - Anchor != intersection
 handlerRequestNext ::
-  forall m.
-  (IOLike m) =>
-  StrictTVar m (Point TestBlock) ->
-  BlockTree TestBlock ->
-  NodeState TestBlock ->
-  STM m (Maybe (RequestNext TestBlock), [TraceScheduledChainSyncServerEvent (NodeState TestBlock) TestBlock])
+  forall m blk.
+  (IOLike m, HasHeader blk, GetHeader blk) =>
+  StrictTVar m (Point blk) ->
+  BlockTree blk ->
+  NodeState blk ->
+  STM m (Maybe (RequestNext blk), [TraceScheduledChainSyncServerEvent (NodeState blk) blk])
 handlerRequestNext currentIntersection blockTree points =
   runWriterT $ do
     intersection <- lift $ readTVar currentIntersection
@@ -119,12 +118,12 @@ handlerRequestNext currentIntersection blockTree points =
     withHeader intersection (nsHeader points)
   where
     withHeader ::
-      Point TestBlock ->
-      WithOrigin TestBlock ->
+      Point blk ->
+      WithOrigin blk ->
       WriterT
-        [TraceScheduledChainSyncServerEvent (NodeState TestBlock) TestBlock]
+        [TraceScheduledChainSyncServerEvent (NodeState blk) blk]
         (STM m)
-        (Maybe (RequestNext TestBlock))
+        (Maybe (RequestNext blk))
     withHeader intersection h =
       maybe noPathError analysePath (BT.findPath intersection hp blockTree)
       where
@@ -302,11 +301,11 @@ The cases to consider follow:
 
 -}
 handlerSendBlocks ::
-  forall m .
+  forall m blk.
   IOLike m =>
-  [TestBlock] ->
-  NodeState TestBlock ->
-  STM m (Maybe (SendBlocks TestBlock), [TraceScheduledBlockFetchServerEvent (NodeState TestBlock) TestBlock])
+  [blk] ->
+  NodeState blk ->
+  STM m (Maybe (SendBlocks blk), [TraceScheduledBlockFetchServerEvent (NodeState blk) blk])
 handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
   runWriterT (checkDone blocks)
   where
@@ -318,7 +317,7 @@ handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
         blocksLeft next future
 
     blocksLeft next future
-      | isAncestorOf (At next) nsBlock
+      | error "isAncestorOf (At next) nsBlock"
       || compensateForScheduleRollback next
       = do
         trace $ TraceSendingBlock next
@@ -346,9 +345,9 @@ handlerSendBlocks blocks NodeState {nsHeader, nsBlock} =
     -- * BP is in the same chain as HP and is not an ancestor of @next@ - BP also moved away from the chain of @next@.
     --
     -- Precondition: @not (isAncestorOf (At next) bp)@
-    compensateForScheduleRollback next =
-      not (isAncestorOf (At next) nsHeader)
-        && isAncestorOf nsBlock nsHeader
-        && not (isAncestorOf nsBlock (At next))
+    compensateForScheduleRollback next = error "compensateForScheduleRollback"
+      -- not (isAncestorOf (At next) nsHeader)
+      --   && isAncestorOf nsBlock nsHeader
+      --   && not (isAncestorOf nsBlock (At next))
 
     trace = tell . pure

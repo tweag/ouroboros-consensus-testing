@@ -23,10 +23,17 @@ import           Data.List (sort)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable
+import           GHC.Generics
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
+import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import           Ouroboros.Consensus.Genesis.Governor (gddWatcher)
+import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.Abstract (HasHardForkHistory)
 import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -37,8 +44,12 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      ChainSyncLoPBucketEnabledConfig (..), viewChainSyncState)
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Node.GsmState as GSM
+import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
 import           Ouroboros.Consensus.Storage.ChainDB.API
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
+import           Ouroboros.Consensus.Storage.LedgerDB.API
+                     (CanUpgradeLedgerTables)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (forkLinkedWatcher)
@@ -71,7 +82,6 @@ import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
 import           Test.Util.ChainDB
 import           Test.Util.Header (dropTimeFromFragment)
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock)
 
 -- | Behavior config for the scheduler.
 data SchedulerConfig =
@@ -324,9 +334,14 @@ runScheduler tracer varHandles ps@PointSchedule{psMinEndTime} peers lifecycle@No
 -- | Create the shared resource for the LoE if the feature is enabled in the config.
 -- This is used by the ChainDB and the GDD governor.
 mkLoEVar ::
-  IOLike m =>
+  (IOLike m
+  , StandardHash blk
+  , NoThunks (Header blk)
+  , HasHeader (Header blk)
+  , Typeable blk
+  ) =>
   SchedulerConfig ->
-  m (LoE (StrictTVar m (AnchoredFragment (HeaderWithTime TestBlock))))
+  m (LoE (StrictTVar m (AnchoredFragment (HeaderWithTime blk))))
 mkLoEVar SchedulerConfig {scEnableLoE}
   | scEnableLoE
   = LoEEnabled <$> newTVarIO (AF.Empty AF.AnchorGenesis)
@@ -335,10 +350,11 @@ mkLoEVar SchedulerConfig {scEnableLoE}
 
 mkStateTracer ::
   IOLike m =>
+  (GetHeader blk, HasHeader blk, Eq (Header blk)) =>
   SchedulerConfig ->
-  GenesisTest TestBlock s ->
-  PeerSimulatorResources m TestBlock ->
-  ChainDB m TestBlock ->
+  GenesisTest blk s ->
+  PeerSimulatorResources m blk ->
+  ChainDB m blk ->
   m (Tracer m ())
 mkStateTracer schedulerConfig GenesisTest {gtBlockTree} PeerSimulatorResources {psrHandles, psrPeers} chainDb
   | scTraceState schedulerConfig
@@ -358,14 +374,20 @@ mkStateTracer schedulerConfig GenesisTest {gtBlockTree} PeerSimulatorResources {
 -- Only start peers that haven't been disconnected in a previous interval,
 -- provided by 'LiveIntervalResult'.
 startNode ::
-  forall m.
+  forall m blk.
   ( IOLike m
   , MonadTime m
   , MonadTimer m
+  , LedgerSupportsProtocol blk
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , BlockSupportsDiffusionPipelining blk
+  , ConfigSupportsNode blk
+  , HasHardForkHistory blk
   ) =>
   SchedulerConfig ->
-  GenesisTestFull TestBlock ->
-  LiveInterval TestBlock m ->
+  GenesisTestFull blk ->
+  LiveInterval blk m ->
   m ()
 startNode schedulerConfig genesisTest interval = do
   let handles = psrHandles lrPeerSim
@@ -485,13 +507,25 @@ startNode schedulerConfig genesisTest interval = do
 
 -- | Set up all resources related to node start/shutdown.
 nodeLifecycle ::
-  (IOLike m, MonadTime m, MonadTimer m) =>
+  (IOLike m, MonadTime m, MonadTimer m
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , ConfigSupportsNode blk
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  , Eq (Header blk)
+  ) =>
   SchedulerConfig ->
-  GenesisTestFull TestBlock ->
-  Tracer m (TraceEvent TestBlock) ->
+  GenesisTestFull blk ->
+  Tracer m (TraceEvent blk) ->
   ResourceRegistry m ->
-  PeerSimulatorResources m TestBlock ->
-  m (NodeLifecycle TestBlock m)
+  PeerSimulatorResources m blk ->
+  m (NodeLifecycle blk m)
 nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
   lrCdb <- emptyNodeDBs
   lrLoEVar <- mkLoEVar schedulerConfig
@@ -501,7 +535,7 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
           lrRegistry
         , lrTracer
         , lrSTracer = mkStateTracer schedulerConfig genesisTest lrPeerSim
-        , lrConfig
+        , lrConfig = error "lrConfig"
         , lrPeerSim
         , lrCdb
         , lrLoEVar
@@ -512,7 +546,7 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
     , nlShutdown = lifecycleStop resources
     }
   where
-    lrConfig = defaultCfg k gtForecastRange gtGenesisWindow
+    -- lrConfig = defaultCfg k gtForecastRange gtGenesisWindow
 
     GenesisTest {
         gtSecurityParam = k
@@ -523,12 +557,24 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
 -- | Construct STM resources, set up ChainSync and BlockFetch threads, and
 -- send all ticks in a 'PointSchedule' to all given peers in turn.
 runPointSchedule ::
-  forall m.
-  (IOLike m, MonadTime m, MonadTimer m) =>
+  forall m blk.
+  (IOLike m, MonadTime m, MonadTimer m
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , ConfigSupportsNode blk
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  , Eq (Header blk)
+  ) =>
   SchedulerConfig ->
-  GenesisTestFull TestBlock ->
-  Tracer m (TraceEvent TestBlock) ->
-  m (StateView TestBlock)
+  GenesisTestFull blk ->
+  Tracer m (TraceEvent blk) ->
+  m (StateView blk)
 runPointSchedule schedulerConfig genesisTest tracer0 =
   withRegistry $ \registry -> do
     peerSim <- makePeerSimulatorResources tracer gtBlockTree (NonEmpty.fromList $ getPeerIds $ psSchedule gtSchedule)

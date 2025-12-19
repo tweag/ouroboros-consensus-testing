@@ -169,8 +169,8 @@ tracerTestBlock tracer0 = do
   pure $ Tracer $ traceEventTestBlockWith setTickTime tracer0 tracer
 
 mkGDDTracerTestBlock ::
-  Tracer m (TraceEvent TestBlock) ->
-  Tracer m (TraceGDDEvent PeerId TestBlock)
+  Tracer m (TraceEvent blk) ->
+  Tracer m (TraceGDDEvent PeerId blk)
 mkGDDTracerTestBlock = contramap TraceGenesisDDEvent
 
 traceEventTestBlockWith ::
@@ -258,7 +258,7 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
           [ "Objector"
           , show initState
           , terseJumpInfo goodJumpInfo
-          , tersePoint (castPoint badPoint)
+          , tersePoint @TestBlock (castPoint badPoint)
           ]
       Disengaged initState -> "Disengaged " ++ show initState
       Jumper _ st -> "Jumper _ " ++ traceJumperState st
@@ -271,7 +271,7 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
         [ "(FoundIntersection"
         , show initState
         , terseJumpInfo goodJumpInfo
-        , tersePoint $ castPoint point, ")"
+        , tersePoint @TestBlock $ castPoint point, ")"
         ]
       LookingForIntersection goodJumpInfo badJumpInfo -> unwords
         ["(LookingForIntersection", terseJumpInfo goodJumpInfo, terseJumpInfo badJumpInfo, ")"]
@@ -445,7 +445,7 @@ traceChainSyncClientEventTestBlockWith pid tracer = \case
       Restart -> "Restart"
 
 terseJumpInfo :: JumpInfo TestBlock -> String
-terseJumpInfo ji = tersePoint (castPoint $ headPoint $ jTheirFragment ji)
+terseJumpInfo ji = tersePoint @TestBlock (castPoint $ headPoint $ jTheirFragment ji)
 
 traceChainSyncClientTerminationEventTestBlockWith ::
   PeerId ->
@@ -585,7 +585,7 @@ terseGDDEvent = \case
       "      Selection: " ++ terseHFragment curChain,
       "      Candidates:"
       ] ++
-      showPeers (second (tersePoint . castPoint . AF.headPoint) <$> candidates) ++
+      showPeers (second (tersePoint @TestBlock . castPoint . AF.headPoint) <$> candidates) ++
       [
       "      Candidate suffixes (bounds):"
       ] ++
@@ -593,10 +593,10 @@ terseGDDEvent = \case
       ["      Density bounds:"] ++
       prettyDensityBounds bounds ++
       ["      New candidate tips:"] ++
-      showPeers (second (tersePoint . castPoint . AF.headPoint) <$> candidateSuffixes) ++
+      showPeers (second (tersePoint @TestBlock . castPoint . AF.headPoint) <$> candidateSuffixes) ++
       [
         "      Losing peers: " ++ show losingPeers,
-      "      Setting loeFrag: " ++ terseAnchor (AF.castAnchor loeHead)
+      "      Setting loeFrag: " ++ terseAnchor @TestBlock (AF.castAnchor loeHead)
       ]
   where
 

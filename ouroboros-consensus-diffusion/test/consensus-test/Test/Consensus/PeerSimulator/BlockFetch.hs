@@ -25,8 +25,13 @@ import           Network.TypedProtocol.Codec (ActiveState, AnyMessage,
                      StateToken, notActiveState)
 import           Ouroboros.Consensus.Block (HasHeader)
 import           Ouroboros.Consensus.Block.Abstract (Header, Point (..))
+import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
+                     (BlockSupportsDiffusionPipelining)
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime (..))
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface as BlockFetchClientInterface
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientHandleCollection)
@@ -72,20 +77,20 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (BlockConfig (TestBlockConfig), TestBlock)
 
 startBlockFetchLogic ::
-     forall m.
-     (IOLike m, MonadTimer m)
+     forall m blk.
+     (IOLike m, MonadTimer m, LedgerSupportsProtocol blk, BlockSupportsDiffusionPipelining blk, ConfigSupportsNode blk)
   => Bool -- ^ Whether to enable chain selection starvation
   -> ResourceRegistry m
-  -> Tracer m (TraceEvent TestBlock)
-  -> ChainDB m TestBlock
-  -> FetchClientRegistry PeerId (HeaderWithTime TestBlock) TestBlock m
-  -> ChainSyncClientHandleCollection PeerId m TestBlock
+  -> Tracer m (TraceEvent blk)
+  -> ChainDB m blk
+  -> FetchClientRegistry PeerId (HeaderWithTime blk) blk m
+  -> ChainSyncClientHandleCollection PeerId m blk
   -> m ()
 startBlockFetchLogic enableChainSelStarvation registry tracer chainDb fetchClientRegistry csHandlesCol = do
     let blockFetchConsensusInterface =
           BlockFetchClientInterface.mkBlockFetchConsensusInterface
             nullTracer -- FIXME
-            (TestBlockConfig $ NumCoreNodes 0) -- Only needed when minting blocks
+            (error "blk cfg") --(TestBlockConfig $ NumCoreNodes 0) -- Only needed when minting blocks
             (BlockFetchClientInterface.defaultChainDbView chainDb)
             csHandlesCol
             -- The size of headers in bytes is irrelevant because our tests

@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Helpers for printing various objects in a terse way. Terse printing is
@@ -21,7 +23,8 @@ import           Cardano.Slotting.Block (BlockNo (BlockNo))
 import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty ((:|)), toList)
 import qualified Data.List.NonEmpty as NE
-import           Ouroboros.Consensus.Block (Header,
+import           Data.Proxy (Proxy (..))
+import           Ouroboros.Consensus.Block (HasHeader, Header, HeaderHash,
                      Point (BlockPoint, GenesisPoint), RealPoint,
                      SlotNo (SlotNo), blockHash, blockNo, blockSlot,
                      realPointToPoint)
@@ -57,9 +60,9 @@ terseBlockSlotHash (BlockNo bno) (SlotNo sno) (TestHash hash) =
 
 -- | Same as 'terseBlockSlotHash' except only the last element of the hash
 -- shows, if it is non-zero. This makes sense when showing a fragment.
-terseBlockSlotHash' :: BlockNo -> SlotNo -> TestHash -> String
-terseBlockSlotHash' (BlockNo bno) (SlotNo sno) (TestHash hash) =
-    show bno ++ "-" ++ show sno ++ renderHashSuffix hash
+terseBlockSlotHash' :: Proxy blk -> BlockNo -> SlotNo -> HeaderHash blk -> String
+terseBlockSlotHash' _ (BlockNo bno) (SlotNo sno) hash =
+    show bno ++ "-" ++ show sno ++ error "renderHashSuffix hash"
   where
     renderHashSuffix (forkNo :| _)
       | forkNo == 0 = ""
@@ -73,24 +76,24 @@ terseBlock block = terseBlockSlotHash (blockNo block) (blockSlot block) (blockHa
 
 -- | Same as 'terseBlock' except only the last element of the hash shows, if it
 -- is non-zero. This makes sense when showing a fragment.
-terseBlock' :: TestBlock -> String
-terseBlock' block = terseBlockSlotHash' (blockNo block) (blockSlot block) (blockHash block)
+terseBlock' :: forall blk. HasHeader blk => blk -> String
+terseBlock' block = terseBlockSlotHash' (Proxy @blk) (blockNo block) (blockSlot block) (blockHash block)
 
 -- | Same as 'terseBlock' for headers.
 terseHeader :: Header TestBlock -> String
 terseHeader (TestHeader block) = terseBlock block
 
 -- | Same as 'terseBlock' for points. Genesis shows as @G@.
-tersePoint :: Point TestBlock -> String
-tersePoint GenesisPoint = "G"
-tersePoint (BlockPoint slot hash) =
-  terseBlockSlotHash (BlockNo (fromIntegral (length (unTestHash hash)))) slot hash
+tersePoint :: Point blk -> String
+tersePoint GenesisPoint           = "G"
+tersePoint (BlockPoint slot hash) = error "tersePoint"
+  -- terseBlockSlotHash (BlockNo (fromIntegral (length (unTestHash hash)))) slot hash
 
 terseRealPoint :: RealPoint TestBlock -> String
 terseRealPoint = tersePoint . realPointToPoint
 
 -- | Same as 'tersePoint' for anchors.
-terseAnchor :: Anchor TestBlock -> String
+terseAnchor :: Anchor blk -> String
 terseAnchor = tersePoint . anchorToPoint
 
 -- | Same as 'tersePoint' for tips.
@@ -108,7 +111,7 @@ terseWithOrigin terseA (At a) = terseA a
 -- block ...@ where @anchor@ is printed with 'terseAnchor' and @block@s are
 -- printed with @terseBlock'@; in particular, only the last element of the hash
 -- shows and only when it is non-zero.
-terseFragment :: AnchoredFragment TestBlock -> String
+terseFragment :: HasHeader blk => AnchoredFragment blk -> String
 terseFragment fragment =
     terseAnchor (anchor fragment) ++ renderBlocks
   where
