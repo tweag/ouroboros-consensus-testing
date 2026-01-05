@@ -24,18 +24,18 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
-import           GHC.Generics
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import           Ouroboros.Consensus.Genesis.Governor (gddWatcher)
-import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Abstract (HasHardForkHistory)
 import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.Tables.MapKind (ValuesMK)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (CSJConfig (..), CSJEnabledConfig (..), ChainDbView,
                      ChainSyncClientHandle,
@@ -44,10 +44,11 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      ChainSyncLoPBucketEnabledConfig (..), viewChainSyncState)
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Node.GsmState as GSM
-import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
 import           Ouroboros.Consensus.Storage.ChainDB.API
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkInfo)
 import           Ouroboros.Consensus.Storage.LedgerDB.API
                      (CanUpgradeLedgerTables)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -64,7 +65,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 import qualified Test.Consensus.PeerSimulator.BlockFetch as BlockFetch
 import qualified Test.Consensus.PeerSimulator.ChainSync as ChainSync
-import           Test.Consensus.PeerSimulator.Config
 import qualified Test.Consensus.PeerSimulator.CSJInvariants as CSJInvariants
 import           Test.Consensus.PeerSimulator.NodeLifecycle
 import           Test.Consensus.PeerSimulator.Resources
@@ -535,7 +535,9 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
           lrRegistry
         , lrTracer
         , lrSTracer = mkStateTracer schedulerConfig genesisTest lrPeerSim
-        , lrConfig = error "lrConfig"
+        , lrConfig = error "defaultCfg k gtForecastRange gtGenesisWindow"
+        , lrInitLedger = error "testInitExtLedger"
+        , lrChunkInfo = error "mkTestChunkInfo lrConfig"
         , lrPeerSim
         , lrCdb
         , lrLoEVar
@@ -546,8 +548,6 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
     , nlShutdown = lifecycleStop resources
     }
   where
-    -- lrConfig = defaultCfg k gtForecastRange gtGenesisWindow
-
     GenesisTest {
         gtSecurityParam = k
       , gtForecastRange

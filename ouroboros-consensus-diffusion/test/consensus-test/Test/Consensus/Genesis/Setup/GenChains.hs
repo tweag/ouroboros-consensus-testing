@@ -9,9 +9,9 @@
 
 module Test.Consensus.Genesis.Setup.GenChains (
     GenesisTest (..)
+  , IssueTestBlock (..)
   , genChains
   , genChainsWithExtraHonestPeers
-  , IssueTestBlock(..)
   ) where
 
 import           Cardano.Ledger.BaseTypes (nonZeroOr)
@@ -48,8 +48,8 @@ import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Extras (unsafeMapSuchThatJust)
 import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlockWith(..), TestBlock)
 import qualified Test.Util.TestBlock as TB
+import           Test.Util.TestBlock (TestBlock, TestBlockWith (..))
 
 -- | Random generator for an honest chain recipe and schema.
 genHonestChainSchema :: QC.Gen (Asc, H.HonestRecipe, H.SomeHonestChainSchema)
@@ -178,21 +178,21 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
         folder (chain, inc) s | S.test S.notInverted s = (issue inc chain, 0)
                               | otherwise = (chain, inc + 1)
         issue :: SlotNo -> [blk] -> [blk]
-        issue inc (h : t) = successorBlock Nothing inc h : h : t
+        issue inc (h : t) = issueSuccessorBlock Nothing inc h : h : t
         issue inc [] =
           case pre of
-            [] -> [firstBlock forkNo inc]
-            (h : t) -> successorBlock (Just forkNo) inc h : h : t
+            []      -> [issueFirstBlock forkNo inc]
+            (h : t) -> issueSuccessorBlock (Just forkNo) inc h : h : t
 
 -- | Class of block types for which we can issue test blocks.
 class IssueTestBlock blk where
-  firstBlock
+  issueFirstBlock
     :: Int
     -- ^ The fork number
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
-  successorBlock
+  issueSuccessorBlock
     :: Maybe Int
     -- ^ A new fork number, if this block should fork off the trunk.
     -> SlotNo
@@ -201,11 +201,11 @@ class IssueTestBlock blk where
     -> blk
 
 instance IssueTestBlock TestBlock where
-  firstBlock fork slot =
+  issueFirstBlock fork slot =
     incSlot slot $
       TB.firstBlock $
         fromIntegral fork
-  successorBlock fork slot blk =
+  issueSuccessorBlock fork slot blk =
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk

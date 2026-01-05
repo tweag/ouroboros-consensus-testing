@@ -58,7 +58,6 @@ import           Control.Monad.ST (ST)
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
-import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)

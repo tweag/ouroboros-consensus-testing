@@ -37,8 +37,6 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientHandleCollection)
 import           Ouroboros.Consensus.Node.Genesis (GenesisConfig (..),
                      enableGenesisConfigDefault)
-import           Ouroboros.Consensus.Node.ProtocolInfo
-                     (NumCoreNodes (NumCoreNodes))
 import           Ouroboros.Consensus.Storage.ChainDB.API
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.IOLike
@@ -74,7 +72,6 @@ import           Test.Consensus.PeerSimulator.Trace
 import           Test.Consensus.PointSchedule (BlockFetchTimeout (..))
 import           Test.Consensus.PointSchedule.Peers (PeerId)
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (BlockConfig (TestBlockConfig), TestBlock)
 
 startBlockFetchLogic ::
      forall m blk.

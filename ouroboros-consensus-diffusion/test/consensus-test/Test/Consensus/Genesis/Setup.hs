@@ -19,20 +19,17 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
 import           Control.Tracer (debugTracer, traceWith)
 import           Data.Maybe (mapMaybe)
-import           Ouroboros.Consensus.Block.Abstract (ConvertRawHash, HasHeader,
-                     Header (..))
+import           Ouroboros.Consensus.Block.Abstract (ConvertRawHash, Header)
 import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
                      (BlockSupportsDiffusionPipelining)
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HardFork.Abstract (HasHardForkHistory)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
-import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
 import           Ouroboros.Consensus.Storage.LedgerDB.API
                      (CanUpgradeLedgerTables)
@@ -121,7 +118,7 @@ runGenesisTest' schedulerConfig genesisTest makeProperty =
 -- PeerSchedule', runs them with 'runGenesisTest', check whether the given
 -- property holds on the resulting 'StateView'.
 forAllGenesisTest :: forall blk prop.
-  (Testable prop, HasHeader blk, IssueTestBlock blk
+  (Testable prop
   , Condense (StateView blk)
   , CondenseList (NodeState blk)
   , ShowProxy blk
