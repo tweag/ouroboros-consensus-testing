@@ -31,15 +31,18 @@ import           Control.Monad.State.Strict (State, gets, modify', runState,
                      state)
 import           Control.Tracer (Tracer (Tracer), debugTracer, traceWith)
 import           Data.Bifunctor (first)
+import           Data.Bool (bool)
 import           Data.Foldable as Foldable (foldl', foldr')
-import           Data.List (find, intersperse, mapAccumL, sort, transpose)
+import           Data.List (intersperse, mapAccumL, sort, transpose)
 import           Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty, (<|))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
+import qualified Data.Map as M
 import           Data.Map.Strict ((!?))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Proxy
+import           Data.Monoid (Any (..), Sum (..))
+import qualified Data.Set as S
 import           Data.String (IsString (fromString))
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
@@ -58,7 +61,8 @@ import           Ouroboros.Network.AnchoredFragment (anchor, anchorToSlotNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HeaderHash)
 import           Test.Consensus.BlockTree (BlockTree (btBranches, btTrunk),
-                     BlockTreeBranch (btbSuffix), prettyBlockTree)
+                     BlockTreeBranch (btbPrefix, btbSuffix), deforestBlockTree,
+                     prettyBlockTree)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
 import           Test.Consensus.PointSchedule.Peers (PeerId (..))
@@ -355,21 +359,50 @@ initSlots lastSlot (Range l u) blocks =
     mkSlot num capacity =
       Slot {num = At num, capacity, aspects = []}
 
-hashForkNo :: Proxy blk -> HeaderHash blk -> Word64
-hashForkNo = error "hashForkNo"
+hashForkNo :: AF.HasHeader blk => BlockTree blk -> HeaderHash blk -> Word64
+hashForkNo bt hash =
+  let forkPoints =
+        -- The set of forking nodes. We can count how many of these are in our
+        -- ancestry to determine where we might have forked.
+        S.fromList $ do
+          btb <- btBranches bt
+          pure $ AF.headHash $ btbPrefix btb
+      forkFirstBlocks =
+        -- The set of forked nodes. If any of these is in our ancestry, we are
+        -- not on the trunk.
+        S.fromList $ do
+          btb <- btBranches bt
+          pure $ either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
+   in
+      case
+        -- Fold over each block in the ancestry. Add up how many of them are in
+        -- forkPoints, and determine whether any are in forkFirstBlocks.
+        flip foldMap (
+                maybe mempty AF.toOldestFirst $
+                  M.lookup hash $ deforestBlockTree bt
+                       )
+            $ \blk ->
+              let h = BlockHash $ blockHash blk
+               in ( Any $ S.member h forkFirstBlocks
+                  , Sum $ bool 0 1 $ S.member h forkPoints
+                  )
 
-blockForkNo :: Proxy blk -> ChainHash blk -> Word64
+        of
+        (Any True, Sum x) -> x
+        (Any False, _)    -> 0
+
+blockForkNo :: AF.HasHeader blk => BlockTree blk -> ChainHash blk -> Word64
 blockForkNo pxy = \case
   BlockHash h -> hashForkNo pxy h
   _ -> 0
 
-initBranch :: forall blk. (GetHeader blk, AF.HasHeader blk) => Int -> Range -> AF.AnchoredFragment blk -> BranchSlots blk
-initBranch lastSlot fragRange fragment =
+initBranch :: forall blk. (GetHeader blk, AF.HasHeader blk) => BlockTree blk -> Int -> Range -> AF.AnchoredFragment blk -> BranchSlots blk
+initBranch bt lastSlot fragRange fragment =
   BranchSlots {
     frag = AF.mapAnchoredFragment getHeader fragment,
     slots = initSlots lastSlot fragRange fragment,
     cands = [],
-    forkNo = blockForkNo (Proxy @blk) (AF.headHash fragment)
+    forkNo = blockForkNo bt (AF.headHash fragment)
   }
 
 data TreeSlots blk =
@@ -388,7 +421,7 @@ initTree blockTree =
 
     branches = initFR <$> branchRanges
 
-    initFR = uncurry (initBranch lastSlot)
+    initFR = uncurry (initBranch blockTree lastSlot)
 
     lastSlot = foldr' (max . (to . fst)) 0 (trunkRange : branchRanges)
 
@@ -464,8 +497,8 @@ addForks treeSlots@TreeSlots {branches} =
           }
         s = slotInt (withOrigin 0 (+ 1) (anchorToSlotNo (anchor frag)))
 
-addTipPoint :: forall blk. AF.HasHeader blk => PeerId -> WithOrigin blk -> TreeSlots blk -> TreeSlots blk
-addTipPoint pid (NotOrigin b) TreeSlots {lastSlot, branches} =
+addTipPoint :: forall blk. AF.HasHeader blk => BlockTree blk -> PeerId -> WithOrigin blk -> TreeSlots blk -> TreeSlots blk
+addTipPoint bt pid (NotOrigin b) TreeSlots {lastSlot, branches} =
   TreeSlots {lastSlot, branches = tryBranch <$> branches}
   where
     tryBranch branch@BranchSlots {forkNo, slots}
@@ -477,15 +510,15 @@ addTipPoint pid (NotOrigin b) TreeSlots {lastSlot, branches} =
         update slot =
           slot {aspects = SlotAspect {slotAspect = TipPoint pid, edge = NoEdge} : aspects slot}
 
-    tipForkNo = hashForkNo (Proxy @blk) (blockHash b)
+    tipForkNo = hashForkNo bt (blockHash b)
 
-addTipPoint _ _ treeSlots = treeSlots
+addTipPoint _ _ _ treeSlots = treeSlots
 
-addPoints :: AF.HasHeader blk => Map PeerId (NodeState blk) -> TreeSlots blk -> TreeSlots blk
-addPoints peerPoints treeSlots =
+addPoints :: AF.HasHeader blk => BlockTree blk -> Map PeerId (NodeState blk) -> TreeSlots blk -> TreeSlots blk
+addPoints bt peerPoints treeSlots =
   Foldable.foldl' step treeSlots (Map.toList peerPoints)
   where
-    step z (pid, ap) = addTipPoint pid (nsTip ap) z
+    step z (pid, ap) = addTipPoint bt pid (nsTip ap) z
 
 ----------------------------------------------------------------------------------------------------
 -- Cells
@@ -858,7 +891,7 @@ peerSimStateDiagramWith config PeerSimState {pssBlockTree, pssSelection, pssCand
     frags =
       pruneCells $
       treeCells $
-      addPoints pssPoints $
+      addPoints pssBlockTree pssPoints $
       addForks $
       flip (Foldable.foldl' addCandidateRange) (Map.toList pssCandidates) $
       addFragRange Selection pssSelection $

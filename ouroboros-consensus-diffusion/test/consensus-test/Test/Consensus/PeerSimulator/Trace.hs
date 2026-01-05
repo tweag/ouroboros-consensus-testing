@@ -1,7 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -44,7 +46,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (LoE (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceAddBlockEvent (..))
-import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 import           Ouroboros.Consensus.Util.Enclose
 import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadMonotonicTime,
                      Time (Time), atomically, getMonotonicTime, readTVarIO,
@@ -61,7 +63,6 @@ import           Test.Consensus.PointSchedule.Peers (Peer (Peer), PeerId)
 import           Test.Util.TersePrinting (terseAnchor, terseBlock,
                      terseFragment, terseHFragment, terseHeader, tersePoint,
                      terseRealPoint, terseTip, terseWithOrigin)
-import           Test.Util.TestBlock (TestBlock)
 import           Text.Printf (printf)
 
 -- * Trace events for the peer simulator
@@ -145,9 +146,13 @@ data TraceEvent blk
 -- * 'TestBlock'-specific tracers for the peer simulator
 
 tracerTestBlock ::
-  (IOLike m) =>
+  (IOLike m
+  , AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Condense (NodeState blk)
+  ) =>
   Tracer m String ->
-  m (Tracer m (TraceEvent TestBlock))
+  m (Tracer m (TraceEvent blk))
 tracerTestBlock tracer0 = do
   -- NOTE: Mostly, we read the traces on a per-tick basis, so it is important
   -- that ticks are visually separated. Also, giving the time on each line can
@@ -174,14 +179,18 @@ mkGDDTracerTestBlock ::
 mkGDDTracerTestBlock = contramap TraceGenesisDDEvent
 
 traceEventTestBlockWith ::
-  (MonadMonotonicTime m) =>
+  (MonadMonotonicTime m
+  , AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Condense (NodeState blk)
+  ) =>
   (Time -> m ()) ->
   Tracer m String ->
   -- ^ Underlying, non-time- and tick-aware tracer. To be used only with lines
   -- that should not be prefixed by time.
   Tracer m String ->
   -- ^ Normal, time- and tick-aware tracer. Should be used by default.
-  TraceEvent TestBlock ->
+  TraceEvent blk ->
   m ()
 traceEventTestBlockWith setTickTime tracer0 tracer = \case
     TraceSchedulerEvent traceEvent -> traceSchedulerEventTestBlockWith setTickTime tracer0 tracer traceEvent
@@ -198,11 +207,15 @@ traceEventTestBlockWith setTickTime tracer0 tracer = \case
     TraceOther msg -> traceWith tracer msg
 
 traceSchedulerEventTestBlockWith ::
-  (MonadMonotonicTime m) =>
+  forall blk m.
+  (MonadMonotonicTime m
+  , AF.HasHeader (Header blk)
+  , Condense (NodeState blk)
+  ) =>
   (Time -> m ()) ->
   Tracer m String ->
   Tracer m String ->
-  TraceSchedulerEvent TestBlock ->
+  TraceSchedulerEvent blk ->
   m ()
 traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
     TraceBeginningOfTime ->
@@ -244,10 +257,10 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
       traceWith tracer ("  Node startup complete with selection " ++ terseHFragment selection)
 
   where
-    traceJumpingStates :: [(PeerId, ChainSyncJumpingState m TestBlock)] -> String
+    traceJumpingStates :: forall m blk. AF.HasHeader (Header blk) => [(PeerId, ChainSyncJumpingState m blk)] -> String
     traceJumpingStates = unlines . map (\(pid, state) -> "    " ++ condense pid ++ ": " ++ traceJumpingState state)
 
-    traceJumpingState :: ChainSyncJumpingState m TestBlock -> String
+    traceJumpingState :: forall m blk. AF.HasHeader (Header blk) => ChainSyncJumpingState m blk -> String
     traceJumpingState = \case
       Dynamo initState lastJump ->
         let showInitState = case initState of
@@ -258,12 +271,12 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
           [ "Objector"
           , show initState
           , terseJumpInfo goodJumpInfo
-          , tersePoint @TestBlock (castPoint badPoint)
+          , tersePoint @blk (castPoint badPoint)
           ]
       Disengaged initState -> "Disengaged " ++ show initState
       Jumper _ st -> "Jumper _ " ++ traceJumperState st
 
-    traceJumperState :: ChainSyncJumpingJumperState TestBlock -> String
+    traceJumperState :: forall blk. AF.HasHeader (Header blk) => ChainSyncJumpingJumperState blk -> String
     traceJumperState = \case
       Happy initState mGoodJumpInfo ->
         "Happy " ++ show initState ++ " " ++ maybe "Nothing" terseJumpInfo mGoodJumpInfo
@@ -271,15 +284,16 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
         [ "(FoundIntersection"
         , show initState
         , terseJumpInfo goodJumpInfo
-        , tersePoint @TestBlock $ castPoint point, ")"
+        , tersePoint @blk $ castPoint point, ")"
         ]
       LookingForIntersection goodJumpInfo badJumpInfo -> unwords
         ["(LookingForIntersection", terseJumpInfo goodJumpInfo, terseJumpInfo badJumpInfo, ")"]
 
 traceScheduledServerHandlerEventTestBlockWith ::
+  Condense (NodeState blk) =>
   Tracer m String ->
   String ->
-  TraceScheduledServerHandlerEvent (NodeState TestBlock) TestBlock ->
+  TraceScheduledServerHandlerEvent (NodeState blk) blk ->
   m ()
 traceScheduledServerHandlerEventTestBlockWith tracer unit = \case
     TraceHandling handler state ->
@@ -296,9 +310,12 @@ traceScheduledServerHandlerEventTestBlockWith tracer unit = \case
     traceLines = traceUnitLinesWith tracer unit
 
 traceScheduledChainSyncServerEventTestBlockWith ::
+  ( AF.HasHeader blk
+  , Condense (NodeState blk)
+  ) =>
   Tracer m String ->
   PeerId ->
-  TraceScheduledChainSyncServerEvent (NodeState TestBlock) TestBlock ->
+  TraceScheduledChainSyncServerEvent (NodeState blk) blk ->
   m ()
 traceScheduledChainSyncServerEventTestBlockWith tracer peerId = \case
     TraceHandlerEventCS traceEvent -> traceScheduledServerHandlerEventTestBlockWith tracer unit traceEvent
@@ -337,9 +354,13 @@ traceScheduledChainSyncServerEventTestBlockWith tracer peerId = \case
     traceLines = traceUnitLinesWith tracer unit
 
 traceScheduledBlockFetchServerEventTestBlockWith ::
+  ( AF.HasHeader (Header blk)
+  , AF.HasHeader blk
+  , Condense (NodeState blk)
+  ) =>
   Tracer m String ->
   PeerId ->
-  TraceScheduledBlockFetchServerEvent (NodeState TestBlock) TestBlock ->
+  TraceScheduledBlockFetchServerEvent (NodeState blk) blk ->
   m ()
 traceScheduledBlockFetchServerEventTestBlockWith tracer peerId = \case
     TraceHandlerEventBF traceEvent -> traceScheduledServerHandlerEventTestBlockWith tracer unit traceEvent
@@ -362,7 +383,7 @@ traceScheduledBlockFetchServerEventTestBlockWith tracer peerId = \case
 traceChainDBEventTestBlockWith ::
   (Monad m) =>
   Tracer m String ->
-  ChainDB.TraceEvent TestBlock ->
+  ChainDB.TraceEvent blk ->
   m ()
 traceChainDBEventTestBlockWith tracer = \case
     ChainDB.TraceAddBlockEvent event ->
@@ -392,9 +413,11 @@ traceChainDBEventTestBlockWith tracer = \case
     trace = traceUnitWith tracer "ChainDB"
 
 traceChainSyncClientEventTestBlockWith ::
+  forall blk m.
+  AF.HasHeader (Header blk) =>
   PeerId ->
   Tracer m String ->
-  TraceChainSyncClientEvent TestBlock ->
+  TraceChainSyncClientEvent blk ->
   m ()
 traceChainSyncClientEventTestBlockWith pid tracer = \case
     TraceRolledBack point ->
@@ -437,15 +460,15 @@ traceChainSyncClientEventTestBlockWith pid tracer = \case
   where
     trace = traceUnitWith tracer ("ChainSyncClient " ++ condense pid)
 
-    showInstr :: Instruction TestBlock -> String
+    showInstr :: Instruction blk -> String
     showInstr = \case
       JumpInstruction (JumpTo ji) -> "JumpTo " ++ terseJumpInfo ji
       JumpInstruction (JumpToGoodPoint ji) -> "JumpToGoodPoint " ++ terseJumpInfo ji
       RunNormally -> "RunNormally"
       Restart -> "Restart"
 
-terseJumpInfo :: JumpInfo TestBlock -> String
-terseJumpInfo ji = tersePoint @TestBlock (castPoint $ headPoint $ jTheirFragment ji)
+terseJumpInfo :: forall blk. AF.HasHeader (Header blk) => JumpInfo blk -> String
+terseJumpInfo ji = undefined "tersePoint @blk (castPoint $ headPoint $ jTheirFragment ji)"
 
 traceChainSyncClientTerminationEventTestBlockWith ::
   PeerId ->
@@ -483,7 +506,7 @@ traceChainSyncSendRecvEventTestBlockWith ::
   PeerId ->
   String ->
   Tracer m String ->
-  TraceSendRecv (ChainSync (Header TestBlock) (Point TestBlock) (Tip TestBlock)) ->
+  TraceSendRecv (ChainSync (Header blk) (Point blk) (Tip blk)) ->
   m ()
 traceChainSyncSendRecvEventTestBlockWith pid ptp tracer = \case
     TraceSendMsg amsg -> traceMsg "send" amsg
@@ -514,7 +537,7 @@ traceDbjEventWith tracer = traceWith tracer . \case
 traceCsjEventWith ::
   PeerId ->
   Tracer m String ->
-  TraceEventCsj PeerId TestBlock ->
+  TraceEventCsj PeerId blk ->
   m ()
 traceCsjEventWith peer tracer = f . \case
     BecomingObjector mbOld -> "is now the Objector" ++ replacing mbOld
@@ -538,7 +561,7 @@ traceCsjEventWith peer tracer = f . \case
       Nothing -> ""
       Just old -> ", replacing: " ++ condense old
 
-prettyDensityBounds :: [(PeerId, DensityBounds TestBlock)] -> [String]
+prettyDensityBounds :: forall blk. AF.HasHeader (Header blk) => [(PeerId, DensityBounds blk)] -> [String]
 prettyDensityBounds bounds =
   showPeers (second showBounds <$> bounds)
   where
@@ -555,7 +578,7 @@ prettyDensityBounds bounds =
         -- the density comparison should not be applied to two peers if they share any headers after the LoE fragment.
         lastPoint =
           "point: " ++
-          tersePoint (castPoint @(Header TestBlock) @TestBlock (AF.lastPoint clippedFragment)) ++
+          tersePoint (castPoint @(Header blk) @blk (AF.lastPoint clippedFragment)) ++
           ", "
 
         showLatestSlot = \case
@@ -569,7 +592,7 @@ showPeers :: [(PeerId, String)] -> [String]
 showPeers = map (\ (peer, v) -> "        " ++ condense peer ++ ": " ++ v)
 
 -- * Other utilities
-terseGDDEvent :: TraceGDDEvent PeerId TestBlock -> String
+terseGDDEvent :: forall blk. AF.HasHeader (Header blk) => TraceGDDEvent PeerId blk -> String
 terseGDDEvent = \case
   TraceGDDDisconnected peers -> "GDD | Disconnected " <> show (NE.toList peers)
   TraceGDDDebug GDDDebugInfo {
@@ -585,7 +608,7 @@ terseGDDEvent = \case
       "      Selection: " ++ terseHFragment curChain,
       "      Candidates:"
       ] ++
-      showPeers (second (tersePoint @TestBlock . castPoint . AF.headPoint) <$> candidates) ++
+      showPeers (second (tersePoint @blk . castPoint . AF.headPoint) <$> candidates) ++
       [
       "      Candidate suffixes (bounds):"
       ] ++
@@ -593,10 +616,10 @@ terseGDDEvent = \case
       ["      Density bounds:"] ++
       prettyDensityBounds bounds ++
       ["      New candidate tips:"] ++
-      showPeers (second (tersePoint @TestBlock . castPoint . AF.headPoint) <$> candidateSuffixes) ++
+      showPeers (second (tersePoint @blk . castPoint . AF.headPoint) <$> candidateSuffixes) ++
       [
         "      Losing peers: " ++ show losingPeers,
-      "      Setting loeFrag: " ++ terseAnchor @TestBlock (AF.castAnchor loeHead)
+      "      Setting loeFrag: " ++ terseAnchor @blk (AF.castAnchor loeHead)
       ]
   where
 

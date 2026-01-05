@@ -35,7 +35,8 @@ import           Ouroboros.Network.AnchoredFragment (anchor, anchorToSlotNo,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Driver.Limits
                      (ProtocolLimitFailure (ExceededTimeLimit))
-import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..))
+import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
+                     isAncestorOf)
 import           Test.Consensus.Network.AnchoredFragment.Extras (slotLength)
 import           Test.Consensus.PeerSimulator.StateView
                      (PeerSimulatorResult (..), StateView (..), pscrToException)
@@ -43,8 +44,7 @@ import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (..))
 import           Test.Consensus.PointSchedule.SinglePeer (SchedulePoint (..))
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, TestHash (TestHash),
-                     isAncestorOf)
+import           Test.Util.TestBlock (TestHash (TestHash))
 
 -- | Interesting categories to classify test inputs
 data Classifiers =
@@ -211,8 +211,8 @@ data ScheduleClassifiers =
     allAdversariesTrivial :: Bool
   }
 
-scheduleClassifiers :: forall blk. GenesisTestFull blk -> ScheduleClassifiers
-scheduleClassifiers GenesisTest{gtSchedule = schedule} =
+scheduleClassifiers :: forall blk. (AF.HasHeader blk, Eq blk) => GenesisTestFull blk -> ScheduleClassifiers
+scheduleClassifiers GenesisTest{gtSchedule = schedule, gtBlockTree} =
   ScheduleClassifiers
     { adversaryRollback
     , honestRollback
@@ -226,18 +226,14 @@ scheduleClassifiers GenesisTest{gtSchedule = schedule} =
       where
         peerSch = sortOn fst peerSch'
         isSorted :: [WithOrigin blk] -> Bool
-        isSorted l = undefined -- and [x `ancestor` y | (x:y:_) <- tails l]
-        ancestor Origin  Origin  = True
-        ancestor Origin  (At _)  = True
-        ancestor (At _)  Origin  = False
-        ancestor (At p1) (At p2) = p1 `isAncestorOf` p2
+        isSorted l = and [x `ancestor` y | (x:y:_) <- tails l]
+        ancestor = isAncestorOf gtBlockTree
         tips, headers, blocks :: [WithOrigin blk]
         (tips, headers, blocks) = foldMap
           (\(_, point) -> case point of
             ScheduleTipPoint blk    -> (pure blk, mempty, mempty)
             ScheduleHeaderPoint blk -> (mempty, pure blk, mempty)
             ScheduleBlockPoint blk  -> (mempty, mempty, pure blk)
-            _                       -> mempty
           )
           peerSch
 

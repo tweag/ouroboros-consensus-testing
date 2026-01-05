@@ -570,6 +570,7 @@ runPointSchedule ::
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
   , Eq (Header blk)
+  , Eq blk
   ) =>
   SchedulerConfig ->
   GenesisTestFull blk ->

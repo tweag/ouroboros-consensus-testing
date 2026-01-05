@@ -123,7 +123,9 @@ data PeerSimulatorResources m blk =
 
 -- | Create 'ChainSyncServerHandlers' for our default implementation using 'NodeState'.
 makeChainSyncServerHandlers ::
-  (IOLike m, GetHeader blk, AF.HasHeader blk) =>
+  (IOLike m, GetHeader blk, AF.HasHeader blk
+  , Eq blk
+  ) =>
   StrictTVar m (Point blk) ->
   BlockTree blk ->
   ChainSyncServerHandlers m (NodeState blk) blk
@@ -139,7 +141,9 @@ makeChainSyncServerHandlers currentIntersection blockTree =
 --
 -- TODO move server construction to Run?
 makeChainSyncResources ::
-  (IOLike m, GetHeader blk, AF.HasHeader blk) =>
+  (IOLike m, GetHeader blk, AF.HasHeader blk
+  , Eq blk
+  ) =>
   STM m () ->
   SharedResources m blk ->
   m (ChainSyncResources m blk)
@@ -151,7 +155,9 @@ makeChainSyncResources csrTickStarted SharedResources {srPeerId, srTracer, srBlo
   pure ChainSyncResources {csrTickStarted, csrServer, csrCurrentIntersection}
 
 makeBlockFetchResources ::
-  (IOLike m, AF.HasHeader blk) =>
+  (IOLike m, AF.HasHeader blk
+  , Eq blk
+  ) =>
   STM m () ->
   SharedResources m blk ->
   BlockFetchResources m blk
@@ -163,7 +169,7 @@ makeBlockFetchResources bfrTickStarted SharedResources {srPeerId, srTracer, srBl
   where
     handlers = BlockFetchServerHandlers {
       bfshBlockFetch = handlerBlockFetch srBlockTree,
-      bfshSendBlocks = handlerSendBlocks
+      bfshSendBlocks = handlerSendBlocks srBlockTree
     }
     bfrServer =
       runScheduledBlockFetchServer srPeerId bfrTickStarted (readTVar srCurrentState)
@@ -212,7 +218,9 @@ updateState srCurrentState =
 --
 -- TODO pass BFR and CSR to runScheduled... rather than passing the individual resources in and storing the result
 makePeerResources ::
-  (IOLike m, AF.HasHeader blk, GetHeader blk) =>
+  (IOLike m, AF.HasHeader blk, GetHeader blk
+  , Eq blk
+  ) =>
   Tracer m (TraceEvent blk) ->
   BlockTree blk ->
   PeerId ->
@@ -227,7 +235,9 @@ makePeerResources srTracer srBlockTree srPeerId = do
 
 -- | Create resources for all given peers operating on the given block tree.
 makePeerSimulatorResources ::
-  (IOLike m, LedgerSupportsProtocol blk) =>
+  (IOLike m, LedgerSupportsProtocol blk
+  , Eq blk
+  ) =>
   Tracer m (TraceEvent blk) ->
   BlockTree blk ->
   NonEmpty PeerId ->

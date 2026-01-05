@@ -84,6 +84,7 @@ runGenesisTest ::
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
   , Eq (Header blk)
+  , Eq blk
   )
   => SchedulerConfig ->
   GenesisTestFull blk ->
@@ -134,6 +135,7 @@ forAllGenesisTest :: forall blk prop.
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
   , Eq (Header blk)
+  , Eq blk
   ) =>
   Gen (GenesisTestFull blk) ->
   SchedulerConfig ->
