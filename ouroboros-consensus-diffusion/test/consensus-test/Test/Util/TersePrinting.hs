@@ -1,12 +1,15 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 -- | Helpers for printing various objects in a terse way. Terse printing is
 -- similar to that provided by the 'Condense' typeclass except it can be
 -- sometimes even more compact and it is very specific to tests.
 module Test.Util.TersePrinting (
-    terseAnchor
+    Terse (..)
+  , terseAnchor
   , terseBlock
   , terseFragment
   , terseHFragment
@@ -58,48 +61,48 @@ terseBlockSlotHash _ (BlockNo bno) (SlotNo sno) hash =
     renderGroup (1, e) = show e
     renderGroup (n, e) = show n ++ "x" ++ show e
 
--- | Same as 'terseBlockSlotHash' except only the last element of the hash
--- shows, if it is non-zero. This makes sense when showing a fragment.
-terseBlockSlotHash' :: Proxy blk -> BlockNo -> SlotNo -> HeaderHash blk -> String
-terseBlockSlotHash' _ (BlockNo bno) (SlotNo sno) hash =
-    show bno ++ "-" ++ show sno ++ error "renderHashSuffix hash"
-  where
-    renderHashSuffix (forkNo :| _)
-      | forkNo == 0 = ""
-      | otherwise = "[" ++ show forkNo ++ "]"
+-- -- | Same as 'terseBlockSlotHash' except only the last element of the hash
+-- -- shows, if it is non-zero. This makes sense when showing a fragment.
+-- terseBlockSlotHash' :: Proxy blk -> BlockNo -> SlotNo -> HeaderHash blk -> String
+-- terseBlockSlotHash' _ (BlockNo bno) (SlotNo sno) hash =
+--     show bno ++ "-" ++ show sno ++ error "renderHashSuffix hash"
+--   where
+--     renderHashSuffix (forkNo :| _)
+--       | forkNo == 0 = ""
+--       | otherwise = "[" ++ show forkNo ++ "]"
 
--- | Print a 'TestBlock' as @block-slot[hash]@. @hash@ only shows if there is a
--- non-zero element in it. When it shows, it shows in a compact form. For
--- instance, the hash @[0,0,1,0,0,0]@ shows as @[2x0,1,3x0]@.
-terseBlock :: forall blk. HasHeader blk => blk -> String
-terseBlock block = terseBlockSlotHash (Proxy @blk) (blockNo block) (blockSlot block) (blockHash block)
+-- -- | Print a 'TestBlock' as @block-slot[hash]@. @hash@ only shows if there is a
+-- -- non-zero element in it. When it shows, it shows in a compact form. For
+-- -- instance, the hash @[0,0,1,0,0,0]@ shows as @[2x0,1,3x0]@.
+-- terseBlock :: forall blk. HasHeader blk => blk -> String
+-- terseBlock block = terseBlockSlotHash (Proxy @blk) (blockNo block) (blockSlot block) (blockHash block)
 
--- | Same as 'terseBlock' except only the last element of the hash shows, if it
--- is non-zero. This makes sense when showing a fragment.
-terseBlock' :: forall blk. HasHeader blk => blk -> String
-terseBlock' block = terseBlockSlotHash' (Proxy @blk) (blockNo block) (blockSlot block) (blockHash block)
+-- -- | Same as 'terseBlock' except only the last element of the hash shows, if it
+-- -- is non-zero. This makes sense when showing a fragment.
+-- terseBlock' :: forall blk. HasHeader blk => blk -> String
+-- terseBlock' block = terseBlockSlotHash' (Proxy @blk) (blockNo block) (blockSlot block) (blockHash block)
 
 -- | Same as 'terseBlock' for headers.
-terseHeader :: Header blk -> String
-terseHeader (block) = error "terseBlock block"
+-- terseHeader :: Header blk -> String
+-- terseHeader (block) = terseBlock block
 
--- | Same as 'terseBlock' for points. Genesis shows as @G@.
-tersePoint :: Point blk -> String
-tersePoint GenesisPoint           = "G"
-tersePoint (BlockPoint slot hash) = error "tersePoint"
-  -- terseBlockSlotHash (BlockNo (fromIntegral (length (unTestHash hash)))) slot hash
+-- -- | Same as 'terseBlock' for points. Genesis shows as @G@.
+-- tersePoint :: Point blk -> String
+-- tersePoint GenesisPoint           = "G"
+-- tersePoint (BlockPoint slot hash) = error "tersePoint"
+--   -- terseBlockSlotHash (BlockNo (fromIntegral (length (unTestHash hash)))) slot hash
 
-terseRealPoint :: RealPoint blk -> String
+terseRealPoint :: Terse blk => RealPoint blk -> String
 terseRealPoint = tersePoint . realPointToPoint
 
 -- | Same as 'tersePoint' for anchors.
-terseAnchor :: Anchor blk -> String
+terseAnchor :: Terse blk => Anchor blk -> String
 terseAnchor = tersePoint . anchorToPoint
 
--- | Same as 'tersePoint' for tips.
-terseTip :: forall blk. Tip blk -> String
-terseTip TipGenesis         = "G"
-terseTip (Tip sno hash bno) = terseBlockSlotHash (Proxy @blk) bno sno hash
+-- -- | Same as 'tersePoint' for tips.
+-- terseTip :: forall blk. Tip blk -> String
+-- terseTip TipGenesis         = "G"
+-- terseTip (Tip sno hash bno) = terseBlockSlotHash (Proxy @blk) bno sno hash
 
 -- | Given a printer for elements of type @a@, prints a @WithOrigin a@ in a
 -- terse way. Origin shows as @G@.
@@ -107,26 +110,37 @@ terseWithOrigin :: (a -> String) -> WithOrigin a -> String
 terseWithOrigin _ Origin      = "G"
 terseWithOrigin terseA (At a) = terseA a
 
--- | Print a fragment of 'TestBlock' in a terse way. This shows as @anchor |
--- block ...@ where @anchor@ is printed with 'terseAnchor' and @block@s are
--- printed with @terseBlock'@; in particular, only the last element of the hash
--- shows and only when it is non-zero.
-terseFragment :: HasHeader blk => AnchoredFragment blk -> String
-terseFragment fragment =
-    terseAnchor (anchor fragment) ++ renderBlocks
-  where
-    renderBlocks = case toOldestFirst fragment of
-      []     -> ""
-      blocks -> " | " ++ unwords (map terseBlock' blocks)
+class Terse blk where
+  tersePoint :: Point blk -> String
+  terseFragment :: AnchoredFragment blk -> String
+  terseHFragment :: AnchoredFragment (Header blk) -> String
+  terseHWTFragment :: AnchoredFragment (HeaderWithTime blk) -> String
+  terseBlock :: blk -> String
+  terseTip :: Tip blk -> String
+  terseHeader :: Header blk -> String
+
+instance Terse TestBlock where
+
+-- -- | Print a fragment of 'TestBlock' in a terse way. This shows as @anchor |
+-- -- block ...@ where @anchor@ is printed with 'terseAnchor' and @block@s are
+-- -- printed with @terseBlock'@; in particular, only the last element of the hash
+-- -- shows and only when it is non-zero.
+-- terseFragment :: HasHeader blk => AnchoredFragment blk -> String
+-- terseFragment fragment =
+--     terseAnchor (anchor fragment) ++ renderBlocks
+--   where
+--     renderBlocks = case toOldestFirst fragment of
+--       []     -> ""
+--       blocks -> " | " ++ unwords (map terseBlock' blocks)
 
 -- | Same as 'terseFragment' for fragments of headers.
-terseHFragment :: AnchoredFragment (Header blk) -> String
-terseHFragment = error "terseFragment . mapAnchoredFragment (\\(TestHeader block) -> block)"
+-- terseHFragment :: AnchoredFragment (Header blk) -> String
+-- terseHFragment = error "terseFragment . mapAnchoredFragment (\\(TestHeader block) -> block)"
 
 -- | Same as 'terseFragment' for fragments of headers with time.
 --
-terseHWTFragment :: AnchoredFragment (HeaderWithTime blk) -> String
-terseHWTFragment = error "terseHFragment . mapAnchoredFragment hwtHeader"
+-- terseHWTFragment :: AnchoredFragment (HeaderWithTime blk) -> String
+-- terseHWTFragment = error "terseHFragment . mapAnchoredFragment hwtHeader"
 
 -- | Same as 'terseWithOrigin' for 'Maybe'.
 terseMaybe :: (a -> String) -> Maybe a -> String

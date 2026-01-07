@@ -92,7 +92,7 @@ import           Test.Consensus.PointSchedule.SinglePeer.Indices
 import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta))
 import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
-import           Test.Util.TersePrinting (terseFragment)
+import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
 
 
@@ -538,7 +538,7 @@ data RunGenesisTestResult blk = RunGenesisTestResult
     rgtrStateView :: StateView blk
   }
 
-prettyGenesisTest :: HasHeader blk => (schedule -> [String]) -> GenesisTest blk schedule -> [String]
+prettyGenesisTest :: (HasHeader blk, Terse blk) => (schedule -> [String]) -> GenesisTest blk schedule -> [String]
 prettyGenesisTest prettySchedule genesisTest =
   [ "GenesisTest:"
   , "  gtSecurityParam: " ++ show (maxRollbacks gtSecurityParam)

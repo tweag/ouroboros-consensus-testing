@@ -54,6 +54,7 @@ import           Test.Util.QuickCheck (forAllGenRunShrinkCheck)
 import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.Tracer (recordingTracerM)
 import           Text.Printf (printf)
+import           Test.Util.TersePrinting (Terse)
 
 
 -- | Like 'runSimStrictShutdown' but fail when the main thread terminates if
@@ -82,6 +83,8 @@ runGenesisTest ::
   , CanUpgradeLedgerTables (LedgerState blk)
   , Eq (Header blk)
   , Eq blk
+  , Terse blk
+  , Condense (NodeState blk)
   )
   => SchedulerConfig ->
   GenesisTestFull blk ->
@@ -93,7 +96,7 @@ runGenesisTest schedulerConfig genesisTest =
 
     traceLinesWith tracer $ prettyGenesisTest prettyPointSchedule genesisTest
 
-    rgtrStateView <- runPointSchedule schedulerConfig genesisTest =<< error "tracerTestBlock tracer"
+    rgtrStateView <- runPointSchedule schedulerConfig genesisTest =<< tracerTestBlock tracer
     traceWith tracer (condense rgtrStateView)
     rgtrTrace <- unlines <$> getTrace
 
@@ -133,6 +136,8 @@ forAllGenesisTest :: forall blk prop.
   , CanUpgradeLedgerTables (LedgerState blk)
   , Eq (Header blk)
   , Eq blk
+  , Terse blk
+  , Condense (NodeState blk)
   ) =>
   Gen (GenesisTestFull blk) ->
   SchedulerConfig ->

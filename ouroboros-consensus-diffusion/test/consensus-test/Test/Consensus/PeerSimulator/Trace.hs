@@ -60,7 +60,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync,
                      Message (..))
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (Peer), PeerId)
-import           Test.Util.TersePrinting (terseAnchor, terseBlock,
+import           Test.Util.TersePrinting (Terse(..), terseAnchor, terseBlock,
                      terseFragment, terseHFragment, terseHeader, tersePoint,
                      terseRealPoint, terseTip, terseWithOrigin)
 import           Text.Printf (printf)
@@ -150,6 +150,7 @@ tracerTestBlock ::
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Condense (NodeState blk)
+  , Terse blk
   ) =>
   Tracer m String ->
   m (Tracer m (TraceEvent blk))
@@ -183,6 +184,7 @@ traceEventTestBlockWith ::
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Condense (NodeState blk)
+  , Terse blk
   ) =>
   (Time -> m ()) ->
   Tracer m String ->
@@ -211,6 +213,7 @@ traceSchedulerEventTestBlockWith ::
   (MonadMonotonicTime m
   , AF.HasHeader (Header blk)
   , Condense (NodeState blk)
+  , Terse blk
   ) =>
   (Time -> m ()) ->
   Tracer m String ->
@@ -257,10 +260,10 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
       traceWith tracer ("  Node startup complete with selection " ++ terseHFragment selection)
 
   where
-    traceJumpingStates :: forall m blk. AF.HasHeader (Header blk) => [(PeerId, ChainSyncJumpingState m blk)] -> String
+    traceJumpingStates :: forall m. [(PeerId, ChainSyncJumpingState m blk)] -> String
     traceJumpingStates = unlines . map (\(pid, state) -> "    " ++ condense pid ++ ": " ++ traceJumpingState state)
 
-    traceJumpingState :: forall m blk. AF.HasHeader (Header blk) => ChainSyncJumpingState m blk -> String
+    traceJumpingState :: forall m. ChainSyncJumpingState m blk -> String
     traceJumpingState = \case
       Dynamo initState lastJump ->
         let showInitState = case initState of
@@ -276,7 +279,7 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
       Disengaged initState -> "Disengaged " ++ show initState
       Jumper _ st -> "Jumper _ " ++ traceJumperState st
 
-    traceJumperState :: forall blk. AF.HasHeader (Header blk) => ChainSyncJumpingJumperState blk -> String
+    traceJumperState :: ChainSyncJumpingJumperState blk -> String
     traceJumperState = \case
       Happy initState mGoodJumpInfo ->
         "Happy " ++ show initState ++ " " ++ maybe "Nothing" terseJumpInfo mGoodJumpInfo
@@ -312,6 +315,7 @@ traceScheduledServerHandlerEventTestBlockWith tracer unit = \case
 traceScheduledChainSyncServerEventTestBlockWith ::
   ( AF.HasHeader blk
   , Condense (NodeState blk)
+  , Terse blk
   ) =>
   Tracer m String ->
   PeerId ->
@@ -357,6 +361,7 @@ traceScheduledBlockFetchServerEventTestBlockWith ::
   ( AF.HasHeader (Header blk)
   , AF.HasHeader blk
   , Condense (NodeState blk)
+  , Terse blk
   ) =>
   Tracer m String ->
   PeerId ->
@@ -382,6 +387,7 @@ traceScheduledBlockFetchServerEventTestBlockWith tracer peerId = \case
 
 traceChainDBEventTestBlockWith ::
   (Monad m) =>
+  Terse blk =>
   Tracer m String ->
   ChainDB.TraceEvent blk ->
   m ()
@@ -415,6 +421,7 @@ traceChainDBEventTestBlockWith tracer = \case
 traceChainSyncClientEventTestBlockWith ::
   forall blk m.
   AF.HasHeader (Header blk) =>
+  Terse blk =>
   PeerId ->
   Tracer m String ->
   TraceChainSyncClientEvent blk ->
@@ -503,6 +510,7 @@ traceBlockFetchClientTerminationEventTestBlockWith pid tracer = \case
 -- | Trace all the SendRecv events of the ChainSync mini-protocol.
 traceChainSyncSendRecvEventTestBlockWith ::
   Applicative m =>
+  Terse blk =>
   PeerId ->
   String ->
   Tracer m String ->
@@ -535,6 +543,7 @@ traceDbjEventWith tracer = traceWith tracer . \case
     RotatedDynamo old new -> "Rotated dynamo from " ++ condense old ++ " to " ++ condense new
 
 traceCsjEventWith ::
+  Terse blk =>
   PeerId ->
   Tracer m String ->
   TraceEventCsj PeerId blk ->
@@ -561,7 +570,7 @@ traceCsjEventWith peer tracer = f . \case
       Nothing -> ""
       Just old -> ", replacing: " ++ condense old
 
-prettyDensityBounds :: forall blk. AF.HasHeader (Header blk) => [(PeerId, DensityBounds blk)] -> [String]
+prettyDensityBounds :: forall blk. (AF.HasHeader (Header blk), Terse blk) => [(PeerId, DensityBounds blk)] -> [String]
 prettyDensityBounds bounds =
   showPeers (second showBounds <$> bounds)
   where
@@ -592,7 +601,7 @@ showPeers :: [(PeerId, String)] -> [String]
 showPeers = map (\ (peer, v) -> "        " ++ condense peer ++ ": " ++ v)
 
 -- * Other utilities
-terseGDDEvent :: forall blk. AF.HasHeader (Header blk) => TraceGDDEvent PeerId blk -> String
+terseGDDEvent :: forall blk. (AF.HasHeader (Header blk), Terse blk) => TraceGDDEvent PeerId blk -> String
 terseGDDEvent = \case
   TraceGDDDisconnected peers -> "GDD | Disconnected " <> show (NE.toList peers)
   TraceGDDDebug GDDDebugInfo {
