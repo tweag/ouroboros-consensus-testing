@@ -389,8 +389,8 @@ hashForkNo bt hash =
         Nothing     -> 0
 
 blockForkNo :: AF.HasHeader blk => BlockTree blk -> ChainHash blk -> Word64
-blockForkNo pxy = \case
-  BlockHash h -> hashForkNo pxy h
+blockForkNo bt = \case
+  BlockHash h -> hashForkNo bt h
   _ -> 0
 
 initBranch :: forall blk. (GetHeader blk, AF.HasHeader blk) => BlockTree blk -> Int -> Range -> AF.AnchoredFragment blk -> BranchSlots blk
