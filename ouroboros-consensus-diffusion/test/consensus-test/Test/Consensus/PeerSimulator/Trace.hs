@@ -22,6 +22,7 @@ module Test.Consensus.PeerSimulator.Trace (
   , tracerTestBlock
   ) where
 
+import Data.Typeable (Typeable)
 import           Control.Tracer (Tracer (Tracer), contramap, traceWith)
 import           Data.Bifunctor (second)
 import           Data.List (intersperse)
@@ -214,6 +215,7 @@ traceSchedulerEventTestBlockWith ::
   , AF.HasHeader (Header blk)
   , Condense (NodeState blk)
   , Terse blk
+  , Typeable blk
   ) =>
   (Time -> m ()) ->
   Tracer m String ->
@@ -420,8 +422,10 @@ traceChainDBEventTestBlockWith tracer = \case
 
 traceChainSyncClientEventTestBlockWith ::
   forall blk m.
-  AF.HasHeader (Header blk) =>
-  Terse blk =>
+  ( AF.HasHeader (Header blk)
+  , Terse blk
+  , Typeable blk
+  ) =>
   PeerId ->
   Tracer m String ->
   TraceChainSyncClientEvent blk ->
@@ -474,8 +478,8 @@ traceChainSyncClientEventTestBlockWith pid tracer = \case
       RunNormally -> "RunNormally"
       Restart -> "Restart"
 
-terseJumpInfo :: forall blk. AF.HasHeader (Header blk) => JumpInfo blk -> String
-terseJumpInfo ji = undefined "tersePoint @blk (castPoint $ headPoint $ jTheirFragment ji)"
+terseJumpInfo :: forall blk. (AF.HasHeader (Header blk), Terse blk, Typeable blk) => JumpInfo blk -> String
+terseJumpInfo ji = tersePoint @blk (castPoint $ headPoint $ jTheirFragment ji)
 
 traceChainSyncClientTerminationEventTestBlockWith ::
   PeerId ->
