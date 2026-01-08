@@ -26,7 +26,6 @@ module Test.Consensus.PeerSimulator.StateDiagram (
 import           Cardano.Slotting.Block (BlockNo (BlockNo))
 import           Cardano.Slotting.Slot (SlotNo (SlotNo), WithOrigin (..),
                      fromWithOrigin, withOrigin)
-import           Control.Applicative (asum)
 import           Control.Monad (guard)
 import           Control.Monad.State.Strict (State, gets, modify', runState,
                      state)
@@ -40,6 +39,7 @@ import           Data.Map (Map)
 import           Data.Map.Strict ((!?))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Monoid (Last (..))
 import           Data.String (IsString (fromString))
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
@@ -373,20 +373,17 @@ hashForkNo bt hash =
   let forkFirstBlocks =
         -- A map assigning numbers to forked nodes. If any of these is in our
         -- ancestry, we are not on the trunk and have a fork number.
-        Map.fromList . flip zip [1..] $ do
-          btb <- btBranches bt
-          pure $ either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
-      blockAncestry = maybe mempty AF.toOldestFirst $ Map.lookup hash $ deforestBlockTree bt
+        Map.fromList $ do
+          (btb, ix) <- zip (btBranches bt) [1..]
+          -- The first block is a branch is the /last/ (i.e. leftmost or oldest) one.
+          let firstBlockHash = either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
+          pure $ (firstBlockHash, ix)
+      blockAncestry = foldMap AF.toOldestFirst $ Map.lookup hash $ deforestBlockTree bt
    in
-      case
-        -- Look for the first forked node in the ancestry.
-        asum . flip fmap  blockAncestry
-            $ \blk ->
-              let h = BlockHash $ blockHash blk
-               in Map.lookup h forkFirstBlocks
-        of
-        Just forkNo -> forkNo
-        Nothing     -> 0
+      -- Get the fork number of the most recent forked node in the ancestry.
+      fromMaybe 0 $ getLast $ flip foldMap blockAncestry $
+        \blk -> Last $ let h = BlockHash $ blockHash blk
+                        in Map.lookup h forkFirstBlocks
 
 blockForkNo :: AF.HasHeader blk => BlockTree blk -> ChainHash blk -> Word64
 blockForkNo bt = \case
