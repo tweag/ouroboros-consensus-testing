@@ -372,10 +372,14 @@ hashForkNo :: AF.HasHeader blk => BlockTree blk -> HeaderHash blk -> Word64
 hashForkNo bt hash =
   let forkFirstBlocks =
         -- A map assigning numbers to forked nodes. If any of these is in our
-        -- ancestry, we are not on the trunk and have a fork number.
+        -- ancestry, we are on a branch and have a fork number.
         Map.fromList $ do
+          -- `btBranches` are not sorted in a meaningful way, so the fork
+          -- numbers assigned here are meant only to distinguish them.
           (btb, ix) <- zip (btBranches bt) [1..]
-          -- The first block is a branch is the /last/ (i.e. leftmost or oldest) one.
+          -- The first block in a branch is the /last/ (i.e. leftmost or oldest) one.
+          -- See the documentation of `Test.Util.TestBlock.TestHash`
+          -- in relation to this order.
           let firstBlockHash = either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
           pure $ (firstBlockHash, ix)
       blockAncestry = foldMap AF.toNewestFirst $ Map.lookup hash $ deforestBlockTree bt
