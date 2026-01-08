@@ -39,7 +39,7 @@ import           Data.Map (Map)
 import           Data.Map.Strict ((!?))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Monoid (Last (..))
+import           Data.Monoid (First (..))
 import           Data.String (IsString (fromString))
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
@@ -378,11 +378,11 @@ hashForkNo bt hash =
           -- The first block is a branch is the /last/ (i.e. leftmost or oldest) one.
           let firstBlockHash = either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
           pure $ (firstBlockHash, ix)
-      blockAncestry = foldMap AF.toOldestFirst $ Map.lookup hash $ deforestBlockTree bt
+      blockAncestry = foldMap AF.toNewestFirst $ Map.lookup hash $ deforestBlockTree bt
    in
       -- Get the fork number of the most recent forked node in the ancestry.
-      fromMaybe 0 $ getLast $ flip foldMap blockAncestry $
-        \blk -> Last $ let h = BlockHash $ blockHash blk
+      fromMaybe 0 $ getFirst $ flip foldMap blockAncestry $
+        \blk -> First $ let h = BlockHash $ blockHash blk
                         in Map.lookup h forkFirstBlocks
 
 blockForkNo :: AF.HasHeader blk => BlockTree blk -> ChainHash blk -> Word64
