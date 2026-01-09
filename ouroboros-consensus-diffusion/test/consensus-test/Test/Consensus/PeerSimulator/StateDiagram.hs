@@ -31,18 +31,15 @@ import           Control.Monad.State.Strict (State, gets, modify', runState,
                      state)
 import           Control.Tracer (Tracer (Tracer), debugTracer, traceWith)
 import           Data.Bifunctor (first)
-import           Data.Bool (bool)
 import           Data.Foldable as Foldable (foldl', foldr')
 import           Data.List (intersperse, mapAccumL, sort, transpose)
 import           Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty, (<|))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
-import qualified Data.Map as M
 import           Data.Map.Strict ((!?))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Monoid (Any (..), Sum (..))
-import qualified Data.Set as S
+import           Data.Monoid (First (..))
 import           Data.String (IsString (fromString))
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
@@ -61,7 +58,7 @@ import           Ouroboros.Network.AnchoredFragment (anchor, anchorToSlotNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HeaderHash)
 import           Test.Consensus.BlockTree (BlockTree (btBranches, btTrunk),
-                     BlockTreeBranch (btbPrefix, btbSuffix), deforestBlockTree,
+                     BlockTreeBranch (btbSuffix), deforestBlockTree,
                      prettyBlockTree)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
@@ -359,41 +356,42 @@ initSlots lastSlot (Range l u) blocks =
     mkSlot num capacity =
       Slot {num = At num, capacity, aspects = []}
 
+-- | Get the fork number of the 'BlockTreeBranch' a block is on. /Some/ fork
+-- numbers are generated during the creation of the test 'BlockTree' in
+-- 'Test.Consensus.Genesis.Setup.GenChains.genChainsWithExtraHonestPeers'.
+-- There, for 'TestBlock's, these fork numbers are stored in the 'TestHash'
+-- by the 'IssueTestBlock' operations.
+-- Here, new fork numbers are created so that the pretty printing machinery
+-- works independently of the block type; this poses no problem because the
+-- exact fork numbers stored in 'TestBlock's are irrelevant as long as they
+-- uniquely determine each 'BlockTreeBranch'.
+--
+-- POSTCONDITION: All blocks on the same branch suffix share fork number.
+-- POSTCONDITION: Each 'BlockTreeBranch' has a distinct fork number.
 hashForkNo :: AF.HasHeader blk => BlockTree blk -> HeaderHash blk -> Word64
 hashForkNo bt hash =
-  let forkPoints =
-        -- The set of forking nodes. We can count how many of these are in our
-        -- ancestry to determine where we might have forked.
-        S.fromList $ do
-          btb <- btBranches bt
-          pure $ AF.headHash $ btbPrefix btb
-      forkFirstBlocks =
-        -- The set of forked nodes. If any of these is in our ancestry, we are
-        -- not on the trunk.
-        S.fromList $ do
-          btb <- btBranches bt
-          pure $ either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
+  let forkFirstBlocks =
+        -- A map assigning numbers to forked nodes. If any of these is in our
+        -- ancestry, we are on a branch and have a fork number.
+        Map.fromList $ do
+          -- `btBranches` are not sorted in a meaningful way, so the fork
+          -- numbers assigned here are meant only to distinguish them.
+          (btb, ix) <- zip (btBranches bt) [1..]
+          -- The first block in a branch is the /last/ (i.e. leftmost or oldest) one.
+          -- See the documentation of `Test.Util.TestBlock.TestHash`
+          -- in relation to this order.
+          let firstBlockHash = either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
+          pure $ (firstBlockHash, ix)
+      blockAncestry = foldMap AF.toNewestFirst $ Map.lookup hash $ deforestBlockTree bt
    in
-      case
-        -- Fold over each block in the ancestry. Add up how many of them are in
-        -- forkPoints, and determine whether any are in forkFirstBlocks.
-        flip foldMap (
-                maybe mempty AF.toOldestFirst $
-                  M.lookup hash $ deforestBlockTree bt
-                       )
-            $ \blk ->
-              let h = BlockHash $ blockHash blk
-               in ( Any $ S.member h forkFirstBlocks
-                  , Sum $ bool 0 1 $ S.member h forkPoints
-                  )
-
-        of
-        (Any True, Sum x) -> x
-        (Any False, _)    -> 0
+      -- Get the fork number of the most recent forked node in the ancestry.
+      fromMaybe 0 $ getFirst $ flip foldMap blockAncestry $
+        \blk -> First $ let h = BlockHash $ blockHash blk
+                        in Map.lookup h forkFirstBlocks
 
 blockForkNo :: AF.HasHeader blk => BlockTree blk -> ChainHash blk -> Word64
-blockForkNo pxy = \case
-  BlockHash h -> hashForkNo pxy h
+blockForkNo bt = \case
+  BlockHash h -> hashForkNo bt h
   _ -> 0
 
 initBranch :: forall blk. (GetHeader blk, AF.HasHeader blk) => BlockTree blk -> Int -> Range -> AF.AnchoredFragment blk -> BranchSlots blk

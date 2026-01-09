@@ -68,9 +68,10 @@ genHonestChainSchema = do
 
 -- | Random generator for one alternative chain schema forking off a given
 -- honest chain schema. The alternative chain schema is returned as the pair of
--- a slot number on the honest chain schema and a list of active slots.
+-- a block number (representing the common prefix block count) on the honest
+-- chain schema and a list of active slots.
 --
--- REVIEW: Use 'SlotNo' instead of 'Int'?
+-- REVIEW: Use 'BlockNo' instead of 'Int'?
 genAlternativeChainSchema :: (H.HonestRecipe, H.ChainSchema base hon) -> QC.Gen (Int, [S])
 genAlternativeChainSchema (testRecipeH, arHonest) =
   unsafeMapSuchThatJust $ do
@@ -153,6 +154,11 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
     -- those values for individual tests?
     -- Also, we might want to generate these randomly.
     gtCSJParams = CSJParams $ fromIntegral scg,
+    -- The generated alternative chains (branches added to the @goodChain@)
+    -- can end up having the same /common prefix count/, meaning they fork
+    -- at the same block. Note that the assigned fork number has no relation
+    -- with the order in which the branching happens, rather it is just a
+    -- means to tag branches.
     gtBlockTree = List.foldl' (flip BT.addBranch') (BT.mkTrunk goodChain) $ zipWith (genAdversarialFragment goodBlocks) [1..] alternativeChainSchemas,
     gtExtraHonestPeers,
     gtSchedule = ()
@@ -170,6 +176,9 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
     mkTestFragment =
       AF.fromNewestFirst AF.AnchorGenesis
 
+    -- Cons new blocks acoording to the given active block schema
+    -- and mark the first with the corresponding fork number; the
+    -- next blocks get a zero fork number.
     mkTestBlocks :: [blk] -> [S] -> Int -> [blk]
     mkTestBlocks pre active forkNo =
       fst (List.foldl' folder ([], 0) active)
