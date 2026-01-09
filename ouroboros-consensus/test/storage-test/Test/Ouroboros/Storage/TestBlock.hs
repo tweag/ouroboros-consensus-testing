@@ -137,9 +137,27 @@ data TestBlock = TestBlock {
   deriving anyclass (NoThunks, Serialise)
 
 -- | Hash of a 'TestHeader'
-newtype TestHeaderHash = TestHeaderHash Int
+-- This derives its hashable instance from Int, which is trivial
+-- (the main method on Data.Hashable is hash :: a -> Int, which for
+-- Int is defined as id.)
+newtype TestHeaderHash = TestHeaderHash Opaque
   deriving stock    (Eq, Ord, Show, Generic)
   deriving newtype  (Condense, NoThunks, Hashable, Serialise, Binary)
+
+newtype Opaque = Opaque Int
+  deriving stock    (Eq, Ord, Show, Generic)
+  deriving newtype  (Condense, NoThunks, Serialise, Binary, ToExpr)
+
+makeOpaque :: Int -> Opaque
+makeOpaque = Opaque
+
+instance Hashable Opaque where
+  hashWithSalt salt (Opaque value) = 2 * (salt + value)
+  hash = hashWithSalt 0
+
+instance Arbitrary Opaque where
+  arbitrary = fmap Opaque arbitrary
+  shrink (Opaque m) = fmap Opaque $ shrink m
 
 -- | Hash of a 'TestBody'
 newtype TestBodyHash = TestBodyHash Int
@@ -209,7 +227,7 @@ instance GetHeader TestBlock where
 instance StandardHash TestBlock
 instance StandardHash TestHeader
 
-type instance HeaderHash TestBlock = TestHeaderHash
+type instance HeaderHash TestBlock = Opaque -- TestHeaderHash
 type instance HeaderHash TestHeader = TestHeaderHash
 
 instance ConvertRawHash TestBlock where
@@ -259,7 +277,7 @@ hashBody :: TestBody -> TestBodyHash
 hashBody = TestBodyHash . hash
 
 hashHeader :: TestHeader -> TestHeaderHash
-hashHeader (TestHeader _ a b c d e f) = TestHeaderHash (hash (a, b, c, d, e, f))
+hashHeader (TestHeader _ a b c d e f) = TestHeaderHash $ makeOpaque (hash (a, b, c, d, e, f))
 
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = headerToIsEBB . getHeader
