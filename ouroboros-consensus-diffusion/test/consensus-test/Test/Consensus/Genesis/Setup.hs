@@ -42,6 +42,7 @@ import           Test.Consensus.Genesis.Setup.Classifiers (Classifiers (..),
                      ResultClassifiers (..), ScheduleClassifiers (..),
                      classifiers, resultClassifiers, scheduleClassifiers)
 import           Test.Consensus.Genesis.Setup.GenChains
+import           Test.Consensus.PeerSimulator.Config ()
 import           Test.Consensus.PeerSimulator.Run
 import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PeerSimulator.Trace (traceLinesWith,
@@ -81,6 +82,7 @@ runGenesisTest ::
   , HasHardForkHistory blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   , Eq blk
   , Terse blk
@@ -134,6 +136,7 @@ forAllGenesisTest :: forall blk prop.
   , HasHardForkHistory blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   , Eq blk
   , Terse blk
