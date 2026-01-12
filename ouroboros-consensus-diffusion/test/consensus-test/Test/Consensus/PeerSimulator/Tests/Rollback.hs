@@ -1,10 +1,15 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.Consensus.PeerSimulator.Tests.Rollback (tests) where
+module Test.Consensus.PeerSimulator.Tests.Rollback (
+    test_cannotRollback
+  , test_rollback
+  , tests
+  ) where
 
 import           Cardano.Ledger.BaseTypes (unNonZero)
 import           Control.Monad.Class.MonadTime.SI (Time (Time))
@@ -30,24 +35,30 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (TestBlock)
-import           Test.Util.TestEnv (adjustQuickCheckTests)
+
+desiredPasses :: Int -> Int
+desiredPasses = (`div` 2)
 
 tests :: TestTree
-tests = testGroup "rollback" [
-  adjustQuickCheckTests (`div` 2) $
-  testProperty "can rollback" prop_rollback
-  ,
-  adjustQuickCheckTests (`div` 2) $
-  testProperty "cannot rollback" prop_cannotRollback
+tests = testGroup "rollback"
+  [ testProperty "can rollback" prop_rollback
+  , testProperty "cannot rollback" prop_cannotRollback
   ]
 
 -- | @prop_rollback@ tests that the selection of the node under test
 -- changes branches when sent a rollback to a block no older than 'k' blocks
 -- before the current selection.
 prop_rollback :: Property
-prop_rollback = do
-  forAllGenesisTest @TestBlock
+prop_rollback = runConformanceTest @TestBlock test_rollback
 
+test_rollback ::
+  ( IssueTestBlock blk
+  , AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Eq blk
+  ) => ConformanceTest blk
+test_rollback =
+  mkConformanceTest desiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain, such that we can rollback
         -- from the trunk to that chain.
@@ -69,9 +80,16 @@ prop_rollback = do
 -- not* change branches when sent a rollback to a block strictly older than 'k'
 -- blocks before the current selection.
 prop_cannotRollback :: Property
-prop_cannotRollback =
-  forAllGenesisTest @TestBlock
+prop_cannotRollback = runConformanceTest @TestBlock test_cannotRollback
 
+test_cannotRollback ::
+  ( IssueTestBlock blk
+  , AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Eq blk
+  ) => ConformanceTest blk
+test_cannotRollback =
+  mkConformanceTest desiredPasses id
     (do gt@GenesisTest{gtSecurityParam, gtBlockTree} <- genChains (pure 1)
         pure gt {gtSchedule = rollbackSchedule (fromIntegral (unNonZero $ maxRollbacks gtSecurityParam) + 1) gtBlockTree})
 
