@@ -241,6 +241,7 @@ library unstable-consensus-conformance-testlib
     Test.Consensus.Genesis.Tests.LoP
     Test.Consensus.Genesis.Tests.LongRangeAttack
     Test.Consensus.Genesis.Tests.Uniform
+    Test.Consensus.Genesis.TestSuite
     Test.Consensus.HardFork.Combinator
     Test.Consensus.HardFork.Combinator.A
     Test.Consensus.HardFork.Combinator.B
