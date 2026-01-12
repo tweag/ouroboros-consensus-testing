@@ -9,10 +9,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Genesis.Setup (
-    module Test.Consensus.Genesis.Setup.GenChains
+    ConformanceTest (..)
+  , module Test.Consensus.Genesis.Setup.GenChains
   , castHeaderHash
-  , forAllGenesisTest
+  , forAllGenesisTest -- TODO: Remove after porting is done
   , honestImmutableTip
+  , mkConformanceTest
+  , runConformanceTest
   , runGenesisTest
   , runGenesisTest'
   , selectedHonestChain
@@ -77,19 +80,22 @@ data ConformanceTest blk = ConformanceTest
     -- ^ A shrinker allowed to inspect the output value of a test.
    , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to test.
-  --, ctDesiredPasses   :: Int -- TODO: Enable when porting tests
-    -- ^ Sets the expected number of test runs to check the property.
+  , ctDesiredPasses   :: Int -> Int
+    -- ^ Adjust the default number of test runs to check the property.
+  , ctMaxSize :: Int -> Int
+    -- ^ Adjust the default test case maximum size.
   }
 
 mkConformanceTest ::
   (Testable prop) =>
-  -- Int ->
+  (Int -> Int) ->
+  (Int -> Int) ->
   Gen (GenesisTestFull blk) ->
   SchedulerConfig ->
   (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
   (GenesisTestFull blk -> StateView blk -> prop) ->
   ConformanceTest blk
-mkConformanceTest ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+mkConformanceTest ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest {..}
 
@@ -194,6 +200,12 @@ runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
         tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
         tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
         counterexample (rgtrTrace result) $
+        -- | TODO: Here we want to transform the default /max size/ and
+        -- /max success/ values instead of hard coding them to 100. We will be
+        -- implementing the necesary helpers (similar in spirit to
+        -- 'TestEnv.adjustQuickCheckMaxSize' and 'adjustQuickCheckTests'
+        -- respectively) in a follow up PR.
+        withMaxSize (ctMaxSize 100) . withMaxSuccess (ctDesiredPasses 100) $
         ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
   where
     shrinker' gt = ctShrinker gt . rgtrStateView
@@ -244,7 +256,7 @@ forAllGenesisTest :: forall blk prop.
   (GenesisTestFull blk -> StateView blk -> prop) ->
   Property
 forAllGenesisTest generator schedulerConfig shrinker mkProperty =
-  runConformanceTest $ mkConformanceTest generator schedulerConfig shrinker mkProperty
+  runConformanceTest $ mkConformanceTest id id generator schedulerConfig shrinker mkProperty
 
 -- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
 -- this function casts this type's hash to its instance, so that it can be used
