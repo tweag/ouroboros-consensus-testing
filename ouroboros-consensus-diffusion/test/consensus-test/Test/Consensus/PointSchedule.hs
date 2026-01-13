@@ -57,8 +57,6 @@ import           Control.Monad.ST (ST)
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
-import           Data.Map (Map)
-import qualified Data.Map as M
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)
@@ -93,8 +91,7 @@ import           Test.Consensus.PointSchedule.SinglePeer.Indices
 import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta))
 import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
-import           Test.Util.TersePrinting (terseFragment)
-import           Test.Util.TestBlock (TestBlock)
+import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
 
 
@@ -535,12 +532,12 @@ data GenesisTest blk schedule = GenesisTest
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
 -- | All the data describing the result of a test
-data RunGenesisTestResult = RunGenesisTestResult
+data RunGenesisTestResult blk = RunGenesisTestResult
   { rgtrTrace     :: String,
-    rgtrStateView :: StateView TestBlock
+    rgtrStateView :: StateView blk
   }
 
-prettyGenesisTest :: (schedule -> [String]) -> GenesisTest TestBlock schedule -> [String]
+prettyGenesisTest :: (HasHeader blk, Terse blk) => (schedule -> [String]) -> GenesisTest blk schedule -> [String]
 prettyGenesisTest prettySchedule genesisTest =
   [ "GenesisTest:"
   , "  gtSecurityParam: " ++ show (maxRollbacks gtSecurityParam)

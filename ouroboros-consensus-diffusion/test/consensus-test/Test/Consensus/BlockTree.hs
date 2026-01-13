@@ -21,27 +21,25 @@ module Test.Consensus.BlockTree (
   , deforestBlockTree
   , findFragment
   , findPath
+  , isAncestorOf
   , mkTrunk
   , nonemptyPrefixesOf
   , prettyBlockTree
   ) where
 
-import           Cardano.Slotting.Slot (SlotNo (unSlotNo))
+import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
 import           Data.Foldable (asum)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
-import           Data.List (inits, insert, sortOn)
+import           Data.List (inits, sortOn)
 import qualified Data.Map as M
-import           Data.Maybe (fromJust, fromMaybe, mapMaybe)
+import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (Down))
-import           Data.Proxy
 import qualified Data.Vector as Vector
 import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash,
                      blockHash, blockNo, blockSlot, fromWithOrigin, pointSlot,
                      unBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import qualified Test.QuickCheck as QC
-import qualified Test.Util.TestBlock
 import           Text.Printf (printf)
 
 -- | Represent a branch of a block tree by a prefix and a suffix. The full
@@ -283,3 +281,27 @@ deforestBlockTree (BlockTree trunk branches) =
       _ AF.:> tip -> M.insert (blockHash tip) fragment mapSoFar
 
   in foldr addPrefix mempty allPrefixes
+
+
+-- | More efficient implementation of a check used in some of the handlers,
+-- determining whether the first argument is on the chain that ends in the
+-- second argument.
+-- We would usually call @withinFragmentBounds@ for this, but since we're
+-- using 'TestBlock', looking at the hash is cheaper.
+--
+-- TODO: Unify with 'Test.UtilTestBlock.isAncestorOf' which basically does the
+-- same thing except not on 'WithOrigin'.
+isAncestorOf ::
+  (HasHeader blk, Eq blk) =>
+  BlockTree blk ->
+  WithOrigin blk ->
+  WithOrigin blk ->
+  Bool
+isAncestorOf bt (At ancestor) (At descendant) =
+  fromMaybe False $ do
+    let m = deforestBlockTree bt
+    afD <- M.lookup (blockHash descendant) m
+    afA <- M.lookup (blockHash ancestor) m
+    pure $ AF.isPrefixOf afA afD
+isAncestorOf _ (At _) Origin = False
+isAncestorOf _ Origin _ = True

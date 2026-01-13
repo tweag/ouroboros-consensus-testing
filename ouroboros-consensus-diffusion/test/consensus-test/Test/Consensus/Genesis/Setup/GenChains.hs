@@ -68,9 +68,10 @@ genHonestChainSchema = do
 
 -- | Random generator for one alternative chain schema forking off a given
 -- honest chain schema. The alternative chain schema is returned as the pair of
--- a slot number on the honest chain schema and a list of active slots.
+-- a block number (representing the common prefix block count) on the honest
+-- chain schema and a list of active slots.
 --
--- REVIEW: Use 'SlotNo' instead of 'Int'?
+-- REVIEW: Use 'BlockNo' instead of 'Int'?
 genAlternativeChainSchema :: (H.HonestRecipe, H.ChainSchema base hon) -> QC.Gen (Int, [S])
 genAlternativeChainSchema (testRecipeH, arHonest) =
   unsafeMapSuchThatJust $ do
@@ -153,6 +154,11 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
     -- those values for individual tests?
     -- Also, we might want to generate these randomly.
     gtCSJParams = CSJParams $ fromIntegral scg,
+    -- The generated alternative chains (branches added to the @goodChain@)
+    -- can end up having the same /common prefix count/, meaning they fork
+    -- at the same block. Note that the assigned fork number has no relation
+    -- with the order in which the branching happens, rather it is just a
+    -- means to tag branches.
     gtBlockTree = List.foldl' (flip BT.addBranch') (BT.mkTrunk goodChain) $ zipWith (genAdversarialFragment goodBlocks) [1..] alternativeChainSchemas,
     gtExtraHonestPeers,
     gtSchedule = ()
@@ -170,6 +176,9 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
     mkTestFragment =
       AF.fromNewestFirst AF.AnchorGenesis
 
+    -- Cons new blocks acoording to the given active block schema
+    -- and mark the first with the corresponding fork number; the
+    -- next blocks get a zero fork number.
     mkTestBlocks :: [blk] -> [S] -> Int -> [blk]
     mkTestBlocks pre active forkNo =
       fst (List.foldl' folder ([], 0) active)
@@ -178,21 +187,21 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
         folder (chain, inc) s | S.test S.notInverted s = (issue inc chain, 0)
                               | otherwise = (chain, inc + 1)
         issue :: SlotNo -> [blk] -> [blk]
-        issue inc (h : t) = successorBlock Nothing inc h : h : t
+        issue inc (h : t) = issueSuccessorBlock Nothing inc h : h : t
         issue inc [] =
           case pre of
-            []      -> [firstBlock forkNo inc]
-            (h : t) -> successorBlock (Just forkNo) inc h : h : t
+            []      -> [issueFirstBlock forkNo inc]
+            (h : t) -> issueSuccessorBlock (Just forkNo) inc h : h : t
 
 -- | Class of block types for which we can issue test blocks.
 class IssueTestBlock blk where
-  firstBlock
+  issueFirstBlock
     :: Int
     -- ^ The fork number
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
-  successorBlock
+  issueSuccessorBlock
     :: Maybe Int
     -- ^ A new fork number, if this block should fork off the trunk.
     -> SlotNo
@@ -201,11 +210,11 @@ class IssueTestBlock blk where
     -> blk
 
 instance IssueTestBlock TestBlock where
-  firstBlock fork slot =
+  issueFirstBlock fork slot =
     incSlot slot $
       TB.firstBlock $
         fromIntegral fork
-  successorBlock fork slot blk =
+  issueSuccessorBlock fork slot blk =
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk
