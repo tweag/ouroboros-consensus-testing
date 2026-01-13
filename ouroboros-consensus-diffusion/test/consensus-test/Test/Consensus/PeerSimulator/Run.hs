@@ -73,8 +73,8 @@ import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PeerSimulator.Trace
 import           Test.Consensus.PointSchedule (BlockFetchTimeout,
                      CSJParams (..), GenesisTest (..), GenesisTestFull,
-                     LoPBucketParams (..), PointSchedule (..), peersStates,
-                     peersStatesRelative)
+                     HasPointScheduleTestParams (..), LoPBucketParams (..),
+                     PointSchedule (..), peersStates, peersStatesRelative)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
                      getPeerIds)
@@ -383,6 +383,7 @@ startNode ::
   , BlockSupportsDiffusionPipelining blk
   , ConfigSupportsNode blk
   , HasHardForkHistory blk
+  , HasPointScheduleTestParams blk
   ) =>
   SchedulerConfig ->
   GenesisTestFull blk ->
@@ -517,6 +518,7 @@ nodeLifecycle ::
   , HasHardForkHistory blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   ) =>
   SchedulerConfig ->
@@ -529,14 +531,15 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
   lrCdb <- emptyNodeDBs
   lrLoEVar <- mkLoEVar schedulerConfig
   let
+    topLevelConfig = defaultTopLevelConfig genesisTest
     resources =
       LiveResources {
           lrRegistry
         , lrTracer
         , lrSTracer = mkStateTracer schedulerConfig genesisTest lrPeerSim
-        , lrConfig = error "defaultCfg k gtForecastRange gtGenesisWindow"
-        , lrInitLedger = error "testInitExtLedger"
-        , lrChunkInfo = error "mkTestChunkInfo lrConfig"
+        , lrConfig = topLevelConfig
+        , lrInitLedger = getInitExtLedgerState (Proxy :: Proxy blk)
+        , lrChunkInfo = getChunkInfoFromTopLevelConfig topLevelConfig
         , lrPeerSim
         , lrCdb
         , lrLoEVar
@@ -568,6 +571,7 @@ runPointSchedule ::
   , HasHardForkHistory blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   , Eq blk
   ) =>

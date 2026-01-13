@@ -21,6 +21,7 @@ import           Control.Monad.Class.MonadTimer.SI (MonadTimer)
 import           Control.ResourceRegistry
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Functor.Contravariant ((>$<))
+import           Data.Proxy (Proxy (..))
 import           Network.TypedProtocol.Codec (ActiveState, AnyMessage,
                      StateToken, notActiveState)
 import           Ouroboros.Consensus.Block (HasHeader)
@@ -69,13 +70,14 @@ import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PeerSimulator.Trace
                      (TraceBlockFetchClientTerminationEvent (..),
                      TraceEvent (..))
-import           Test.Consensus.PointSchedule (BlockFetchTimeout (..))
+import           Test.Consensus.PointSchedule (BlockFetchTimeout (..),
+                     HasPointScheduleTestParams (..))
 import           Test.Consensus.PointSchedule.Peers (PeerId)
 import           Test.Util.Orphans.IOLike ()
 
 startBlockFetchLogic ::
      forall m blk.
-     (IOLike m, MonadTimer m, LedgerSupportsProtocol blk, BlockSupportsDiffusionPipelining blk, ConfigSupportsNode blk)
+     (IOLike m, MonadTimer m, LedgerSupportsProtocol blk, BlockSupportsDiffusionPipelining blk, ConfigSupportsNode blk, HasPointScheduleTestParams blk)
   => Bool -- ^ Whether to enable chain selection starvation
   -> ResourceRegistry m
   -> Tracer m (TraceEvent blk)
@@ -87,7 +89,7 @@ startBlockFetchLogic enableChainSelStarvation registry tracer chainDb fetchClien
     let blockFetchConsensusInterface =
           BlockFetchClientInterface.mkBlockFetchConsensusInterface
             nullTracer -- FIXME
-            (error "blk cfg") --(TestBlockConfig $ NumCoreNodes 0) -- Only needed when minting blocks
+            (getBlockConfig (Proxy :: Proxy blk)) -- Only needed when minting blocks
             (BlockFetchClientInterface.defaultChainDbView chainDb)
             csHandlesCol
             -- The size of headers in bytes is irrelevant because our tests
