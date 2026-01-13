@@ -34,6 +34,7 @@ module Test.Consensus.PointSchedule (
   , PointSchedule (..)
   , PointsGeneratorParams (..)
   , RunGenesisTestResult (..)
+  , deforestBlockTree
   , enrichedWith
   , ensureScheduleDuration
   , genesisNodeState
@@ -46,11 +47,8 @@ module Test.Consensus.PointSchedule (
   , prettyPointSchedule
   , stToGen
   , uniformPoints
-  , deforestBlockTree
   ) where
 
-import qualified Data.Map as M
-import Data.Map (Map)
 import           Cardano.Ledger.BaseTypes (unNonZero)
 import           Cardano.Slotting.Time (SlotLength)
 import           Control.Monad (replicateM)
@@ -64,7 +62,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import           Data.Time (DiffTime)
 import           Data.Word (Word64)
-import           Ouroboros.Consensus.Block.Abstract (withOriginToMaybe)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash,
+                     withOriginToMaybe)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
 import           Ouroboros.Consensus.Network.NodeToNode (ChainSyncTimeout (..))
@@ -78,7 +77,7 @@ import           Ouroboros.Network.Point (withOrigin)
 import qualified System.Random.Stateful as Random
 import           System.Random.Stateful (STGenM, StatefulGen, runSTGen_)
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
-                     allFragments, prettyBlockTree, deforestBlockTree)
+                     allFragments, deforestBlockTree, prettyBlockTree)
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
@@ -93,10 +92,8 @@ import           Test.Consensus.PointSchedule.SinglePeer.Indices
 import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta))
 import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
-import           Test.Util.TersePrinting (terseFragment)
-import           Test.Util.TestBlock (TestBlock)
+import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
-import Ouroboros.Consensus.Block.Abstract (HeaderHash, HasHeader)
 
 
 prettyPointSchedule ::
@@ -536,12 +533,12 @@ data GenesisTest blk schedule = GenesisTest
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
 -- | All the data describing the result of a test
-data RunGenesisTestResult = RunGenesisTestResult
+data RunGenesisTestResult blk = RunGenesisTestResult
   { rgtrTrace     :: String,
-    rgtrStateView :: StateView TestBlock
+    rgtrStateView :: StateView blk
   }
 
-prettyGenesisTest :: (schedule -> [String]) -> GenesisTest TestBlock schedule -> [String]
+prettyGenesisTest :: (HasHeader blk, Terse blk) => (schedule -> [String]) -> GenesisTest blk schedule -> [String]
 prettyGenesisTest prettySchedule genesisTest =
   [ "GenesisTest:"
   , "  gtSecurityParam: " ++ show (maxRollbacks gtSecurityParam)
