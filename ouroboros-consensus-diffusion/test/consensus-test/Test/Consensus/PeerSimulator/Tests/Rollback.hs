@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.Consensus.PeerSimulator.Tests.Rollback (tests) where
 
@@ -28,6 +29,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
+import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv (adjustQuickCheckTests)
 
 tests :: TestTree
@@ -44,7 +46,7 @@ tests = testGroup "rollback" [
 -- before the current selection.
 prop_rollback :: Property
 prop_rollback = do
-  forAllGenesisTest
+  forAllGenesisTest @TestBlock
 
     (do
         -- Create a block tree with @1@ alternative chain, such that we can rollback
@@ -68,7 +70,7 @@ prop_rollback = do
 -- blocks before the current selection.
 prop_cannotRollback :: Property
 prop_cannotRollback =
-  forAllGenesisTest
+  forAllGenesisTest @TestBlock
 
     (do gt@GenesisTest{gtSecurityParam, gtBlockTree} <- genChains (pure 1)
         pure gt {gtSchedule = rollbackSchedule (fromIntegral (unNonZero $ maxRollbacks gtSecurityParam) + 1) gtBlockTree})

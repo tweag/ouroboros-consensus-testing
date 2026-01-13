@@ -23,7 +23,10 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Traversable (for)
 import           Ouroboros.Consensus.Block (WithOrigin (Origin))
-import           Ouroboros.Consensus.Block.Abstract (Header, Point (..))
+import           Ouroboros.Consensus.Block.Abstract (GetHeader, Header,
+                     Point (..))
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientHandleCollection,
                      newChainSyncClientHandleCollection)
@@ -44,7 +47,6 @@ import           Test.Consensus.PeerSimulator.Trace (TraceEvent)
 import           Test.Consensus.PointSchedule.NodeState
 import           Test.Consensus.PointSchedule.Peers (PeerId)
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock)
 
 -- | Resources used by both ChainSync and BlockFetch for a single peer.
 data SharedResources m blk =
@@ -116,15 +118,17 @@ data PeerSimulatorResources m blk =
 
     -- | Handles to interact with the ChainSync client of each peer.
     -- See 'ChainSyncClientHandle' for more details.
-    psrHandles :: ChainSyncClientHandleCollection PeerId m TestBlock
+    psrHandles :: ChainSyncClientHandleCollection PeerId m blk
   }
 
 -- | Create 'ChainSyncServerHandlers' for our default implementation using 'NodeState'.
 makeChainSyncServerHandlers ::
-  (IOLike m) =>
-  StrictTVar m (Point TestBlock) ->
-  BlockTree TestBlock ->
-  ChainSyncServerHandlers m (NodeState TestBlock) TestBlock
+  (IOLike m, GetHeader blk, AF.HasHeader blk
+  , Eq blk
+  ) =>
+  StrictTVar m (Point blk) ->
+  BlockTree blk ->
+  ChainSyncServerHandlers m (NodeState blk) blk
 makeChainSyncServerHandlers currentIntersection blockTree =
   ChainSyncServerHandlers {
     csshFindIntersection = handlerFindIntersection currentIntersection blockTree,
@@ -137,10 +141,12 @@ makeChainSyncServerHandlers currentIntersection blockTree =
 --
 -- TODO move server construction to Run?
 makeChainSyncResources ::
-  (IOLike m) =>
+  (IOLike m, GetHeader blk, AF.HasHeader blk
+  , Eq blk
+  ) =>
   STM m () ->
-  SharedResources m TestBlock ->
-  m (ChainSyncResources m TestBlock)
+  SharedResources m blk ->
+  m (ChainSyncResources m blk)
 makeChainSyncResources csrTickStarted SharedResources {srPeerId, srTracer, srBlockTree, srCurrentState} = do
   csrCurrentIntersection <- uncheckedNewTVarM $ AF.Point Origin
   let
@@ -149,10 +155,12 @@ makeChainSyncResources csrTickStarted SharedResources {srPeerId, srTracer, srBlo
   pure ChainSyncResources {csrTickStarted, csrServer, csrCurrentIntersection}
 
 makeBlockFetchResources ::
-  IOLike m =>
+  (IOLike m, AF.HasHeader blk
+  , Eq blk
+  ) =>
   STM m () ->
-  SharedResources m TestBlock ->
-  BlockFetchResources m TestBlock
+  SharedResources m blk ->
+  BlockFetchResources m blk
 makeBlockFetchResources bfrTickStarted SharedResources {srPeerId, srTracer, srBlockTree, srCurrentState} =
   BlockFetchResources {
     bfrTickStarted,
@@ -161,7 +169,7 @@ makeBlockFetchResources bfrTickStarted SharedResources {srPeerId, srTracer, srBl
   where
     handlers = BlockFetchServerHandlers {
       bfshBlockFetch = handlerBlockFetch srBlockTree,
-      bfshSendBlocks = handlerSendBlocks
+      bfshSendBlocks = handlerSendBlocks srBlockTree
     }
     bfrServer =
       runScheduledBlockFetchServer srPeerId bfrTickStarted (readTVar srCurrentState)
@@ -184,8 +192,8 @@ makeBlockFetchResources bfrTickStarted SharedResources {srPeerId, srTracer, srBl
 -- TVar.
 updateState ::
   IOLike m =>
-  StrictTVar m (Maybe (NodeState TestBlock)) ->
-  m (NodeState TestBlock -> STM m (), STM m (), STM m ())
+  StrictTVar m (Maybe (NodeState blk)) ->
+  m (NodeState blk -> STM m (), STM m (), STM m ())
 updateState srCurrentState =
   atomically $ do
     publisher <- newBroadcastTChan
@@ -210,11 +218,13 @@ updateState srCurrentState =
 --
 -- TODO pass BFR and CSR to runScheduled... rather than passing the individual resources in and storing the result
 makePeerResources ::
-  IOLike m =>
-  Tracer m (TraceEvent TestBlock) ->
-  BlockTree TestBlock ->
+  (IOLike m, AF.HasHeader blk, GetHeader blk
+  , Eq blk
+  ) =>
+  Tracer m (TraceEvent blk) ->
+  BlockTree blk ->
   PeerId ->
-  m (PeerResources m TestBlock)
+  m (PeerResources m blk)
 makePeerResources srTracer srBlockTree srPeerId = do
   srCurrentState <- uncheckedNewTVarM Nothing
   (prUpdateState, csrTickStarted, bfrTickStarted) <- updateState srCurrentState
@@ -225,11 +235,13 @@ makePeerResources srTracer srBlockTree srPeerId = do
 
 -- | Create resources for all given peers operating on the given block tree.
 makePeerSimulatorResources ::
-  IOLike m =>
-  Tracer m (TraceEvent TestBlock) ->
-  BlockTree TestBlock ->
+  (IOLike m, LedgerSupportsProtocol blk
+  , Eq blk
+  ) =>
+  Tracer m (TraceEvent blk) ->
+  BlockTree blk ->
   NonEmpty PeerId ->
-  m (PeerSimulatorResources m TestBlock)
+  m (PeerSimulatorResources m blk)
 makePeerSimulatorResources tracer blockTree peers = do
   resources <- for peers $ \ peerId -> do
     peerResources <- makePeerResources tracer blockTree peerId

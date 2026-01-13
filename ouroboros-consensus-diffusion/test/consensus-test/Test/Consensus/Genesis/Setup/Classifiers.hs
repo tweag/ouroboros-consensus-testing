@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -34,7 +35,8 @@ import           Ouroboros.Network.AnchoredFragment (anchor, anchorToSlotNo,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Driver.Limits
                      (ProtocolLimitFailure (ExceededTimeLimit))
-import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..))
+import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
+                     isAncestorOf)
 import           Test.Consensus.Network.AnchoredFragment.Extras (slotLength)
 import           Test.Consensus.PeerSimulator.StateView
                      (PeerSimulatorResult (..), StateView (..), pscrToException)
@@ -42,8 +44,7 @@ import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Peers (PeerId (..), Peers (..))
 import           Test.Consensus.PointSchedule.SinglePeer (SchedulePoint (..))
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, TestHash (TestHash),
-                     isAncestorOf)
+import           Test.Util.TestBlock (TestHash (TestHash))
 
 -- | Interesting categories to classify test inputs
 data Classifiers =
@@ -151,7 +152,7 @@ data ResultClassifiers =
 nullResultClassifier :: ResultClassifiers
 nullResultClassifier = ResultClassifiers 0 0 0 0
 
-resultClassifiers :: GenesisTestFull blk -> RunGenesisTestResult -> ResultClassifiers
+resultClassifiers :: GenesisTestFull blk -> RunGenesisTestResult blk -> ResultClassifiers
 resultClassifiers GenesisTest{gtSchedule} RunGenesisTestResult{rgtrStateView} =
   if adversariesCount > 0
     then ResultClassifiers {
@@ -210,8 +211,8 @@ data ScheduleClassifiers =
     allAdversariesTrivial :: Bool
   }
 
-scheduleClassifiers :: GenesisTestFull TestBlock -> ScheduleClassifiers
-scheduleClassifiers GenesisTest{gtSchedule = schedule} =
+scheduleClassifiers :: forall blk. (AF.HasHeader blk, Eq blk) => GenesisTestFull blk -> ScheduleClassifiers
+scheduleClassifiers GenesisTest{gtSchedule = schedule, gtBlockTree} =
   ScheduleClassifiers
     { adversaryRollback
     , honestRollback
@@ -219,32 +220,20 @@ scheduleClassifiers GenesisTest{gtSchedule = schedule} =
     , allAdversariesTrivial
     }
   where
-    hasRollback :: PeerSchedule TestBlock -> Bool
+    hasRollback :: PeerSchedule blk -> Bool
     hasRollback peerSch' =
         any (not . isSorted) [tips, headers, blocks]
       where
         peerSch = sortOn fst peerSch'
+        isSorted :: [WithOrigin blk] -> Bool
         isSorted l = and [x `ancestor` y | (x:y:_) <- tails l]
-        ancestor Origin  Origin  = True
-        ancestor Origin  (At _)  = True
-        ancestor (At _)  Origin  = False
-        ancestor (At p1) (At p2) = p1 `isAncestorOf` p2
-        tips = mapMaybe
+        ancestor = isAncestorOf gtBlockTree
+        tips, headers, blocks :: [WithOrigin blk]
+        (tips, headers, blocks) = foldMap
           (\(_, point) -> case point of
-            ScheduleTipPoint blk -> Just blk
-            _                    -> Nothing
-          )
-          peerSch
-        headers = mapMaybe
-          (\(_, point) -> case point of
-            ScheduleHeaderPoint blk -> Just blk
-            _                       -> Nothing
-          )
-          peerSch
-        blocks = mapMaybe
-          (\(_, point) -> case point of
-            ScheduleBlockPoint blk -> Just blk
-            _                      -> Nothing
+            ScheduleTipPoint blk    -> (pure blk, mempty, mempty)
+            ScheduleHeaderPoint blk -> (mempty, pure blk, mempty)
+            ScheduleBlockPoint blk  -> (mempty, mempty, pure blk)
           )
           peerSch
 
@@ -256,7 +245,7 @@ scheduleClassifiers GenesisTest{gtSchedule = schedule} =
 
     allAdversariesEmpty = all id $ adversarialPeers $ null <$> psSchedule schedule
 
-    isTrivial :: PeerSchedule TestBlock -> Bool
+    isTrivial :: PeerSchedule blk -> Bool
     isTrivial = \case
       []             -> True
       (t0, _):points -> all ((== t0) . fst) points

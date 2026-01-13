@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,12 +19,25 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
 import           Control.Tracer (debugTracer, traceWith)
 import           Data.Maybe (mapMaybe)
+import           Ouroboros.Consensus.Block.Abstract (ConvertRawHash, Header)
+import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
+                     (BlockSupportsDiffusionPipelining)
+import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
+import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
+import           Ouroboros.Consensus.Storage.LedgerDB.API
+                     (CanUpgradeLedgerTables)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike (Exception, fromException)
 import           Ouroboros.Network.Driver.Limits
                      (ProtocolLimitFailure (ExceededTimeLimit))
+import           Ouroboros.Network.Util.ShowProxy
 import           Test.Consensus.Genesis.Setup.Classifiers (Classifiers (..),
                      ResultClassifiers (..), ScheduleClassifiers (..),
                      classifiers, resultClassifiers, scheduleClassifiers)
@@ -33,9 +47,11 @@ import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PeerSimulator.Trace (traceLinesWith,
                      tracerTestBlock)
 import           Test.Consensus.PointSchedule
+import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (forAllGenRunShrinkCheck)
+import           Test.Util.TersePrinting (Terse)
 import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.Tracer (recordingTracerM)
 import           Text.Printf (printf)
@@ -53,9 +69,26 @@ runSimStrictShutdownOrThrow action =
 -- | Runs the given 'GenesisTest' and 'PointSchedule' and evaluates the given
 -- property on the final 'StateView'.
 runGenesisTest ::
-  SchedulerConfig ->
-  GenesisTestFull TestBlock ->
-  RunGenesisTestResult
+  ( Condense (StateView blk)
+  , CondenseList (NodeState blk)
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , ConfigSupportsNode blk
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  , Eq (Header blk)
+  , Eq blk
+  , Terse blk
+  , Condense (NodeState blk)
+  )
+  => SchedulerConfig ->
+  GenesisTestFull blk ->
+  RunGenesisTestResult blk
 runGenesisTest schedulerConfig genesisTest =
   runSimStrictShutdownOrThrow $ do
     (recordingTracer, getTrace) <- recordingTracerM
@@ -87,12 +120,29 @@ runGenesisTest' schedulerConfig genesisTest makeProperty =
 -- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
 -- PeerSchedule', runs them with 'runGenesisTest', check whether the given
 -- property holds on the resulting 'StateView'.
-forAllGenesisTest ::
-  Testable prop =>
-  Gen (GenesisTestFull TestBlock) ->
+forAllGenesisTest :: forall blk prop.
+  (Testable prop
+  , Condense (StateView blk)
+  , CondenseList (NodeState blk)
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , ConfigSupportsNode blk
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  , Eq (Header blk)
+  , Eq blk
+  , Terse blk
+  , Condense (NodeState blk)
+  ) =>
+  Gen (GenesisTestFull blk) ->
   SchedulerConfig ->
-  (GenesisTestFull TestBlock -> StateView TestBlock -> [GenesisTestFull TestBlock]) ->
-  (GenesisTestFull TestBlock -> StateView TestBlock -> prop) ->
+  (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
+  (GenesisTestFull blk -> StateView blk -> prop) ->
   Property
 forAllGenesisTest generator schedulerConfig shrinker mkProperty =
   forAllGenRunShrinkCheck generator runner shrinker' $ \genesisTest result ->

@@ -1,4 +1,5 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -21,7 +22,14 @@ import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
+import           Ouroboros.Consensus.HardFork.Abstract (HasHardForkHistory)
 import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime (..))
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.Tables.MapKind (ValuesMK)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientHandleCollection (..))
 import           Ouroboros.Consensus.Storage.ChainDB.API
@@ -29,6 +37,10 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (cdbsLoE,
                      updateTracer)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkInfo)
+import           Ouroboros.Consensus.Storage.LedgerDB.API
+                     (CanUpgradeLedgerTables)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -40,7 +52,6 @@ import           Test.Consensus.PeerSimulator.Trace
 import           Test.Consensus.PointSchedule.Peers (PeerId)
 import           Test.Util.ChainDB
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, testInitExtLedger)
 
 -- | Resources used for a single live interval of the node, constructed when the
 -- node is started.
@@ -78,21 +89,23 @@ data LiveIntervalResult blk = LiveIntervalResult {
 -- shut down running components, construct tracers used for single intervals,
 -- and reset and persist state.
 data LiveResources blk m = LiveResources {
-    lrRegistry :: ResourceRegistry m
-  , lrPeerSim  :: PeerSimulatorResources m blk
-  , lrTracer   :: Tracer m (TraceEvent blk)
-  , lrSTracer  :: ChainDB m blk -> m (Tracer m ())
-  , lrConfig   :: TopLevelConfig blk
+    lrRegistry   :: ResourceRegistry m
+  , lrPeerSim    :: PeerSimulatorResources m blk
+  , lrTracer     :: Tracer m (TraceEvent blk)
+  , lrSTracer    :: ChainDB m blk -> m (Tracer m ())
+  , lrConfig     :: TopLevelConfig blk
+  , lrChunkInfo  :: ChunkInfo
+  , lrInitLedger :: ExtLedgerState blk ValuesMK
 
     -- | The chain DB state consists of several transient parts and the
     -- immutable DB's virtual file system.
     -- After 'lnCopyToImmDb' was executed, the latter will contain the final
     -- state of an interval.
     -- The rest is reset when the chain DB is recreated.
-  , lrCdb      :: NodeDBs (StrictTMVar m MockFS)
+  , lrCdb        :: NodeDBs (StrictTMVar m MockFS)
 
     -- | The LoE fragment must be reset for each live interval.
-  , lrLoEVar   :: LoE (StrictTVar m (AnchoredFragment (HeaderWithTime blk)))
+  , lrLoEVar     :: LoE (StrictTVar m (AnchoredFragment (HeaderWithTime blk)))
   }
 
 data LiveInterval blk m = LiveInterval {
@@ -119,8 +132,16 @@ data NodeLifecycle blk m = NodeLifecycle {
 -- candidate fragments.
 mkChainDb ::
   IOLike m =>
-  LiveResources TestBlock m ->
-  m (ChainDB m TestBlock, m (WithOrigin SlotNo))
+  ( LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  ) =>
+  LiveResources blk m ->
+  m (ChainDB m blk, m (WithOrigin SlotNo))
 mkChainDb resources = do
     atomically $ do
       -- Reset only the non-persisted state of the ChainDB's file system mocks:
@@ -133,8 +154,8 @@ mkChainDb resources = do
             (Tracer (traceWith lrTracer . TraceChainDBEvent))
             (fromMinimalChainDbArgs MinimalChainDbArgs {
               mcdbTopLevelConfig = lrConfig
-            , mcdbChunkInfo      = mkTestChunkInfo lrConfig
-            , mcdbInitLedger     = testInitExtLedger
+            , mcdbChunkInfo      = lrChunkInfo
+            , mcdbInitLedger     = lrInitLedger
             , mcdbRegistry       = lrRegistry
             , mcdbNodeDBs        = lrCdb
             })
@@ -149,15 +170,23 @@ mkChainDb resources = do
     void $ forkLinkedThread lrRegistry "AddBlockRunner" (void intAddBlockRunner)
     pure (chainDB, intCopyToImmutableDB)
   where
-    LiveResources {lrRegistry, lrTracer, lrConfig, lrCdb, lrLoEVar} = resources
+    LiveResources {lrRegistry, lrTracer, lrConfig, lrCdb, lrLoEVar, lrChunkInfo, lrInitLedger} = resources
 
 -- | Allocate all the resources that depend on the results of previous live
 -- intervals, the ChainDB and its persisted state.
 restoreNode ::
-  IOLike m =>
-  LiveResources TestBlock m ->
-  LiveIntervalResult TestBlock ->
-  m (LiveNode TestBlock m)
+  (IOLike m
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  ) =>
+  LiveResources blk m ->
+  LiveIntervalResult blk ->
+  m (LiveNode blk m)
 restoreNode resources LiveIntervalResult {lirPeerResults, lirActive} = do
   lnStateViewTracers <- stateViewTracersWithInitial lirPeerResults
   (lnChainDb, lnCopyToImmDb) <- mkChainDb resources
@@ -173,12 +202,20 @@ restoreNode resources LiveIntervalResult {lirPeerResults, lirActive} = do
 -- | Allocate resources with 'restoreNode' and pass them to the callback that
 -- starts the node's threads.
 lifecycleStart ::
-  forall m.
-  IOLike m =>
-  (LiveInterval TestBlock m -> m ()) ->
-  LiveResources TestBlock m ->
-  LiveIntervalResult TestBlock ->
-  m (LiveNode TestBlock m)
+  forall m blk.
+  ( IOLike m
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  ) =>
+  (LiveInterval blk m -> m ()) ->
+  LiveResources blk m ->
+  LiveIntervalResult blk ->
+  m (LiveNode blk m)
 lifecycleStart start liResources liResult = do
   trace (TraceSchedulerEvent TraceNodeStartupStart)
   liNode <- restoreNode liResources liResult
