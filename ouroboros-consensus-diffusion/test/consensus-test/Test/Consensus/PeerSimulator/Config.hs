@@ -19,12 +19,13 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (CoreNodeId),
 import           Ouroboros.Consensus.Protocol.BFT
                      (BftParams (BftParams, bftNumNodes, bftSecurityParam),
                      ConsensusConfig (BftConfig, bftParams, bftSignKey, bftVerKeys))
-import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange))
+import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange), HasPointScheduleTestParams(..), GenesisTest(..))
+import           Test.Util.ChainDB (mkTestChunkInfo)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (BlockConfig (TestBlockConfig),
-                     CodecConfig (TestBlockCodecConfig),
+                     CodecConfig (TestBlockCodecConfig), testInitExtLedger,
                      StorageConfig (TestBlockStorageConfig), TestBlock,
-                     TestBlockLedgerConfig (..))
+                     TestBlockWith(..), TestBlockLedgerConfig (..))
 
 -- REVIEW: this has not been deliberately chosen
 defaultCfg :: SecurityParam -> ForecastRange -> GenesisWindow -> TopLevelConfig TestBlock
@@ -55,3 +56,17 @@ defaultCfg secParam (ForecastRange sfor) sgen = TopLevelConfig {
     eraParams = (HardFork.defaultEraParams secParam slotLength) {eraGenesisWin = sgen}
 
     numCoreNodes = NumCoreNodes 2
+
+-- | If you are here because you tried to implement `HasPointScheduleTestParams` for
+-- some type `TestBlockWith Foo` and got an overlapping instance warning, the `a ~ ()`
+-- constraint is only here to get your attention. The tests should remain as block
+-- polymorphic as possible, so /maybe/ there should be a class for the types `a` that
+-- can appear in `TestBlockWith a`. But we in the past do not know what that class
+-- should look like! So the choice is yours: if what you need from this class can be
+-- made polymorphic in `a`, consider adding a class. If not, specialize this instance.
+instance (a ~ ()) => HasPointScheduleTestParams (TestBlockWith a) where
+  defaultTopLevelConfig genesisTest = defaultCfg
+    (gtSecurityParam genesisTest) (gtForecastRange genesisTest) (gtGenesisWindow genesisTest)
+  getChunkInfoFromTopLevelConfig = mkTestChunkInfo
+  getInitExtLedgerState _ = testInitExtLedger
+  getBlockConfig _ = TestBlockConfig $ NumCoreNodes 0
