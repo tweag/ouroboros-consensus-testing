@@ -160,6 +160,7 @@ runConformanceTest :: forall blk.
   , HasHardForkHistory blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   , Eq blk
   , Terse blk
