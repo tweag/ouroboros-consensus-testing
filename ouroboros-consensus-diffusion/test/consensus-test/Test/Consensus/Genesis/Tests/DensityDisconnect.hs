@@ -5,7 +5,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Test.Consensus.Genesis.Tests.DensityDisconnect (tests) where
+module Test.Consensus.Genesis.Tests.DensityDisconnect (
+    test_densityDisconnectTriggersChainSel
+  , tests
+  ) where
 
 import           Cardano.Ledger.BaseTypes (unNonZero)
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
@@ -67,15 +70,18 @@ import           Test.Util.PartialAccessors
 import           Test.Util.TersePrinting (terseHFragment, terseHWTFragment,
                      terseHeader)
 import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
-import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
-                     adjustQuickCheckTests)
 
+desiredPasses :: Int -> Int
+desiredPasses = (* 10)
+
+testMaxSize :: Int -> Int
+testMaxSize = (`div` 5)
 
 tests :: TestTree
 tests =
-  adjustQuickCheckTests (* 10) $
-  adjustQuickCheckMaxSize (`div` 5) $
   testGroup "gdd" [
+    -- TODO: Migrate this two non-genesis-test properties?
+    -- NOTE: They are applied the same adjustments.
     testProperty "basic" prop_densityDisconnectStatic,
     testProperty "monotonicity" prop_densityDisconnectMonotonic,
     testProperty "re-triggers chain selection on disconnection" prop_densityDisconnectTriggersChainSel
@@ -478,8 +484,15 @@ prop_densityDisconnectMonotonic =
 -- selection is blocked by LoE, and the leashing adversary reveals it is not dense enough,
 -- it gets disconnected and then the selection progresses.
 prop_densityDisconnectTriggersChainSel :: Property
-prop_densityDisconnectTriggersChainSel =
-  forAllGenesisTest @TestBlock
+prop_densityDisconnectTriggersChainSel = runConformanceTest @TestBlock test_densityDisconnectTriggersChainSel
+
+test_densityDisconnectTriggersChainSel ::
+  ( HasHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_densityDisconnectTriggersChainSel =
+  mkConformanceTest desiredPasses testMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree

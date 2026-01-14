@@ -1,13 +1,18 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Test.Consensus.Genesis.Tests.LoE (tests) where
+module Test.Consensus.Genesis.Tests.LoE (
+    test_adversaryHitsTimeouts
+  , tests
+  ) where
 
 import           Data.Functor (($>))
+import           Ouroboros.Consensus.Block.Abstract (Header)
 import           Ouroboros.Consensus.Util.IOLike (Time (Time), fromException)
 import           Ouroboros.Network.AnchoredFragment (HasHeader (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -28,19 +33,23 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 import           Test.Util.TestBlock (TestBlock)
-import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
-                     adjustQuickCheckTests)
+
+-- | General adjustment of required property test passes.
+-- Can be set individually on each test definition.
+desiredPasses :: Int -> Int
+desiredPasses = (* 10)
+
+-- | General adjustment of max test case size.
+-- Can be set individually on each test definition.
+testMaxSize :: Int -> Int
+testMaxSize = (`div` 5)
 
 tests :: TestTree
 tests =
-  adjustQuickCheckTests (* 10) $
   testGroup
     "LoE"
-    [
-      adjustQuickCheckMaxSize (`div` 5) $
-        testProperty "adversary does not hit timeouts" (prop_adversaryHitsTimeouts False),
-      adjustQuickCheckMaxSize (`div` 5) $
-        testProperty "adversary hits timeouts" (prop_adversaryHitsTimeouts True)
+    [ testProperty "adversary does not hit timeouts" (prop_adversaryHitsTimeouts False)
+    , testProperty "adversary hits timeouts" (prop_adversaryHitsTimeouts True)
     ]
 
 -- | Tests that the selection advances in presence of the LoE when a peer is
@@ -54,12 +63,21 @@ tests =
 --
 -- NOTE: Same as 'LoP.prop_delayAttack' with timeouts instead of LoP.
 prop_adversaryHitsTimeouts :: Bool -> Property
-prop_adversaryHitsTimeouts timeoutsEnabled =
+prop_adversaryHitsTimeouts =
   -- Here we can't shrink because we exploit the properties of the point schedule to wait
   -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
   -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-  noShrinking $
-    forAllGenesisTest @TestBlock
+  noShrinking . runConformanceTest @TestBlock . test_adversaryHitsTimeouts
+
+
+test_adversaryHitsTimeouts ::
+  ( HasHeader blk
+  , HasHeader (Header blk)
+  , IssueTestBlock blk
+  , Ord blk
+  ) => Bool -> ConformanceTest blk
+test_adversaryHitsTimeouts timeoutsEnabled =
+    mkConformanceTest desiredPasses testMaxSize
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree

@@ -14,6 +14,12 @@
 -- biased towards a specific situation.
 module Test.Consensus.Genesis.Tests.Uniform (
     genUniformSchedulePoints
+  , test_blockFetchLeashingAttack
+  , test_downtime
+  , test_leashingAttackStalling
+  , test_leashingAttackTimeLimited
+  , test_loeStalling
+  , test_serveAdversarialBranches
   , tests
   ) where
 
@@ -58,26 +64,27 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 import           Test.Util.QuickCheck (le)
 import           Test.Util.TestBlock (TestBlock)
-import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
-                     adjustQuickCheckTests)
 import           Text.Printf (printf)
+
+desiredPasses :: Int -> Int
+desiredPasses = (* 10)
+
+testMaxSize :: Int -> Int
+testMaxSize = (`div` 5)
 
 tests :: TestTree
 tests =
-  adjustQuickCheckTests (* 10) $
-  adjustQuickCheckMaxSize (`div` 5) $
-  testGroup "uniform" [
-    -- See Note [Leashing attacks]
-    testProperty "stalling leashing attack" prop_leashingAttackStalling,
-    testProperty "time limited leashing attack" prop_leashingAttackTimeLimited,
-    testProperty "serve adversarial branches" prop_serveAdversarialBranches,
-    testProperty "the LoE stalls the chain, but the immutable tip is honest" prop_loeStalling,
+  testGroup "uniform"
+    [ -- See Note [Leashing attacks]
+      testProperty "stalling leashing attack" prop_leashingAttackStalling
+    , testProperty "time limited leashing attack" prop_leashingAttackTimeLimited
+    , testProperty "serve adversarial branches" prop_serveAdversarialBranches
+    , testProperty "the LoE stalls the chain, but the immutable tip is honest" prop_loeStalling
     -- This is a crude way of ensuring that we don't get chains with more than 100 blocks,
     -- because this test writes the immutable chain to disk and `instance Binary TestBlock`
     -- chokes on long chains.
-    adjustQuickCheckMaxSize (const 10) $
-    testProperty "the node is shut down and restarted after some time" prop_downtime,
-    testProperty "block fetch leashing attack" prop_blockFetchLeashingAttack
+    , testProperty "the node is shut down and restarted after some time" prop_downtime
+    , testProperty "block fetch leashing attack" prop_blockFetchLeashingAttack
     ]
 
 -- | The conjunction of
@@ -145,7 +152,16 @@ fromBlockPoint _                                      = Nothing
 -- | Tests that the immutable tip is not delayed and stays honest with the
 -- adversarial peers serving adversarial branches.
 prop_serveAdversarialBranches :: Property
-prop_serveAdversarialBranches = forAllGenesisTest
+prop_serveAdversarialBranches = runConformanceTest @TestBlock test_serveAdversarialBranches
+
+test_serveAdversarialBranches ::
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , Ord blk
+  , IssueTestBlock blk
+  ) => ConformanceTest blk
+test_serveAdversarialBranches =
+  mkConformanceTest desiredPasses testMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genUniformSchedulePoints)
 
@@ -171,7 +187,9 @@ prop_serveAdversarialBranches = forAllGenesisTest
 
     theProperty
 
-genUniformSchedulePoints :: GenesisTest TestBlock () -> QC.Gen (PointSchedule TestBlock)
+genUniformSchedulePoints ::
+  ( AF.HasHeader blk
+  ) => GenesisTest blk () -> QC.Gen (PointSchedule blk)
 genUniformSchedulePoints gt = stToGen (uniformPoints pointsGeneratorParams (gtBlockTree gt))
   where
     pointsGeneratorParams = PointsGeneratorParams
@@ -203,8 +221,16 @@ genUniformSchedulePoints gt = stToGen (uniformPoints pointsGeneratorParams (gtBl
 
 -- | Test that the leashing attacks do not delay the immutable tip
 prop_leashingAttackStalling :: Property
-prop_leashingAttackStalling =
-  forAllGenesisTest
+prop_leashingAttackStalling = runConformanceTest @TestBlock test_leashingAttackStalling
+
+test_leashingAttackStalling :: forall blk.
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_leashingAttackStalling =
+  mkConformanceTest desiredPasses testMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genLeashingSchedule)
 
@@ -226,7 +252,7 @@ prop_leashingAttackStalling =
     -- This is achieved by dropping random points from the schedule of each peer
     -- and by adding sufficient time at the end of a test to allow LoP and
     -- timeouts to disconnect adversaries.
-    genLeashingSchedule :: GenesisTest TestBlock () -> QC.Gen (PointSchedule TestBlock)
+    genLeashingSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
     genLeashingSchedule genesisTest = do
       ps@PointSchedule{psSchedule = sch} <- ensureScheduleDuration genesisTest <$> genUniformSchedulePoints genesisTest
       advs <- mapM dropRandomPoints $ adversarialPeers sch
@@ -252,8 +278,16 @@ dropRandomPoints ps = do
 --
 -- See Note [Leashing attacks]
 prop_leashingAttackTimeLimited :: Property
-prop_leashingAttackTimeLimited =
-  forAllGenesisTest
+prop_leashingAttackTimeLimited = runConformanceTest @TestBlock test_leashingAttackTimeLimited
+
+test_leashingAttackTimeLimited :: forall blk.
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_leashingAttackTimeLimited =
+  mkConformanceTest desiredPasses testMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genTimeLimitedSchedule)
 
@@ -271,7 +305,7 @@ prop_leashingAttackTimeLimited =
 
   where
     -- | A schedule which doesn't run past the last event of the honest peer
-    genTimeLimitedSchedule :: GenesisTest TestBlock () -> QC.Gen (PointSchedule TestBlock)
+    genTimeLimitedSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
     genTimeLimitedSchedule genesisTest = do
       Peers honests advs0 <- psSchedule <$> genUniformSchedulePoints genesisTest
       let timeLimit = estimateTimeBound
@@ -290,8 +324,7 @@ prop_leashingAttackTimeLimited =
     takePointsUntil limit = takeWhile ((<= limit) . fst)
 
     estimateTimeBound
-      :: AF.HasHeader blk
-      => ChainSyncTimeout
+      :: ChainSyncTimeout
       -> LoPBucketParams
       -> PeerSchedule blk
       -> [PeerSchedule blk]
@@ -321,7 +354,7 @@ prop_leashingAttackTimeLimited =
             firstTipPointTime
           )
 
-    blockPointNos :: AF.HasHeader blk => [(Time, SchedulePoint blk)] -> [Word64]
+    blockPointNos :: [(Time, SchedulePoint blk)] -> [Word64]
     blockPointNos =
       map (unBlockNo . blockNo . snd) .
       mapMaybe fromBlockPoint
@@ -337,8 +370,16 @@ headCallStack = \case
 -- | Test that enabling the LoE causes the selection to remain at
 -- the first fork intersection (keeping the immutable tip honest).
 prop_loeStalling :: Property
-prop_loeStalling =
-  forAllGenesisTest
+prop_loeStalling = runConformanceTest @TestBlock test_loeStalling
+
+test_loeStalling :: forall blk.
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_loeStalling =
+  mkConformanceTest desiredPasses testMaxSize
 
     (do gt <- genChains (QC.choose (1, 4))
                 `enrichedWith`
@@ -356,7 +397,7 @@ prop_loeStalling =
 
     mkProperty
   where
-    mkProperty :: forall blk. (AF.HasHeader blk, GetHeader blk) => GenesisTestFull blk -> StateView blk -> Property
+    mkProperty :: GenesisTestFull blk -> StateView blk -> Property
     mkProperty gt@GenesisTest {gtBlockTree = BlockTree {btTrunk, btBranches}} sv@StateView{svSelectedChain} =
       classify (any (== selectionTip) allTips) "The selection is at a branch tip" $
       classify (any anchorIsImmutableTip suffixes) "The immutable tip is at a fork intersection" $
@@ -377,7 +418,16 @@ prop_loeStalling =
 --
 -- This ensures that a user may shut down their machine while syncing without additional vulnerabilities.
 prop_downtime :: Property
-prop_downtime = forAllGenesisTest @TestBlock
+prop_downtime = runConformanceTest @TestBlock test_downtime
+
+test_downtime ::
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_downtime =
+  mkConformanceTest desiredPasses (testMaxSize . const 10)
 
     (genChains (QC.choose (1, 4)) `enrichedWith` \ gt ->
       ensureScheduleDuration gt <$> stToGen (uniformPoints (pointsGeneratorParams gt) (gtBlockTree gt)))
@@ -413,19 +463,32 @@ prop_downtime = forAllGenesisTest @TestBlock
 -- under test should detect those behaviours as adversarial and find a way to
 -- make progress.
 prop_blockFetchLeashingAttack :: Property
-prop_blockFetchLeashingAttack =
-  forAllGenesisTest
+prop_blockFetchLeashingAttack = runConformanceTest @TestBlock test_blockFetchLeashingAttack
+
+
+test_blockFetchLeashingAttack :: forall blk.
+  ( AF.HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => ConformanceTest blk
+test_blockFetchLeashingAttack =
+  mkConformanceTest desiredPasses testMaxSize
+
     (genChains (pure 0) `enrichedWith` genBlockFetchLeashingSchedule)
+
     defaultSchedulerConfig
       { scEnableLoE = True,
         scEnableLoP = True,
         scEnableCSJ = True,
         scEnableBlockFetchTimeouts = False
       }
+
     shrinkPeerSchedules
+
     theProperty
   where
-    genBlockFetchLeashingSchedule :: GenesisTest TestBlock () -> QC.Gen (PointSchedule TestBlock)
+    genBlockFetchLeashingSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
     genBlockFetchLeashingSchedule genesisTest = do
       -- A schedule with several honest peers and no adversaries. We will then
       -- keep one of those as honest and remove the block points from the
