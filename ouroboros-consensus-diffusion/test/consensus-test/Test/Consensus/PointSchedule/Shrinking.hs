@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.PointSchedule.Shrinking (
     -- | Exported only for testing (that is, checking the properties of the function)
@@ -9,17 +10,19 @@ module Test.Consensus.PointSchedule.Shrinking (
   , shrinkPeerSchedules
   ) where
 
+import           Cardano.Slotting.Slot (at, withOriginToMaybe)
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime,
                      diffTime)
 import           Data.Containers.ListUtils (nubOrd)
 import           Data.Foldable (toList)
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (catMaybes, mapMaybe)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (Empty), takeWhileOldest)
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
-                     addBranch', mkTrunk)
+                     addBranch', isAncestorOf, isStrictAncestorOf, mkTrunk)
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule (GenesisTest (..),
                      GenesisTestFull, PeerSchedule, PointSchedule (..),
@@ -27,8 +30,6 @@ import           Test.Consensus.PointSchedule (GenesisTest (..),
 import           Test.Consensus.PointSchedule.Peers (Peers (..))
 import           Test.Consensus.PointSchedule.SinglePeer (SchedulePoint (..))
 import           Test.QuickCheck (shrinkList)
-import           Test.Util.TestBlock (TestBlock, isAncestorOf,
-                     isStrictAncestorOf)
 
 -- | Shrink a 'PointSchedule'. We use a different logic to shrink honest and
 -- adversarial peers. For adversarial peers, we just remove arbitrary points,
@@ -37,9 +38,12 @@ import           Test.Util.TestBlock (TestBlock, isAncestorOf,
 -- The block tree is trimmed to keep only parts that are necessary for the shrunk
 -- schedules.
 shrinkPeerSchedules ::
-  GenesisTestFull TestBlock ->
-  StateView TestBlock ->
-  [GenesisTestFull TestBlock]
+  ( HasHeader blk
+  , Ord blk
+  ) =>
+  GenesisTestFull blk ->
+  StateView blk ->
+  [GenesisTestFull blk]
 shrinkPeerSchedules genesisTest@GenesisTest{gtBlockTree, gtSchedule} _stateView =
   let PointSchedule {psSchedule, psStartOrder} = gtSchedule
       simulationDuration = duration gtSchedule
@@ -72,9 +76,11 @@ shrinkPeerSchedules genesisTest@GenesisTest{gtBlockTree, gtSchedule} _stateView 
 -- the honest peers; and it does not remove ticks from the schedules of the
 -- remaining adversaries.
 shrinkByRemovingAdversaries ::
-  GenesisTestFull TestBlock ->
-  StateView TestBlock ->
-  [GenesisTestFull TestBlock]
+  ( HasHeader blk
+  , Ord blk) =>
+  GenesisTestFull blk ->
+  StateView blk ->
+  [GenesisTestFull blk]
 shrinkByRemovingAdversaries genesisTest@GenesisTest{gtSchedule, gtBlockTree} _stateView =
   shrinkAdversarialPeers (const []) (psSchedule gtSchedule) <&> \shrunkSchedule ->
     let
@@ -140,17 +146,17 @@ shrinkHonestPeer sch =
       (zip sch (drop 1 sch))
 
 -- | Speeds up _the_ schedule (that is, the one that we are actually trying to
--- speed up) after `at` time, by `speedUpBy`. This "speeding up" is done by
+-- speed up) after `atTime` time, by `speedUpBy`. This "speeding up" is done by
 -- removing `speedUpBy` to all points after `at`, and removing those points if
 -- they fall before `at`. We check that the operation doesn't change the final
 -- state of the peer, i.e. it doesn't remove all TP, HP, and BP in the sped up
 -- part.
 speedUpTheSchedule :: PeerSchedule blk -> (Time, DiffTime) -> Maybe (PeerSchedule blk)
-speedUpTheSchedule sch (at, speedUpBy) =
+speedUpTheSchedule sch (atTime, speedUpBy) =
   if stillValid then Just $ beforeSplit ++ spedUpSchedule else Nothing
   where
-    (beforeSplit, afterSplit) = span ((< at) . fst) sch
-    threshold = addTime speedUpBy at
+    (beforeSplit, afterSplit) = span ((< atTime) . fst) sch
+    threshold = addTime speedUpBy atTime
     spedUpSchedule = mapMaybe
       (\(t, p) -> if t < threshold then Nothing else Just (addTime (-speedUpBy) t, p))
       afterSplit
@@ -165,12 +171,15 @@ speedUpTheSchedule sch (at, speedUpBy) =
 -- | Remove blocks from the given block tree that are not necessary for the
 -- given peer schedules. If entire branches are unused, they are removed. If the
 -- trunk is unused, then it remains as an empty anchored fragment.
-trimBlockTree' :: Peers (PeerSchedule TestBlock) -> BlockTree TestBlock -> BlockTree TestBlock
+trimBlockTree' ::
+  ( Ord blk
+  , HasHeader blk
+  ) => Peers (PeerSchedule blk) -> BlockTree blk -> BlockTree blk
 trimBlockTree' = keepOnlyAncestorsOf . peerSchedulesBlocks
 
 -- | Given some blocks and a block tree, keep only the prefix of the block tree
 -- that contains ancestors of the given blocks.
-keepOnlyAncestorsOf :: [TestBlock] -> BlockTree TestBlock -> BlockTree TestBlock
+keepOnlyAncestorsOf :: forall blk. (Ord blk, HasHeader blk) => [blk] -> BlockTree blk -> BlockTree blk
 keepOnlyAncestorsOf blocks bt =
     let leaves = blocksWithoutDescendents blocks
         trunk = keepOnlyAncestorsOf' leaves (btTrunk bt)
@@ -182,12 +191,12 @@ keepOnlyAncestorsOf blocks bt =
 
     -- | Given some blocks and a fragment, keep only the prefix of the fragment
     -- that contains ancestors of the given blocks.
-    keepOnlyAncestorsOf' :: [TestBlock] -> AnchoredFragment TestBlock -> AnchoredFragment TestBlock
-    keepOnlyAncestorsOf' leaves = takeWhileOldest (\block -> (block `isAncestorOf`) `any` leaves)
+    keepOnlyAncestorsOf' :: [blk] -> AnchoredFragment blk -> AnchoredFragment blk
+    keepOnlyAncestorsOf' leaves = takeWhileOldest (\block -> (isAncestorOf bt (at block)) `any` map at leaves)
 
     -- | Return a subset of the given blocks containing only the ones that do
     -- not have any other descendents in the set.
-    blocksWithoutDescendents :: [TestBlock] -> [TestBlock]
+    blocksWithoutDescendents :: [blk] -> [blk]
     blocksWithoutDescendents bs =
-      let bs' = nubOrd bs
-       in [ b | b <- bs', not ((b `isStrictAncestorOf`) `any` bs') ]
+      let bs' = fmap at $ nubOrd bs
+       in catMaybes [ withOriginToMaybe b | b <- bs', not ((isStrictAncestorOf bt b) `any` bs') ]

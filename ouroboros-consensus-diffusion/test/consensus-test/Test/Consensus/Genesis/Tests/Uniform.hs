@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Peer simulator tests based on randomly generated schedules. They share the
@@ -26,14 +27,16 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-import           Ouroboros.Consensus.Block.Abstract (WithOrigin (NotOrigin))
+import           Ouroboros.Consensus.Block.Abstract (Header,
+                     WithOrigin (NotOrigin))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockNo, blockSlot, unBlockNo)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
-import           Test.Consensus.BlockTree (BlockTree (..), btbSuffix)
+import           Test.Consensus.BlockTree (BlockTree (..), btbSuffix,
+                     pathOnChain, pathOnChainH)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
 import           Test.Consensus.PeerSimulator.ChainSync (chainSyncNoTimeouts)
@@ -84,8 +87,9 @@ tests =
 --  * the immutable tip is on the best chain, and
 --  * the immutable tip is no older than s + d + 1 slots
 theProperty ::
-  GenesisTestFull TestBlock ->
-  StateView TestBlock ->
+  (AF.HasHeader blk) =>
+  GenesisTestFull blk ->
+  StateView blk ->
   Property
 theProperty genesisTest stateView@StateView{svSelectedChain} =
   classify genesisWindowAfterIntersection "Full genesis window after intersection" $
@@ -118,7 +122,7 @@ theProperty genesisTest stateView@StateView{svSelectedChain} =
 
     isHonest = all (0 ==)
 
-    immutableTipHash = simpleHash (AF.anchorToHash immutableTip)
+    immutableTipHash = pathOnChainH gtBlockTree $ AF.anchorToHash immutableTip
 
     immutableTip = AF.anchor svSelectedChain
 
@@ -359,24 +363,25 @@ prop_loeStalling =
 
     shrinkPeerSchedules
 
-    prop
+    mkProperty
   where
-    prop GenesisTest {gtBlockTree = BlockTree {btTrunk, btBranches}} StateView{svSelectedChain} =
+    mkProperty :: (AF.HasHeader blk, AF.HasHeader (Header blk)) => GenesisTestFull blk -> StateView blk -> Property
+    mkProperty GenesisTest {gtBlockTree = bt@(BlockTree {btTrunk, btBranches})} StateView{svSelectedChain} =
       classify (any (== selectionTip) allTips) "The selection is at a branch tip" $
       classify (any anchorIsImmutableTip suffixes) "The immutable tip is at a fork intersection" $
       property (isHonest immutableTipHash)
       where
-        anchorIsImmutableTip branch = simpleHash (AF.anchorToHash (AF.anchor branch)) == immutableTipHash
+        anchorIsImmutableTip branch = pathOnChain bt (AF.anchorToHash (AF.anchor branch)) == immutableTipHash
 
         isHonest = all (0 ==)
 
-        immutableTipHash = simpleHash (AF.anchorToHash immutableTip)
+        immutableTipHash = pathOnChainH bt $ AF.anchorToHash immutableTip
 
         immutableTip = AF.anchor svSelectedChain
 
-        selectionTip = simpleHash (AF.headHash svSelectedChain)
+        selectionTip =  pathOnChainH bt $ AF.headHash svSelectedChain
 
-        allTips = simpleHash . AF.headHash <$> (btTrunk : suffixes)
+        allTips = pathOnChain bt . AF.headHash <$> (btTrunk : suffixes)
 
         suffixes = btbSuffix <$> btBranches
 
@@ -385,7 +390,7 @@ prop_loeStalling =
 --
 -- This ensures that a user may shut down their machine while syncing without additional vulnerabilities.
 prop_downtime :: Property
-prop_downtime = forAllGenesisTest
+prop_downtime = forAllGenesisTest @TestBlock
 
     (genChains (QC.choose (1, 4)) `enrichedWith` \ gt ->
       ensureScheduleDuration gt <$> stToGen (uniformPoints (pointsGeneratorParams gt) (gtBlockTree gt)))
