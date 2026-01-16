@@ -1,6 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Test.Consensus.Serialize where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.KeyMap as Aeson
+import qualified Data.Aeson.Types as Aeson
 -- import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.BlockTree
 import           Test.Consensus.PointSchedule
@@ -64,7 +67,7 @@ data BlockType
 -- this tool will be used with a pretty small number of different block
 -- types; we wrap them into a type to hide the `blk` parameter.
 data SomeBlockTreeAndPointSchedule
-  = UnitBlockTreeAndPointSchedule (BlockTree (), PointSchedule ())
+  = UnitBlockTreeAndPointSchedule (BlockTree ()) (PointSchedule ())
 
 
 data SerializationError = SerializationError
@@ -76,8 +79,34 @@ serializeTestCase testCase = Left SerializationError
 data DeserializationError = DeserializationError
   deriving (Eq, Show)
 
-deserializeTestCase :: Aeson.Value -> Either DeserializationError ReifiedTestCase
-deserializeTestCase value = Left DeserializationError
+deserializeTestCase :: Aeson.Value -> Aeson.Parser ReifiedTestCase
+deserializeTestCase value = undefined
+
+-- | Cannot use (just) the applicative interface here because which
+-- type gets parsed depends on the value of the 'block_type' field.
+parseBlockTreeAndPointSchedule
+  :: Aeson.Value -> Aeson.Parser SomeBlockTreeAndPointSchedule
+parseBlockTreeAndPointSchedule =
+  Aeson.withObject "SomeBlockTreeAndPointSchedule" $ \obj ->
+    let
+      getBlockType = case Aeson.lookup "block_type" obj of
+        Nothing -> Left "block_type key not found."
+        Just v -> parseBlockType v
+    in case getBlockType of
+      Left msg -> Aeson.parseFail msg
+      Right blockType -> case blockType of
+        UnitBlockType -> UnitBlockTreeAndPointSchedule
+          <$> parseUnitBlockTree <*> parseUnitPointSchedule
+
+parseBlockType :: Aeson.Value -> Either String BlockType
+parseBlockType = Aeson.withString txt -> case txt of
+  "unit" -> UnitBlockType
+
+parseUnitBlockTree :: Aeson.Parser (BlockTree ())
+parseUnitBlockTree = undefined
+
+parseUnitPointSchedule :: Aeson.Parser (PointSchedule ())
+parseUnitPointSchedule = undefined
 
 -- properties:
 --   deserializeTestCase . serializeTestCase === id
