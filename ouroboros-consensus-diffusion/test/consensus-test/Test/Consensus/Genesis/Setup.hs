@@ -12,12 +12,9 @@ module Test.Consensus.Genesis.Setup (
     ConformanceTest (..)
   , module Test.Consensus.Genesis.Setup.GenChains
   , castHeaderHash
-  , forAllGenesisTest -- TODO: Remove after porting is done
   , honestImmutableTip
   , mkConformanceTest
   , runConformanceTest
-  , runGenesisTest
-  , runGenesisTest'
   , selectedHonestChain
   ) where
 
@@ -148,18 +145,21 @@ runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
 -- | Variant of 'runGenesisTest' that also takes a property on the final
 -- 'StateView' and returns a QuickCheck property. The trace is printed in case
 -- of counter-example.
-runGenesisTest' ::
+_runGenesisTest' ::
   Testable prop =>
   SchedulerConfig ->
   GenesisTestFull TestBlock ->
   (StateView TestBlock -> prop) ->
   Property
-runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
+_runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
   protocolInfoArgs <- getProtocolInfoArgs
   let RunGenesisTestResult{rgtrTrace, rgtrStateView} =
         runGenesisTest protocolInfoArgs schedulerConfig genesisTest
   pure $ counterexample rgtrTrace $ makeProperty rgtrStateView
 
+-- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
+-- PeerSchedule' from a 'ConformanceTest', runs them with 'runGenesisTest',
+-- and checks whether the given property holds on the resulting 'StateView'.
 runConformanceTest :: forall blk.
   ( Condense (StateView blk)
   , CondenseList (NodeState blk)
@@ -226,37 +226,6 @@ runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
         e :: (Exception e) => Maybe e
         e = fromException exn
         true = property True
-
--- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
--- PeerSchedule', runs them with 'runGenesisTest', check whether the given
--- property holds on the resulting 'StateView'.
-forAllGenesisTest :: forall blk prop.
-  ( Testable prop
-  , Condense (StateView blk)
-  , CondenseList (NodeState blk)
-  , ShowProxy blk
-  , ShowProxy (Header blk)
-  , ConfigSupportsNode blk
-  , LedgerSupportsProtocol blk
-  , ChainDB.SerialiseDiskConstraints blk
-  , BlockSupportsDiffusionPipelining blk
-  , InspectLedger blk
-  , HasHardForkHistory blk
-  , ConvertRawHash blk
-  , CanUpgradeLedgerTables (LedgerState blk)
-  , HasPointScheduleTestParams blk
-  , Eq (Header blk)
-  , Eq blk
-  , Terse blk
-  , Condense (NodeState blk)
-  ) =>
-  Gen (GenesisTestFull blk) ->
-  SchedulerConfig ->
-  (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
-  (GenesisTestFull blk -> StateView blk -> prop) ->
-  Property
-forAllGenesisTest generator schedulerConfig shrinker mkProperty =
-  runConformanceTest $ mkConformanceTest id id generator schedulerConfig shrinker mkProperty
 
 -- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
 -- this function casts this type's hash to its instance, so that it can be used
