@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -69,6 +70,7 @@ import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
 import           Ouroboros.Consensus.Network.NodeToNode (ChainSyncTimeout (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo)
 import           Ouroboros.Consensus.Protocol.Abstract
                      (SecurityParam (SecurityParam), maxRollbacks)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -627,4 +629,7 @@ ensureScheduleDuration gt PointSchedule{psSchedule, psStartOrder, psMinEndTime} 
 -- they provide bits of state required to run the tests that did not already
 -- have a class to live in.
 class HasPointScheduleTestParams blk where
+  data ProtocolInfoArgs blk
+  getProtocolInfoArgs :: IO (ProtocolInfoArgs blk)
+  mkProtocolInfo :: SecurityParam -> ForecastRange -> GenesisWindow -> ProtocolInfoArgs blk -> ProtocolInfo blk
   getChunkInfoFromTopLevelConfig :: TopLevelConfig blk -> ChunkInfo

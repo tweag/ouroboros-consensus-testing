@@ -520,17 +520,18 @@ nodeLifecycle ::
   , HasPointScheduleTestParams blk
   , Eq (Header blk)
   ) =>
-  ProtocolInfo blk ->
+  ProtocolInfoArgs blk ->
   SchedulerConfig ->
   GenesisTestFull blk ->
   Tracer m (TraceEvent blk) ->
   ResourceRegistry m ->
   PeerSimulatorResources m blk ->
   m (NodeLifecycle blk m)
-nodeLifecycle protocolInfo schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
+nodeLifecycle protocolArgs schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
   lrCdb <- emptyNodeDBs
   lrLoEVar <- mkLoEVar schedulerConfig
   let
+    protocolInfo = mkProtocolInfo k gtForecastRange gtGenesisWindow protocolArgs
     topLevelConfig = pInfoConfig protocolInfo
     resources =
       LiveResources {
@@ -575,15 +576,15 @@ runPointSchedule ::
   , Eq (Header blk)
   , Eq blk
   ) =>
-  ProtocolInfo blk ->
+  ProtocolInfoArgs blk ->
   SchedulerConfig ->
   GenesisTestFull blk ->
   Tracer m (TraceEvent blk) ->
   m (StateView blk)
-runPointSchedule protocolInfo schedulerConfig genesisTest tracer0 =
+runPointSchedule protocolInfoArgs schedulerConfig genesisTest tracer0 =
   withRegistry $ \registry -> do
     peerSim <- makePeerSimulatorResources tracer gtBlockTree (NonEmpty.fromList $ getPeerIds $ psSchedule gtSchedule)
-    lifecycle <- nodeLifecycle protocolInfo schedulerConfig genesisTest tracer registry peerSim
+    lifecycle <- nodeLifecycle protocolInfoArgs schedulerConfig genesisTest tracer registry peerSim
     (chainDb, stateViewTracers) <- runScheduler
       (Tracer $ traceWith tracer . TraceSchedulerEvent)
       (cschcMap (psrHandles peerSim))
