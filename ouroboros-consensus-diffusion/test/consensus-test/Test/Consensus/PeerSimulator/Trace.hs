@@ -315,8 +315,7 @@ traceScheduledServerHandlerEventTestBlockWith tracer unit = \case
     traceLines = traceUnitLinesWith tracer unit
 
 traceScheduledChainSyncServerEventTestBlockWith ::
-  ( AF.HasHeader blk
-  , Condense (NodeState blk)
+  ( Condense (NodeState blk)
   , Terse blk
   ) =>
   Tracer m String ->
@@ -360,9 +359,7 @@ traceScheduledChainSyncServerEventTestBlockWith tracer peerId = \case
     traceLines = traceUnitLinesWith tracer unit
 
 traceScheduledBlockFetchServerEventTestBlockWith ::
-  ( AF.HasHeader (Header blk)
-  , AF.HasHeader blk
-  , Condense (NodeState blk)
+  ( Condense (NodeState blk)
   , Terse blk
   ) =>
   Tracer m String ->

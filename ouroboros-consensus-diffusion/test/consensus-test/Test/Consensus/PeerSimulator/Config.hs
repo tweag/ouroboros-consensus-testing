@@ -19,13 +19,14 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (CoreNodeId),
 import           Ouroboros.Consensus.Protocol.BFT
                      (BftParams (BftParams, bftNumNodes, bftSecurityParam),
                      ConsensusConfig (BftConfig, bftParams, bftSignKey, bftVerKeys))
-import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange), HasPointScheduleTestParams(..), GenesisTest(..))
+import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange),
+                     HasPointScheduleTestParams (..))
 import           Test.Util.ChainDB (mkTestChunkInfo)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (BlockConfig (TestBlockConfig),
-                     CodecConfig (TestBlockCodecConfig), testInitExtLedger,
+                     CodecConfig (TestBlockCodecConfig),
                      StorageConfig (TestBlockStorageConfig), TestBlock,
-                     TestBlockWith(..), TestBlockLedgerConfig (..))
+                     TestBlockLedgerConfig (..), TestBlockWith (..))
 
 -- REVIEW: this has not been deliberately chosen
 defaultCfg :: SecurityParam -> ForecastRange -> GenesisWindow -> TopLevelConfig TestBlock
@@ -65,8 +66,8 @@ defaultCfg secParam (ForecastRange sfor) sgen = TopLevelConfig {
 -- should look like! So the choice is yours: if what you need from this class can be
 -- made polymorphic in `a`, consider adding a class. If not, specialize this instance.
 instance (a ~ ()) => HasPointScheduleTestParams (TestBlockWith a) where
-  defaultTopLevelConfig genesisTest = defaultCfg
-    (gtSecurityParam genesisTest) (gtForecastRange genesisTest) (gtGenesisWindow genesisTest)
+  -- defaultTopLevelConfig genesisTest = defaultCfg
+    -- (gtSecurityParam genesisTest) (gtForecastRange genesisTest) (gtGenesisWindow genesisTest)
   getChunkInfoFromTopLevelConfig = mkTestChunkInfo
-  getInitExtLedgerState _ = testInitExtLedger
-  getBlockConfig _ = TestBlockConfig $ NumCoreNodes 0
+  -- getInitExtLedgerState _ = testInitExtLedger
+  -- getBlockConfig _ = TestBlockConfig $ NumCoreNodes 0

@@ -31,6 +31,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
 import           Ouroboros.Consensus.Storage.LedgerDB.API
                      (CanUpgradeLedgerTables)
@@ -116,17 +117,17 @@ runGenesisTest ::
   , Terse blk
   , Condense (NodeState blk)
   )
-  => SchedulerConfig ->
+  => ProtocolInfo blk -> SchedulerConfig ->
   GenesisTestFull blk ->
   RunGenesisTestResult blk
-runGenesisTest schedulerConfig genesisTest =
+runGenesisTest protocolInfo schedulerConfig genesisTest =
   runSimStrictShutdownOrThrow $ do
     (recordingTracer, getTrace) <- recordingTracerM
     let tracer = if scDebug schedulerConfig then debugTracer else recordingTracer
 
     traceLinesWith tracer $ prettyGenesisTest prettyPointSchedule genesisTest
 
-    rgtrStateView <- runPointSchedule schedulerConfig genesisTest =<< tracerTestBlock tracer
+    rgtrStateView <- runPointSchedule protocolInfo schedulerConfig genesisTest =<< tracerTestBlock tracer
     traceWith tracer (condense rgtrStateView)
     rgtrTrace <- unlines <$> getTrace
 
@@ -145,7 +146,7 @@ runGenesisTest' schedulerConfig genesisTest makeProperty =
     counterexample rgtrTrace $ makeProperty rgtrStateView
   where
     RunGenesisTestResult{rgtrTrace, rgtrStateView} =
-      runGenesisTest schedulerConfig genesisTest
+      runGenesisTest (error "protocol info") schedulerConfig genesisTest
 
 runConformanceTest :: forall blk.
   ( Condense (StateView blk)
@@ -188,7 +189,7 @@ runConformanceTest ConformanceTest {..} =
         counterexample (rgtrTrace result) $
         ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
   where
-    runner = runGenesisTest ctSchedulerConfig
+    runner = runGenesisTest (error "protocol info") ctSchedulerConfig
     shrinker' gt = ctShrinker gt . rgtrStateView
     hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
       conjoin $ isExpectedException <$> mapMaybe
