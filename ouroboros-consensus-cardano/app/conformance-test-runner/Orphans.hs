@@ -7,27 +7,19 @@
 
 module Orphans () where
 
-import Codec.Serialise (Serialise (decode, encode))
-import GHC.Generics (Generic)
-import Ouroboros.Consensus.Block (Header)
-import Ouroboros.Consensus.Ledger.SupportsMempool
-  ( GenTx
-  , GenTxId
-  , TxId
-  )
-import Ouroboros.Consensus.Node.Run
-  ( SerialiseNodeToNodeConstraints (..)
-  )
-import Ouroboros.Consensus.Node.Serialisation
-  ( SerialiseNodeToNode
-  )
-import Ouroboros.Consensus.Storage.Serialisation
-  ( SerialisedHeader
-  , decodeTrivialSerialisedHeader
-  , encodeTrivialSerialisedHeader
-  )
-import Ouroboros.Network.Block (Serialised)
-import Test.Util.TestBlock (TestBlock)
+import           Codec.Serialise (Serialise (decode, encode))
+import           GHC.Generics (Generic)
+import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx, GenTxId,
+                     TxId)
+import           Ouroboros.Consensus.Node.Run
+                     (SerialiseNodeToNodeConstraints (..))
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToNode)
+import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader,
+                     decodeTrivialSerialisedHeader,
+                     encodeTrivialSerialisedHeader)
+import           Ouroboros.Network.Block (Serialised)
+import           Test.Util.TestBlock (TestBlock)
 
 -- * Target instances
 

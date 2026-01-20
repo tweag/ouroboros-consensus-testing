@@ -338,35 +338,3 @@ test-suite consensus-test
     ouroboros-consensus:unstable-consensus-testlib,
     tasty,
     unstable-consensus-conformance-testlib
-
-executable conformance-test-runner
-  import: common-lib
-  hs-source-dirs: app/conformance-test-runner
-  main-is: Main.hs
-  other-modules:
-    ExitCodes
-    Options
-    Orphans
-    Server
-    MiniProtocols
-  build-depends:
-    base,
-    containers,
-    ouroboros-network,
-    optparse-applicative,
-    ouroboros-network,
-    ouroboros-consensus:{ouroboros-consensus, unstable-mock-block, unstable-consensus-testlib},
-    ouroboros-network-api,
-    unstable-consensus-conformance-testlib,
-    aeson,
-    bytestring,
-    ouroboros-network-framework,
-    network,
-    network-mux,
-    contra-tracer,
-    resource-registry,
-    serialise,
-    ouroboros-network-protocols,
-    cborg,
-    ouroboros-consensus-diffusion,
-    io-classes,

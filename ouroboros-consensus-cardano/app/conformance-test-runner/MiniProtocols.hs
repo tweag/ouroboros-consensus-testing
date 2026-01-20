@@ -16,47 +16,42 @@
 -- picked up by the peer simulator.
 module MiniProtocols (peerSimServer) where
 
-import Ouroboros.Network.Protocol.BlockFetch.Server
-import Ouroboros.Network.Util.ShowProxy (ShowProxy)
-import Ouroboros.Network.Protocol.ChainSync.Server
-import Test.Consensus.PeerSimulator.Resources (PeerResources (..), ChainSyncResources (..), BlockFetchResources (..))
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
-import Control.Monad (forever)
-import Control.Monad.Class.MonadSay
-import Control.Tracer
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadSay
+import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
-import Data.Void (Void)
-import GHC.Generics (Generic)
+import           Data.Void (Void)
+import           GHC.Generics (Generic)
 import qualified Network.Mux as Mux
-import Ouroboros.Consensus.Block
-import Ouroboros.Consensus.Network.NodeToNode (Codecs (..))
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Network.NodeToNode (Codecs (..))
 import qualified Ouroboros.Consensus.Network.NodeToNode as Consensus.N2N
-import Ouroboros.Consensus.Node (stdVersionDataNTN)
-import Ouroboros.Consensus.Node.NetworkProtocolVersion
-import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
-import Ouroboros.Consensus.Util.IOLike
-import Ouroboros.Network.Driver (runPeer)
-import Ouroboros.Network.KeepAlive (keepAliveServer)
-import Ouroboros.Network.Magic (NetworkMagic)
-import Ouroboros.Network.Mux
-  ( MiniProtocol (..)
-  , MiniProtocolCb (..)
-  , OuroborosApplication (..)
-  , OuroborosApplicationWithMinimalCtx
-  , RunMiniProtocol (..)
-  )
-import Ouroboros.Network.NodeToNode
-  ( NodeToNodeVersionData (..)
-  , Versions (..)
-  )
+import           Ouroboros.Consensus.Node (stdVersionDataNTN)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Driver (runPeer)
+import           Ouroboros.Network.KeepAlive (keepAliveServer)
+import           Ouroboros.Network.Magic (NetworkMagic)
+import           Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
+                     OuroborosApplication (..),
+                     OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
+                     Versions (..))
 import qualified Ouroboros.Network.NodeToNode as N2N
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.Protocol.Handshake.Version (Version (..))
-import Ouroboros.Network.Protocol.KeepAlive.Server
-  ( keepAliveServerPeer
-  )
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.Handshake.Version (Version (..))
+import           Ouroboros.Network.Protocol.KeepAlive.Server
+                     (keepAliveServerPeer)
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
+import           Test.Consensus.PeerSimulator.Resources
+                     (BlockFetchResources (..), ChainSyncResources (..),
+                     PeerResources (..))
 
 peerSimServer ::
   forall m blk addr.

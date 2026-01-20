@@ -7,38 +7,37 @@
 
 module Server (run) where
 
-import           Ouroboros.Network.ErrorPolicy (nullErrorPolicies)
-import Ouroboros.Consensus.Node.Serialisation
-import Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import Test.Consensus.PeerSimulator.Resources (PeerResources)
-import Control.ResourceRegistry
-import Control.Tracer
+import           Control.ResourceRegistry
+import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
-import Data.Functor.Contravariant ((>$<))
-import Data.Void (Void)
-import MiniProtocols (peerSimServer)
+import           Data.Functor.Contravariant ((>$<))
+import           Data.Void (Void)
+import           MiniProtocols (peerSimServer)
 import qualified Network.Mux as Mux
-import Network.Socket (SockAddr (..))
-import Ouroboros.Consensus.Config.SupportsNode
-import Ouroboros.Consensus.Mock.Ledger
-import Ouroboros.Consensus.Mock.Node ()
-import Ouroboros.Consensus.Node.NetworkProtocolVersion
-import Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
-import Orphans ()
-import Ouroboros.Consensus.Util.IOLike
-import Ouroboros.Network.IOManager (withIOManager)
-import Ouroboros.Network.Mux
+import           Network.Socket (SockAddr (..))
+import           Orphans ()
+import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.Mock.Ledger
+import           Ouroboros.Consensus.Mock.Node ()
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.Node.Run (SerialiseNodeToNodeConstraints)
+import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.ErrorPolicy (nullErrorPolicies)
+import           Ouroboros.Network.IOManager (withIOManager)
+import           Ouroboros.Network.Mux
 import qualified Ouroboros.Network.NodeToNode as N2N
-import Ouroboros.Network.PeerSelection.PeerSharing.Codec
-  ( decodeRemoteAddress
-  , encodeRemoteAddress
-  )
-import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Codec
+                     (decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import qualified Ouroboros.Network.Protocol.Handshake as Handshake
 import qualified Ouroboros.Network.Snocket as Snocket
-import Ouroboros.Network.Socket (SomeResponderApplication (..), configureSocket)
-import Test.Util.TestBlock (TestBlock)
+import           Ouroboros.Network.Socket (SomeResponderApplication (..),
+                     configureSocket)
+import           Test.Consensus.PeerSimulator.Resources (PeerResources)
 import qualified Test.Util.TestBlock as TB
+import           Test.Util.TestBlock (TestBlock)
 
 -- | Glue code for using just the bits from the Diffusion Layer that we need in
 -- this context.
