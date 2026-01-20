@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,13 +23,11 @@ module Test.Consensus.BlockTree (
   , deforestBlockTree
   , findFragment
   , findPath
+  , inTrunk
   , isAncestorOf
   , isStrictAncestorOf
   , mkTrunk
   , nonemptyPrefixesOf
-  , pathFromHash
-  , pathOnChain
-  , pathOnChainH
   , prettyBlockTree
   ) where
 
@@ -37,15 +36,16 @@ import           Data.Foldable (asum)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
 import           Data.List (inits, sortOn)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
+import           Data.Monoid (Any (..))
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import           Data.Word (Word64)
-import           Ouroboros.Consensus.Block (ChainHash (..), Header, blockHash,
-                     blockNo, blockSlot)
-import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash,
-                     fromWithOrigin, pointSlot, unBlockNo)
+import           Ouroboros.Consensus.Block (ChainHash (..), blockHash, blockNo,
+                     blockSlot)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader, Header,
+                     HeaderHash, fromWithOrigin, pointSlot, unBlockNo)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Text.Printf (printf)
 
@@ -325,41 +325,16 @@ isStrictAncestorOf ::
   Bool
 isStrictAncestorOf bt b1 b2 = b1 /= b2 && isAncestorOf bt b1 b2
 
--- | Computes a number list representation of the chain path leading to
--- a block represented by its hash. Non-zero elements corresponds to forking
--- nodes, which are not sorted in any meaninful way.
--- The result is stored mirroring how 'Test.Util.TestBlock.TestHash' does it;
--- in essence, this function computes this hash/path for arbitrary blocks.
-pathFromHash :: (AF.HasHeader blk) => BlockTree blk -> HeaderHash blk -> [Word64]
-pathFromHash bt hash =
-  let forkFirstBlocks =
-        -- A map assigning numbers to forked nodes.
-        M.fromList $ do
-          -- `btBranches` are not sorted in a meaningful way, so the fork
-          -- numbers assigned here are meant only to distinguish them.
-          (btb, ix) <- zip (btBranches bt) [1..]
-          -- The first block in a branch is the /last/ (i.e. leftmost or oldest) one.
-          let firstBlockHash = either AF.anchorToHash (BlockHash . blockHash) . AF.last $ btbSuffix btb
-          pure $ (firstBlockHash, ix)
-      blockAncestry = foldMap AF.toNewestFirst $ M.lookup (hash) $ deforestBlockTree bt
-   in
-      fmap (\b -> let h = BlockHash $ blockHash b
-                   -- All non-forking nodes become 0.
-                   in fromMaybe 0 $ M.lookup h forkFirstBlocks) blockAncestry
-
--- | Variant of 'pathFromHash' with a 'ChainHash' instead of a
--- 'HeaderHash' argument, managing the Genesis case and reversing
--- the element order.
-pathOnChain :: (AF.HasHeader blk) => BlockTree blk -> ChainHash blk -> [Word64]
-pathOnChain bt chainHash = case chainHash of
-  BlockHash hash -> reverse $ pathFromHash bt hash
-  GenesisHash    -> mempty
-
--- | Specialization of 'pathOnChain' to a block's 'Header'.
--- REVIEW: Is there a way of avoiding the need for this given that we have
--- @type instance HeaderHash (Header blk) = HeaderHash blk@
--- ?
-pathOnChainH :: (AF.HasHeader blk) => BlockTree blk -> ChainHash (Header blk) -> [Word64]
-pathOnChainH bt chainHash = case chainHash of
-  BlockHash hash -> reverse $ pathFromHash bt hash
-  GenesisHash    -> mempty
+-- | Check if a block (represented by its hash) is on the 'BlockTree' trunk.
+inTrunk ::
+  ( AF.HasHeader blk
+  , Eq blk
+  ) => BlockTree blk -> ChainHash blk -> Bool
+inTrunk blockTree = \case
+  GenesisHash -> True
+  BlockHash h -> getAny $ foldMap Any (blockInTrunk h)
+  where
+    blockInTrunk hash = do
+      blockPrefix <- M.lookup hash $ deforestBlockTree blockTree
+      (_, trunkIntersectionPrefix, _, _) <- AF.intersect blockPrefix (btTrunk blockTree)
+      Just $ blockPrefix == trunkIntersectionPrefix

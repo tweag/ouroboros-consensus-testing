@@ -27,7 +27,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-import           Ouroboros.Consensus.Block.Abstract (Header,
+import           Ouroboros.Consensus.Block.Abstract (ChainHash (..), Header,
                      WithOrigin (NotOrigin))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -35,8 +35,7 @@ import           Ouroboros.Network.Block (blockNo, blockSlot, unBlockNo)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
-import           Test.Consensus.BlockTree (BlockTree (..), btbSuffix,
-                     pathOnChain, pathOnChainH)
+import           Test.Consensus.BlockTree (BlockTree (..), btbSuffix, inTrunk)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
 import           Test.Consensus.PeerSimulator.ChainSync (chainSyncNoTimeouts)
@@ -81,19 +80,29 @@ tests =
     testProperty "block fetch leashing attack" prop_blockFetchLeashingAttack
     ]
 
+-- Check if the immutable tip of the selected chain of a 'GenesisTest' is honest.
+-- In this setting, the immutable tip corresponds to the selected chain anchor
+-- (see 'Ouroboros.Consensus.Storage.ChainDB.API.getCurrentChain') and
+-- the honest chain is represented by the test 'BlockTree' trunk.
+honestImmutableTip ::
+  ( AF.HasHeader blk
+  , Eq blk
+  ) => GenesisTestFull blk -> StateView blk -> Bool
+honestImmutableTip GenesisTest {gtBlockTree} StateView{svSelectedChain} =
+  inTrunk gtBlockTree (castHeaderHash $ AF.anchorToHash . AF.anchor $ svSelectedChain )
+
 -- | The conjunction of
 --
 --  * no honest peer has been disconnected,
 --  * the immutable tip is on the best chain, and
 --  * the immutable tip is no older than s + d + 1 slots
 theProperty ::
-  (AF.HasHeader blk) =>
-  GenesisTestFull blk ->
-  StateView blk ->
-  Property
+  ( AF.HasHeader blk
+  , Eq blk
+  ) => GenesisTestFull blk -> StateView blk -> Property
 theProperty genesisTest stateView@StateView{svSelectedChain} =
   classify genesisWindowAfterIntersection "Full genesis window after intersection" $
-  classify (isOrigin immutableTipHash) "Immutable tip is Origin" $
+  classify (immutableTipHash == GenesisHash) "Immutable tip is Origin" $
   label disconnectedLabel $
   classify (advCount < length (btBranches gtBlockTree)) "Some adversaries performed rollbacks" $
   counterexample killedPeers $
@@ -103,7 +112,7 @@ theProperty genesisTest stateView@StateView{svSelectedChain} =
   conjoin [
     counterexample "Honest peers shouldn't be disconnected" (not $ any isHonestPeerId disconnected),
     counterexample ("The immutable tip should be honest: " ++ show immutableTip) $
-    property (isHonest immutableTipHash),
+    honestImmutableTip genesisTest stateView,
     immutableTipIsRecent
   ]
   where
@@ -118,11 +127,7 @@ theProperty genesisTest stateView@StateView{svSelectedChain} =
       (At h, Origin) -> h
       _              -> 0
 
-    isOrigin = null
-
-    isHonest = all (0 ==)
-
-    immutableTipHash = pathOnChainH gtBlockTree $ AF.anchorToHash immutableTip
+    immutableTipHash = AF.anchorToHash immutableTip
 
     immutableTip = AF.anchor svSelectedChain
 
@@ -365,23 +370,19 @@ prop_loeStalling =
 
     mkProperty
   where
-    mkProperty :: (AF.HasHeader blk, AF.HasHeader (Header blk)) => GenesisTestFull blk -> StateView blk -> Property
-    mkProperty GenesisTest {gtBlockTree = bt@(BlockTree {btTrunk, btBranches})} StateView{svSelectedChain} =
+    mkProperty :: forall blk. (AF.HasHeader blk, AF.HasHeader (Header blk), Eq blk) => GenesisTestFull blk -> StateView blk -> Property
+    mkProperty gt@GenesisTest {gtBlockTree = BlockTree {btTrunk, btBranches}} sv@StateView{svSelectedChain} =
       classify (any (== selectionTip) allTips) "The selection is at a branch tip" $
       classify (any anchorIsImmutableTip suffixes) "The immutable tip is at a fork intersection" $
-      property (isHonest immutableTipHash)
+      honestImmutableTip gt sv
       where
-        anchorIsImmutableTip branch = pathOnChain bt (AF.anchorToHash (AF.anchor branch)) == immutableTipHash
+        anchorIsImmutableTip branch = (AF.anchorToHash (AF.anchor branch)) == immutableTipHash
 
-        isHonest = all (0 ==)
+        immutableTipHash = castHeaderHash . AF.anchorToHash $ AF.anchor svSelectedChain
 
-        immutableTipHash = pathOnChainH bt $ AF.anchorToHash immutableTip
+        selectionTip =  castHeaderHash $ AF.headHash svSelectedChain
 
-        immutableTip = AF.anchor svSelectedChain
-
-        selectionTip =  pathOnChainH bt $ AF.headHash svSelectedChain
-
-        allTips = pathOnChain bt . AF.headHash <$> (btTrunk : suffixes)
+        allTips = AF.headHash <$> (btTrunk : suffixes)
 
         suffixes = btbSuffix <$> btBranches
 

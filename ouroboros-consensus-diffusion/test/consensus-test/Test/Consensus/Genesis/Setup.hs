@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -9,6 +10,7 @@
 
 module Test.Consensus.Genesis.Setup (
     module Test.Consensus.Genesis.Setup.GenChains
+  , castHeaderHash
   , forAllGenesisTest
   , runGenesisTest
   , runGenesisTest'
@@ -20,7 +22,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
 import           Control.Tracer (debugTracer, traceWith)
 import           Data.Maybe (mapMaybe)
-import           Ouroboros.Consensus.Block.Abstract (ConvertRawHash, Header)
+import           Ouroboros.Consensus.Block.Abstract (ChainHash (..),
+                     ConvertRawHash, Header)
 import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
                      (BlockSupportsDiffusionPipelining)
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
@@ -238,3 +241,11 @@ forAllGenesisTest :: forall blk prop.
   Property
 forAllGenesisTest generator schedulerConfig shrinker mkProperty =
   runConformanceTest $ mkConformanceTest generator schedulerConfig shrinker mkProperty
+
+-- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
+-- this function casts this type's hash to its instance, so that it can be used
+-- for lookups on a 'BlockTree'.
+castHeaderHash :: ChainHash (Header blk) -> ChainHash blk
+castHeaderHash = \case
+  BlockHash hash -> BlockHash hash
+  GenesisHash -> GenesisHash

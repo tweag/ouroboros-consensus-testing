@@ -274,7 +274,6 @@ library unstable-consensus-conformance-testlib
     Test.Consensus.PointSchedule.SinglePeer
     Test.Consensus.PointSchedule.SinglePeer.Indices
     Test.Consensus.PointSchedule.Tests
-    Test.Consensus.TestBlock.Tests
     Test.Util.PartialAccessors
     Test.Util.TersePrinting
 

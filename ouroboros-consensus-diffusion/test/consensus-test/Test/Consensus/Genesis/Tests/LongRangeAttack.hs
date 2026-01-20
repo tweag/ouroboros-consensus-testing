@@ -8,10 +8,9 @@
 module Test.Consensus.Genesis.Tests.LongRangeAttack (tests) where
 
 import           Data.Functor (($>))
-import           Ouroboros.Consensus.Block.Abstract (Header, HeaderHash)
-import           Ouroboros.Network.AnchoredFragment (headAnchor)
+import           Ouroboros.Consensus.Block.Abstract (Header)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Test.Consensus.BlockTree (BlockTree, pathFromHash)
+import           Test.Consensus.BlockTree (inTrunk)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
                      (allAdversariesForecastable, allAdversariesSelectable,
@@ -66,19 +65,15 @@ prop_longRangeAttack =
 
     -- NOTE: This is the expected behaviour of Praos to be reversed with
     -- Genesis. But we are testing Praos for the moment. Do not forget to remove
-    -- `noShrinking` above when removing this negation.
-    (\(GenesisTest {gtBlockTree})-> not . isHonestTestFragH gtBlockTree . svSelectedChain)
+    -- 'noShrinking' above when removing this negation.
+    (\genesisTest -> not . selectedHonestChain genesisTest)
 
-  where
-    isHonestTestFragH ::
-      ( AF.HasHeader blk
-      , AF.HasHeader (Header blk)
-      ) => BlockTree blk -> AF.AnchoredFragment (Header blk) -> Bool
-    isHonestTestFragH bt frag = case headAnchor frag of
-        AF.AnchorGenesis   -> True
-        AF.Anchor _ hash _ -> isHonestTestHeaderHash bt hash
-
-    isHonestTestHeaderHash ::
-      ( AF.HasHeader blk
-      ) => BlockTree blk -> HeaderHash blk -> Bool
-    isHonestTestHeaderHash bt = all (0 ==) . pathFromHash bt
+-- Check if the tip of the selected chain of a 'GenesisTest' is honest.
+-- In this setting, the honest chain corresponds to the test 'BlockTree' trunk.
+selectedHonestChain ::
+  ( AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Eq blk
+  ) => GenesisTestFull blk -> StateView blk -> Bool
+selectedHonestChain GenesisTest {gtBlockTree} StateView{svSelectedChain} =
+   inTrunk gtBlockTree (castHeaderHash $ AF.headHash svSelectedChain)
