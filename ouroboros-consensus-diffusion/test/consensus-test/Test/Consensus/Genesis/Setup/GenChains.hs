@@ -211,9 +211,7 @@ class IssueTestBlock blk where
 
 instance IssueTestBlock TestBlock where
   issueFirstBlock fork slot =
-    incSlot slot $
-      TB.firstBlock $
-        fromIntegral fork
+    incSlot slot ((TB.firstBlock $ fromIntegral fork) {tbSlot = 0})
   issueSuccessorBlock fork slot blk =
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
