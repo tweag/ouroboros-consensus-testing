@@ -88,17 +88,17 @@ runGenesisTest ::
   , Terse blk
   , Condense (NodeState blk)
   )
-  => SchedulerConfig ->
+  => ProtocolInfoArgs blk -> SchedulerConfig ->
   GenesisTestFull blk ->
   RunGenesisTestResult blk
-runGenesisTest schedulerConfig genesisTest =
+runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
   runSimStrictShutdownOrThrow $ do
     (recordingTracer, getTrace) <- recordingTracerM
     let tracer = if scDebug schedulerConfig then debugTracer else recordingTracer
 
     traceLinesWith tracer $ prettyGenesisTest prettyPointSchedule genesisTest
 
-    rgtrStateView <- runPointSchedule schedulerConfig genesisTest =<< tracerTestBlock tracer
+    rgtrStateView <- runPointSchedule protocolInfoArgs schedulerConfig genesisTest =<< tracerTestBlock tracer
     traceWith tracer (condense rgtrStateView)
     rgtrTrace <- unlines <$> getTrace
 
@@ -113,11 +113,11 @@ runGenesisTest' ::
   GenesisTestFull TestBlock ->
   (StateView TestBlock -> prop) ->
   Property
-runGenesisTest' schedulerConfig genesisTest makeProperty =
-    counterexample rgtrTrace $ makeProperty rgtrStateView
-  where
-    RunGenesisTestResult{rgtrTrace, rgtrStateView} =
-      runGenesisTest schedulerConfig genesisTest
+runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
+  protocolInfoArgs <- getProtocolInfoArgs
+  let RunGenesisTestResult{rgtrTrace, rgtrStateView} =
+        runGenesisTest protocolInfoArgs schedulerConfig genesisTest
+  pure $ counterexample rgtrTrace $ makeProperty rgtrStateView
 
 -- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
 -- PeerSchedule', runs them with 'runGenesisTest', check whether the given
@@ -148,8 +148,9 @@ forAllGenesisTest :: forall blk prop.
   (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
   (GenesisTestFull blk -> StateView blk -> prop) ->
   Property
-forAllGenesisTest generator schedulerConfig shrinker mkProperty =
-  forAllGenRunShrinkCheck generator runner shrinker' $ \genesisTest result ->
+forAllGenesisTest generator schedulerConfig shrinker mkProperty = idempotentIOProperty $ do
+  protocolInfoArgs <- getProtocolInfoArgs
+  pure $ forAllGenRunShrinkCheck generator runner shrinker' $ \genesisTest result ->
     let cls = classifiers genesisTest
         resCls = resultClassifiers genesisTest result
         schCls = scheduleClassifiers genesisTest

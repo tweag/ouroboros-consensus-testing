@@ -13,14 +13,14 @@ import           Ouroboros.Consensus.HardFork.History
 import qualified Ouroboros.Consensus.HardFork.History.EraParams as HardFork
 import           Ouroboros.Consensus.Ledger.SupportsProtocol (GenesisWindow)
 import           Ouroboros.Consensus.Node.ProtocolInfo
-                     (NumCoreNodes (NumCoreNodes))
+                     (NumCoreNodes (NumCoreNodes), ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (CoreNodeId),
                      NodeId (CoreId))
 import           Ouroboros.Consensus.Protocol.BFT
                      (BftParams (BftParams, bftNumNodes, bftSecurityParam),
                      ConsensusConfig (BftConfig, bftParams, bftSignKey, bftVerKeys))
 import           Test.Consensus.PointSchedule (ForecastRange (ForecastRange),
-                     GenesisTest (..), HasPointScheduleTestParams (..))
+                     HasPointScheduleTestParams (..))
 import           Test.Util.ChainDB (mkTestChunkInfo)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (BlockConfig (TestBlockConfig),
@@ -67,8 +67,10 @@ defaultCfg secParam (ForecastRange sfor) sgen = TopLevelConfig {
 -- should look like! So the choice is yours: if what you need from this class can be
 -- made polymorphic in `a`, consider adding a class. If not, specialize this instance.
 instance (a ~ ()) => HasPointScheduleTestParams (TestBlockWith a) where
-  defaultTopLevelConfig genesisTest = defaultCfg
-    (gtSecurityParam genesisTest) (gtForecastRange genesisTest) (gtGenesisWindow genesisTest)
+  data ProtocolInfoArgs (TestBlockWith a) = TestBlockProtocolInfoArgs
+  getProtocolInfoArgs = pure TestBlockProtocolInfoArgs
+  mkProtocolInfo k forecast window _ = ProtocolInfo
+    { pInfoConfig = defaultCfg k forecast window
+    , pInfoInitLedger = testInitExtLedger
+    }
   getChunkInfoFromTopLevelConfig = mkTestChunkInfo
-  getInitExtLedgerState _ = testInitExtLedger
-  getBlockConfig _ = TestBlockConfig $ NumCoreNodes 0

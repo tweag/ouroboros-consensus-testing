@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -60,17 +61,15 @@ import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import           Data.Proxy
 import           Data.Time (DiffTime)
 import           Data.Word (Word64)
-import           Ouroboros.Consensus.Block.Abstract (BlockConfig, HasHeader,
-                     HeaderHash, withOriginToMaybe)
+import           Ouroboros.Consensus.Block.Abstract (HasHeader,
+                     withOriginToMaybe)
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
-import           Ouroboros.Consensus.Ledger.Tables (ValuesMK)
 import           Ouroboros.Consensus.Network.NodeToNode (ChainSyncTimeout (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo)
 import           Ouroboros.Consensus.Protocol.Abstract
                      (SecurityParam (SecurityParam), maxRollbacks)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -629,7 +628,7 @@ ensureScheduleDuration gt PointSchedule{psSchedule, psStartOrder, psMinEndTime} 
 -- they provide bits of state required to run the tests that did not already
 -- have a class to live in.
 class HasPointScheduleTestParams blk where
-  defaultTopLevelConfig :: GenesisTestFull blk -> TopLevelConfig blk
-  getInitExtLedgerState :: Proxy blk -> ExtLedgerState blk ValuesMK
+  data ProtocolInfoArgs blk
+  getProtocolInfoArgs :: IO (ProtocolInfoArgs blk)
+  mkProtocolInfo :: SecurityParam -> ForecastRange -> GenesisWindow -> ProtocolInfoArgs blk -> ProtocolInfo blk
   getChunkInfoFromTopLevelConfig :: TopLevelConfig blk -> ChunkInfo
-  getBlockConfig :: Proxy blk -> BlockConfig blk
