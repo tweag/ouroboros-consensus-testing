@@ -10,7 +10,7 @@ module Test.Consensus.PointSchedule.Shrinking (
   , shrinkPeerSchedules
   ) where
 
-import           Cardano.Slotting.Slot (at, withOriginToMaybe)
+import qualified Cardano.Slotting.Slot as Slot
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime,
                      diffTime)
 import           Data.Containers.ListUtils (nubOrd)
@@ -146,17 +146,17 @@ shrinkHonestPeer sch =
       (zip sch (drop 1 sch))
 
 -- | Speeds up _the_ schedule (that is, the one that we are actually trying to
--- speed up) after `atTime` time, by `speedUpBy`. This "speeding up" is done by
--- removing `speedUpBy` to all points after `at`, and removing those points if
--- they fall before `at`. We check that the operation doesn't change the final
+-- speed up) after @at@ time, by @speedUpBy@. This "speeding up" is done by
+-- removing @speedUpBy@ to all points after @at@, and removing those points if
+-- they fall before @at@. We check that the operation doesn't change the final
 -- state of the peer, i.e. it doesn't remove all TP, HP, and BP in the sped up
 -- part.
 speedUpTheSchedule :: PeerSchedule blk -> (Time, DiffTime) -> Maybe (PeerSchedule blk)
-speedUpTheSchedule sch (atTime, speedUpBy) =
+speedUpTheSchedule sch (at, speedUpBy) =
   if stillValid then Just $ beforeSplit ++ spedUpSchedule else Nothing
   where
-    (beforeSplit, afterSplit) = span ((< atTime) . fst) sch
-    threshold = addTime speedUpBy atTime
+    (beforeSplit, afterSplit) = span ((< at) . fst) sch
+    threshold = addTime speedUpBy at
     spedUpSchedule = mapMaybe
       (\(t, p) -> if t < threshold then Nothing else Just (addTime (-speedUpBy) t, p))
       afterSplit
@@ -192,11 +192,11 @@ keepOnlyAncestorsOf blocks bt =
     -- | Given some blocks and a fragment, keep only the prefix of the fragment
     -- that contains ancestors of the given blocks.
     keepOnlyAncestorsOf' :: [blk] -> AnchoredFragment blk -> AnchoredFragment blk
-    keepOnlyAncestorsOf' leaves = takeWhileOldest (\block -> (isAncestorOf bt (at block)) `any` map at leaves)
+    keepOnlyAncestorsOf' leaves = takeWhileOldest (\block -> (isAncestorOf bt (Slot.at block)) `any` map Slot.at leaves)
 
     -- | Return a subset of the given blocks containing only the ones that do
     -- not have any other descendents in the set.
     blocksWithoutDescendents :: [blk] -> [blk]
     blocksWithoutDescendents bs =
-      let bs' = fmap at $ nubOrd bs
-       in catMaybes [ withOriginToMaybe b | b <- bs', not ((isStrictAncestorOf bt b) `any` bs') ]
+      let bs' = fmap Slot.at $ nubOrd bs
+       in catMaybes [ Slot.withOriginToMaybe b | b <- bs', not ((isStrictAncestorOf bt b) `any` bs') ]

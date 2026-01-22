@@ -23,11 +23,11 @@ module Test.Consensus.BlockTree (
   , deforestBlockTree
   , findFragment
   , findPath
-  , inTrunk
   , isAncestorOf
   , isStrictAncestorOf
   , mkTrunk
   , nonemptyPrefixesOf
+  , onTrunk
   , prettyBlockTree
   ) where
 
@@ -38,14 +38,12 @@ import           Data.Functor ((<&>))
 import           Data.List (inits, sortOn)
 import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
-import           Data.Monoid (Any (..))
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import           Ouroboros.Consensus.Block (ChainHash (..), blockHash, blockNo,
-                     blockSlot)
-import           Ouroboros.Consensus.Block.Abstract (HasHeader, Header,
-                     HeaderHash, fromWithOrigin, pointSlot, unBlockNo)
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
+import           Ouroboros.Consensus.Block.Abstract (GetHeader (..), HasHeader,
+                     Header, HeaderHash, Point, fromWithOrigin, pointSlot,
+                     unBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Text.Printf (printf)
 
@@ -325,16 +323,6 @@ isStrictAncestorOf ::
   Bool
 isStrictAncestorOf bt b1 b2 = b1 /= b2 && isAncestorOf bt b1 b2
 
--- | Check if a block (represented by its hash) is on the 'BlockTree' trunk.
-inTrunk ::
-  ( AF.HasHeader blk
-  , Eq blk
-  ) => BlockTree blk -> ChainHash blk -> Bool
-inTrunk blockTree = \case
-  GenesisHash -> True
-  BlockHash h -> getAny $ foldMap Any (blockInTrunk h)
-  where
-    blockInTrunk hash = do
-      blockPrefix <- M.lookup hash $ deforestBlockTree blockTree
-      (_, trunkIntersectionPrefix, _, _) <- AF.intersect blockPrefix (btTrunk blockTree)
-      Just $ blockPrefix == trunkIntersectionPrefix
+-- | Check if a block (represented by its header 'Point') is on the 'BlockTree' trunk.
+onTrunk :: GetHeader blk => BlockTree blk -> Point (Header blk) -> Bool
+onTrunk blockTree = flip AF.withinFragmentBounds (AF.mapAnchoredFragment getHeader $ btTrunk blockTree)

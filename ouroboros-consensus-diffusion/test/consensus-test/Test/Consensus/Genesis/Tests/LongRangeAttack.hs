@@ -10,7 +10,7 @@ module Test.Consensus.Genesis.Tests.LongRangeAttack (tests) where
 import           Data.Functor (($>))
 import           Ouroboros.Consensus.Block.Abstract (Header)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Test.Consensus.BlockTree (inTrunk)
+import           Test.Consensus.BlockTree (onTrunk)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
                      (allAdversariesForecastable, allAdversariesSelectable,
@@ -67,13 +67,3 @@ prop_longRangeAttack =
     -- Genesis. But we are testing Praos for the moment. Do not forget to remove
     -- 'noShrinking' above when removing this negation.
     (\genesisTest -> not . selectedHonestChain genesisTest)
-
--- Check if the tip of the selected chain of a 'GenesisTest' is honest.
--- In this setting, the honest chain corresponds to the test 'BlockTree' trunk.
-selectedHonestChain ::
-  ( AF.HasHeader blk
-  , AF.HasHeader (Header blk)
-  , Eq blk
-  ) => GenesisTestFull blk -> StateView blk -> Bool
-selectedHonestChain GenesisTest {gtBlockTree} StateView{svSelectedChain} =
-   inTrunk gtBlockTree (castHeaderHash $ AF.headHash svSelectedChain)
