@@ -31,11 +31,9 @@ import           Ouroboros.Consensus.Genesis.Governor (gddWatcher)
 import           Ouroboros.Consensus.HardFork.Abstract (HasHardForkHistory)
 import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
-import           Ouroboros.Consensus.Ledger.Tables.MapKind (ValuesMK)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (CSJConfig (..), CSJEnabledConfig (..), ChainDbView,
                      ChainSyncClientHandle,
@@ -44,11 +42,10 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      ChainSyncLoPBucketEnabledConfig (..), viewChainSyncState)
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Node.GsmState as GSM
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.Storage.ChainDB.API
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (ChunkInfo)
 import           Ouroboros.Consensus.Storage.LedgerDB.API
                      (CanUpgradeLedgerTables)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -72,10 +69,10 @@ import           Test.Consensus.PeerSimulator.StateDiagram
                      (peerSimStateDiagramSTMTracerDebug)
 import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PeerSimulator.Trace
-import           Test.Consensus.PointSchedule (BlockFetchTimeout, HasPointScheduleTestParams(..),
+import           Test.Consensus.PointSchedule (BlockFetchTimeout,
                      CSJParams (..), GenesisTest (..), GenesisTestFull,
-                     LoPBucketParams (..), PointSchedule (..), peersStates,
-                     peersStatesRelative)
+                     HasPointScheduleTestParams (..), LoPBucketParams (..),
+                     PointSchedule (..), peersStates, peersStatesRelative)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
                      getPeerIds)
@@ -384,13 +381,13 @@ startNode ::
   , BlockSupportsDiffusionPipelining blk
   , ConfigSupportsNode blk
   , HasHardForkHistory blk
-  , HasPointScheduleTestParams blk
   ) =>
+  ProtocolInfo blk ->
   SchedulerConfig ->
   GenesisTestFull blk ->
   LiveInterval blk m ->
   m ()
-startNode schedulerConfig genesisTest interval = do
+startNode protocolInfo schedulerConfig genesisTest interval = do
   let handles = psrHandles lrPeerSim
   fetchClientRegistry <- newFetchClientRegistry
   let chainDbView = CSClient.defaultChainDbView lnChainDb
@@ -442,6 +439,7 @@ startNode schedulerConfig genesisTest interval = do
     (scEnableChainSelStarvation schedulerConfig)
     lrRegistry
     lrTracer
+    protocolInfo
     lnChainDb
     fetchClientRegistry
     handles
@@ -522,24 +520,26 @@ nodeLifecycle ::
   , HasPointScheduleTestParams blk
   , Eq (Header blk)
   ) =>
+  ProtocolInfoArgs blk ->
   SchedulerConfig ->
   GenesisTestFull blk ->
   Tracer m (TraceEvent blk) ->
   ResourceRegistry m ->
   PeerSimulatorResources m blk ->
   m (NodeLifecycle blk m)
-nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
+nodeLifecycle protocolArgs schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
   lrCdb <- emptyNodeDBs
   lrLoEVar <- mkLoEVar schedulerConfig
   let
-    topLevelConfig = defaultTopLevelConfig genesisTest
+    protocolInfo = mkProtocolInfo k gtForecastRange gtGenesisWindow protocolArgs
+    topLevelConfig = pInfoConfig protocolInfo
     resources =
       LiveResources {
           lrRegistry
         , lrTracer
         , lrSTracer = mkStateTracer schedulerConfig genesisTest lrPeerSim
         , lrConfig = topLevelConfig
-        , lrInitLedger = getInitExtLedgerState (Proxy :: Proxy blk)
+        , lrInitLedger = pInfoInitLedger protocolInfo
         , lrChunkInfo = getChunkInfoFromTopLevelConfig topLevelConfig
         , lrPeerSim
         , lrCdb
@@ -547,7 +547,7 @@ nodeLifecycle schedulerConfig genesisTest lrTracer lrRegistry lrPeerSim = do
         }
   pure NodeLifecycle {
       nlMinDuration = scDowntime schedulerConfig
-    , nlStart = lifecycleStart (startNode schedulerConfig genesisTest) resources
+    , nlStart = lifecycleStart (startNode protocolInfo schedulerConfig genesisTest) resources
     , nlShutdown = lifecycleStop resources
     }
   where
@@ -576,14 +576,15 @@ runPointSchedule ::
   , Eq (Header blk)
   , Eq blk
   ) =>
+  ProtocolInfoArgs blk ->
   SchedulerConfig ->
   GenesisTestFull blk ->
   Tracer m (TraceEvent blk) ->
   m (StateView blk)
-runPointSchedule schedulerConfig genesisTest tracer0 =
+runPointSchedule protocolInfoArgs schedulerConfig genesisTest tracer0 =
   withRegistry $ \registry -> do
     peerSim <- makePeerSimulatorResources tracer gtBlockTree (NonEmpty.fromList $ getPeerIds $ psSchedule gtSchedule)
-    lifecycle <- nodeLifecycle schedulerConfig genesisTest tracer registry peerSim
+    lifecycle <- nodeLifecycle protocolInfoArgs schedulerConfig genesisTest tracer registry peerSim
     (chainDb, stateViewTracers) <- runScheduler
       (Tracer $ traceWith tracer . TraceSchedulerEvent)
       (cschcMap (psrHandles peerSim))

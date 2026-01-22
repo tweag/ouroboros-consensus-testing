@@ -116,17 +116,17 @@ runGenesisTest ::
   , Terse blk
   , Condense (NodeState blk)
   )
-  => SchedulerConfig ->
+  => ProtocolInfoArgs blk -> SchedulerConfig ->
   GenesisTestFull blk ->
   RunGenesisTestResult blk
-runGenesisTest schedulerConfig genesisTest =
+runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
   runSimStrictShutdownOrThrow $ do
     (recordingTracer, getTrace) <- recordingTracerM
     let tracer = if scDebug schedulerConfig then debugTracer else recordingTracer
 
     traceLinesWith tracer $ prettyGenesisTest prettyPointSchedule genesisTest
 
-    rgtrStateView <- runPointSchedule schedulerConfig genesisTest =<< tracerTestBlock tracer
+    rgtrStateView <- runPointSchedule protocolInfoArgs schedulerConfig genesisTest =<< tracerTestBlock tracer
     traceWith tracer (condense rgtrStateView)
     rgtrTrace <- unlines <$> getTrace
 
@@ -141,11 +141,11 @@ runGenesisTest' ::
   GenesisTestFull TestBlock ->
   (StateView TestBlock -> prop) ->
   Property
-runGenesisTest' schedulerConfig genesisTest makeProperty =
-    counterexample rgtrTrace $ makeProperty rgtrStateView
-  where
-    RunGenesisTestResult{rgtrTrace, rgtrStateView} =
-      runGenesisTest schedulerConfig genesisTest
+runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
+  protocolInfoArgs <- getProtocolInfoArgs
+  let RunGenesisTestResult{rgtrTrace, rgtrStateView} =
+        runGenesisTest protocolInfoArgs schedulerConfig genesisTest
+  pure $ counterexample rgtrTrace $ makeProperty rgtrStateView
 
 runConformanceTest :: forall blk.
   ( Condense (StateView blk)
@@ -167,8 +167,9 @@ runConformanceTest :: forall blk.
   , Condense (NodeState blk)
   ) =>
   ConformanceTest blk -> Property
-runConformanceTest ConformanceTest {..} =
-  forAllGenRunShrinkCheck ctGenerator runner shrinker' $ \genesisTest result ->
+runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
+  protocolInfoArgs <- getProtocolInfoArgs
+  pure $ forAllGenRunShrinkCheck ctGenerator (runGenesisTest protocolInfoArgs ctSchedulerConfig) shrinker' $ \genesisTest result ->
     let cls = classifiers genesisTest
         resCls = resultClassifiers genesisTest result
         schCls = scheduleClassifiers genesisTest
@@ -188,7 +189,6 @@ runConformanceTest ConformanceTest {..} =
         counterexample (rgtrTrace result) $
         ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
   where
-    runner = runGenesisTest ctSchedulerConfig
     shrinker' gt = ctShrinker gt . rgtrStateView
     hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
       conjoin $ isExpectedException <$> mapMaybe
