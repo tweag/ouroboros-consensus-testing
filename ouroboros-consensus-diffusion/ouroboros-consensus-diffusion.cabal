@@ -291,7 +291,6 @@ library unstable-consensus-conformance-testlib
     containers,
     contra-tracer,
     directory,
-    extra,
     fs-api ^>=0.3,
     fs-sim ^>=0.3,
     hashable,
