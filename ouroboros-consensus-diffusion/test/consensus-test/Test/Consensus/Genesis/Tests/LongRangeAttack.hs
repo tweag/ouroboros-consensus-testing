@@ -1,14 +1,16 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.Consensus.Genesis.Tests.LongRangeAttack (tests) where
 
 import           Data.Functor (($>))
-import           Ouroboros.Consensus.Block.Abstract (Header, HeaderHash)
-import           Ouroboros.Network.AnchoredFragment (headAnchor)
+import           Ouroboros.Consensus.Block.Abstract (Header)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Test.Consensus.BlockTree (onTrunk)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
                      (allAdversariesForecastable, allAdversariesSelectable,
@@ -20,7 +22,7 @@ import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock, unTestHash)
+import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv (adjustQuickCheckTests)
 
 tests :: TestTree
@@ -45,7 +47,7 @@ prop_longRangeAttack =
   -- NOTE: `shrinkPeerSchedules` only makes sense for tests that expect the
   -- honest node to win. Hence the `noShrinking`.
 
-  noShrinking $ forAllGenesisTest
+  noShrinking $ forAllGenesisTest @TestBlock
 
     (do
         -- Create a block tree with @1@ alternative chain.
@@ -63,14 +65,5 @@ prop_longRangeAttack =
 
     -- NOTE: This is the expected behaviour of Praos to be reversed with
     -- Genesis. But we are testing Praos for the moment. Do not forget to remove
-    -- `noShrinking` above when removing this negation.
-    (\_ -> not . isHonestTestFragH . svSelectedChain)
-
-  where
-    isHonestTestFragH :: AF.AnchoredFragment (Header TestBlock) -> Bool
-    isHonestTestFragH frag = case headAnchor frag of
-        AF.AnchorGenesis   -> True
-        AF.Anchor _ hash _ -> isHonestTestHeaderHash hash
-
-    isHonestTestHeaderHash :: HeaderHash TestBlock -> Bool
-    isHonestTestHeaderHash = all (0 ==) . unTestHash
+    -- 'noShrinking' above when removing this negation.
+    (\genesisTest -> not . selectedHonestChain genesisTest)
