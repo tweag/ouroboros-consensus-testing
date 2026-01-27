@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,8 +24,10 @@ module Test.Consensus.BlockTree (
   , findFragment
   , findPath
   , isAncestorOf
+  , isStrictAncestorOf
   , mkTrunk
   , nonemptyPrefixesOf
+  , onTrunk
   , prettyBlockTree
   ) where
 
@@ -32,12 +36,13 @@ import           Data.Foldable (asum)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
 import           Data.List (inits, sortOn)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash,
-                     blockHash, blockNo, blockSlot, fromWithOrigin, pointSlot,
+import           Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
+import           Ouroboros.Consensus.Block.Abstract (GetHeader (..), HasHeader,
+                     Header, HeaderHash, Point, fromWithOrigin, pointSlot,
                      unBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Text.Printf (printf)
@@ -305,3 +310,19 @@ isAncestorOf bt (At ancestor) (At descendant) =
     pure $ AF.isPrefixOf afA afD
 isAncestorOf _ (At _) Origin = False
 isAncestorOf _ Origin _ = True
+
+-- | Variant of 'isAncestorOf' that returns @False@ when the two blocks are
+-- equal.
+--
+-- TODO: Unify with 'Test.Util.TestBlock.isStrictAncestorOf' which basically does the
+-- same thing except not on 'WithOrigin'.
+isStrictAncestorOf ::
+  (HasHeader blk, Eq blk) =>
+  BlockTree blk ->
+  WithOrigin blk -> WithOrigin blk ->
+  Bool
+isStrictAncestorOf bt b1 b2 = b1 /= b2 && isAncestorOf bt b1 b2
+
+-- | Check if a block (represented by its header 'Point') is on the 'BlockTree' trunk.
+onTrunk :: GetHeader blk => BlockTree blk -> Point (Header blk) -> Bool
+onTrunk blockTree = flip AF.withinFragmentBounds (AF.mapAnchoredFragment getHeader $ btTrunk blockTree)
