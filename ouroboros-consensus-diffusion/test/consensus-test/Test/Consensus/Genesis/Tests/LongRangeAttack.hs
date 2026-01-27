@@ -8,15 +8,11 @@
 module Test.Consensus.Genesis.Tests.LongRangeAttack (tests) where
 
 import           Data.Functor (($>))
-import           Ouroboros.Consensus.Block.Abstract (Header)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Test.Consensus.BlockTree (onTrunk)
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
                      (allAdversariesForecastable, allAdversariesSelectable,
                      classifiers)
 import           Test.Consensus.PeerSimulator.Run (defaultSchedulerConfig)
-import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Tasty

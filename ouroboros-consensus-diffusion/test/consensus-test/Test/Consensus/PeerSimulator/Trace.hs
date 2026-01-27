@@ -262,10 +262,10 @@ traceSchedulerEventTestBlockWith setTickTime tracer0 tracer = \case
       traceWith tracer ("  Node startup complete with selection " ++ terseHFragment selection)
 
   where
-    traceJumpingStates :: forall m. [(PeerId, ChainSyncJumpingState m blk)] -> String
+    traceJumpingStates :: forall n. [(PeerId, ChainSyncJumpingState n blk)] -> String
     traceJumpingStates = unlines . map (\(pid, state) -> "    " ++ condense pid ++ ": " ++ traceJumpingState state)
 
-    traceJumpingState :: forall m. ChainSyncJumpingState m blk -> String
+    traceJumpingState :: forall n. ChainSyncJumpingState n blk -> String
     traceJumpingState = \case
       Dynamo initState lastJump ->
         let showInitState = case initState of

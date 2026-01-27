@@ -1,4 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+-- Necessary to give the 'HasPointScheduleTestParams' instance for 'TestBlockWith'.
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Consensus.PeerSimulator.Config (defaultCfg) where
 
