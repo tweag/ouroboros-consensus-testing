@@ -4,6 +4,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -287,6 +289,20 @@ deforestBlockTree (BlockTree trunk branches) =
 
   in foldr addPrefix mempty allPrefixes
 
+
+{-
+deforestBlockTree
+  :: forall blk. (HasHeader blk)
+  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
+deforestBlockTree trunk branches =
+  let folder = foldMap $ \af -> either (const mempty) (flip M.singleton af . blockHash) $ AF.head af
+   in fold
+        $ folder (prefixes (AF.Empty AF.AnchorGenesis) $ AF.toOldestFirst trunk)
+        : fmap (\btb -> folder $ prefixes (btbPrefix btb) $ AF.toOldestFirst $ btbSuffix btb) branches
+        -}
+
+prefixes :: AF.HasHeader blk => AF.AnchoredFragment blk -> [blk] -> [AF.AnchoredFragment blk]
+prefixes = scanl (AF.:>)
 
 -- | More efficient implementation of a check used in some of the handlers,
 -- determining whether the first argument is on the chain that ends in the
