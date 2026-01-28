@@ -34,7 +34,7 @@ module Test.Consensus.BlockTree (
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
-import           Data.Foldable (asum)
+import           Data.Foldable (asum, fold)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
 import           Data.List (inits, sortOn)
@@ -260,6 +260,7 @@ nonemptyPrefixesOf
 nonemptyPrefixesOf frag =
   fmap (AF.fromOldestFirst (AF.anchor frag)) . drop 1 . inits . AF.toOldestFirst $ frag
 
+{-
 -- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
 -- from the anchor of the tree to that block.
 deforestBlockTree
@@ -288,18 +289,21 @@ deforestBlockTree (BlockTree trunk branches) =
       _ AF.:> tip -> M.insert (blockHash tip) fragment mapSoFar
 
   in foldr addPrefix mempty allPrefixes
+  -}
 
 
-{-
+--deforestBlockTree
+--  :: forall blk. (HasHeader blk)
+--  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
 deforestBlockTree
   :: forall blk. (HasHeader blk)
-  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
-deforestBlockTree trunk branches =
+  => BlockTree blk -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+deforestBlockTree (BlockTree trunk branches) =
   let folder = foldMap $ \af -> either (const mempty) (flip M.singleton af . blockHash) $ AF.head af
    in fold
         $ folder (prefixes (AF.Empty AF.AnchorGenesis) $ AF.toOldestFirst trunk)
         : fmap (\btb -> folder $ prefixes (btbPrefix btb) $ AF.toOldestFirst $ btbSuffix btb) branches
-        -}
+
 
 prefixes :: AF.HasHeader blk => AF.AnchoredFragment blk -> [blk] -> [AF.AnchoredFragment blk]
 prefixes = scanl (AF.:>)
