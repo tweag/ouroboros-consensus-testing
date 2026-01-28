@@ -68,8 +68,8 @@ data BlockTreeBranch blk = BlockTreeBranch {
   deriving (Show, Generic)
   -- The underlying 'AnchoredFragment' type of a 'BlockTreeBranch' is
   -- responsible for the 'HeaderHash' and 'HasHeader' constraints; the former is
-  -- a type family, which is justifies the need for @UndecidableInstances@ unless
-  -- a concrete block type is picked.
+  -- a type family, which is justifies the need for @UndecidableInstances@ while
+  -- deriving instances unless a concrete block type is picked.
 
 instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
 instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.FromJSON (BlockTreeBranch blk)
@@ -96,7 +96,7 @@ data BlockTree blk = RawBlockTree {
     btTrunk'    :: AF.AnchoredFragment blk,
     btBranches' :: [BlockTreeBranch blk],
 
-    -- ^ Cached deforestation of the block tree. This gets queried
+    -- Cached deforestation of the block tree. This gets queried
     -- many times and there's no reason to rebuild the tree every time.
     btDeforested :: DeforestedBlockTree blk
   }
