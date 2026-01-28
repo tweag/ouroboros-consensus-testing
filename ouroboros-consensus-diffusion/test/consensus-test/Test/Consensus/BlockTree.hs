@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -16,7 +17,7 @@
 -- duplication.
 
 module Test.Consensus.BlockTree (
-    BlockTree (..)
+    BlockTree (BlockTree, btTrunk, btBranches)
   , BlockTreeBranch (..)
   , PathAnchoredAtSource (..)
   , addBranch
@@ -34,6 +35,7 @@ module Test.Consensus.BlockTree (
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
+import qualified Data.Aeson as Aeson
 import           Data.Foldable (asum, fold)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
@@ -42,6 +44,7 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
+import           GHC.Generics
 import           Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
 import           Ouroboros.Consensus.Block.Abstract (GetHeader (..), HasHeader,
                      Header, HeaderHash, Point, fromWithOrigin, pointSlot,
@@ -62,7 +65,14 @@ data BlockTreeBranch blk = BlockTreeBranch {
     btbTrunkSuffix :: AF.AnchoredFragment blk,
     btbFull        :: AF.AnchoredFragment blk
   }
-  deriving (Show)
+  deriving (Show, Generic)
+  -- The underlying 'AnchoredFragment' type of a 'BlockTreeBranch' is
+  -- responsible for the 'HeaderHash' and 'HasHeader' constraints; the former is
+  -- a type family, which is justifies the need for @UndecidableInstances@ unless
+  -- a concrete block type is picked.
+
+instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
+instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.FromJSON (BlockTreeBranch blk)
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -83,8 +93,8 @@ data BlockTreeBranch blk = BlockTreeBranch {
 -- REVIEW: Find another name so as not to clash with 'BlockTree' from
 -- `unstable-consensus-testlib/Test/Util/TestBlock.hs`.
 data BlockTree blk = RawBlockTree {
-    btTrunk    :: AF.AnchoredFragment blk,
-    btBranches :: [BlockTreeBranch blk],
+    btTrunk'    :: AF.AnchoredFragment blk,
+    btBranches' :: [BlockTreeBranch blk],
 
     -- ^ Cached deforestation of the block tree. This gets queried
     -- many times and there's no reason to rebuild the tree every time.
@@ -92,12 +102,24 @@ data BlockTree blk = RawBlockTree {
   }
   deriving (Show, Generic)
 
+instance
+  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk, Aeson.ToJSONKey (HeaderHash blk)
+  , Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ) => Aeson.ToJSON (BlockTree blk)
+instance
+  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk, Aeson.FromJSONKey (HeaderHash blk)
+  , Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ) => Aeson.FromJSON (BlockTree blk)
+
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
-pattern BlockTree trunk branches <- RawBlockTree trunk branches _
+pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _
+
+deforestBlockTree :: BlockTree blk -> DeforestedBlockTree blk
+deforestBlockTree = btDeforested
 
 -- Smart constructor to cache the deforested block tree at creation time.
 mkBlockTree :: (HasHeader blk) => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
-mkBlockTree trunk branches = RawBlockTree trunk branches (deforestBlockTree trunk branches)
+mkBlockTree trunk branches = RawBlockTree trunk branches (deforestRawBlockTree trunk branches)
 
 -- | Make a block tree made of only a trunk.
 mkTrunk :: (HasHeader blk) => AF.AnchoredFragment blk -> BlockTree blk
@@ -118,7 +140,7 @@ addBranch branch bt = do
   -- NOTE: We could use the monadic bind for @Maybe@ here but we would rather
   -- catch bugs quicker.
   let btbFull = fromJust $ AF.join btbPrefix btbSuffix
-  pure $ bt { btBranches = BlockTreeBranch { .. } : btBranches bt }
+  pure $ mkBlockTree (btTrunk bt) (BlockTreeBranch { .. } : btBranches bt)
 
 -- | Same as @addBranch@ but calls to 'error' if the former yields 'Nothing'.
 addBranch' :: AF.HasHeader blk => AF.AnchoredFragment blk -> BlockTree blk -> BlockTree blk
@@ -273,47 +295,14 @@ nonemptyPrefixesOf frag =
 
 type DeforestedBlockTree blk = M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
 
-{-
--- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
--- from the anchor of the tree to that block.
-deforestBlockTree
+deforestRawBlockTree
   :: forall blk. (HasHeader blk)
   => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
-deforestBlockTree trunk branches =
-  let
-    -- Take all the nonempty prefixes of the branch's suffix, then
-    -- catenate with the branch prefix on the left. This gives the
-    -- path to the root for all the non-trunk blocks in the branch.
-    branchPrefixes :: BlockTreeBranch blk -> [AF.AnchoredFragment blk]
-    branchPrefixes branch =
-      let anchor = AF.anchor $ btbPrefix branch
-      in fmap (AF.fromOldestFirst anchor . mappend (AF.toOldestFirst $ btbPrefix branch)) .
-          drop 1 . inits . AF.toOldestFirst $ btbSuffix branch
-
-    allPrefixes :: [AF.AnchoredFragment blk]
-    allPrefixes = nonemptyPrefixesOf trunk <> concatMap branchPrefixes branches
-
-    addPrefix
-      :: AF.AnchoredFragment blk
-      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
-      -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
-    addPrefix fragment mapSoFar = case fragment of
-      AF.Empty _  -> mapSoFar
-      _ AF.:> tip -> M.insert (blockHash tip) fragment mapSoFar
-
-  in foldr addPrefix mempty allPrefixes
-  -}
-
-
-deforestBlockTree
-  :: forall blk. (HasHeader blk)
-  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
-deforestBlockTree trunk branches =
+deforestRawBlockTree trunk branches =
   let folder = foldMap $ \af -> either (const mempty) (flip M.singleton af . blockHash) $ AF.head af
    in fold
         $ folder (prefixes (AF.Empty AF.AnchorGenesis) $ AF.toOldestFirst trunk)
         : fmap (\btb -> folder $ prefixes (btbPrefix btb) $ AF.toOldestFirst $ btbSuffix btb) branches
-
 
 prefixes :: AF.HasHeader blk => AF.AnchoredFragment blk -> [blk] -> [AF.AnchoredFragment blk]
 prefixes = scanl (AF.:>)
