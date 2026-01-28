@@ -68,7 +68,7 @@ data BlockTreeBranch blk = BlockTreeBranch {
   deriving (Show, Generic)
   -- The underlying 'AnchoredFragment' type of a 'BlockTreeBranch' is
   -- responsible for the 'HeaderHash' and 'HasHeader' constraints; the former is
-  -- a type family, which is justifies the need for @UndecidableInstances@ while
+  -- a type family, which justifies the need for @UndecidableInstances@ while
   -- deriving instances unless a concrete block type is picked.
 
 instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
