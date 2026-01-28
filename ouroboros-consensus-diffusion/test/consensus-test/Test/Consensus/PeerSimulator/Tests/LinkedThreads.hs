@@ -5,7 +5,10 @@
 -- | The scheduled ChainSync and BlockFetch servers are supposed to be linked,
 -- such that if one gets disconnected, then so does the other. This module
 -- contains a collection of smoke tests to make sure of that.
-module Test.Consensus.PeerSimulator.Tests.LinkedThreads (tests) where
+module Test.Consensus.PeerSimulator.Tests.LinkedThreads (
+    test_chainSyncKillsBlockFetch
+  , tests
+  ) where
 
 import           Control.Monad.Class.MonadAsync (AsyncCancelled (..))
 import           Control.Monad.Class.MonadTime.SI (Time (Time))
@@ -40,8 +43,15 @@ tests = testProperty "ChainSync kills BlockFetch" prop_chainSyncKillsBlockFetch
 -- disconnected. After that, we give a tick for the BlockFetch server to serve
 -- the corresponding block. We check that the block is not served.
 prop_chainSyncKillsBlockFetch :: Property
-prop_chainSyncKillsBlockFetch = do
-  forAllGenesisTest @TestBlock
+prop_chainSyncKillsBlockFetch = runConformanceTest @TestBlock test_chainSyncKillsBlockFetch
+
+test_chainSyncKillsBlockFetch ::
+  ( IssueTestBlock blk
+  , AF.HasHeader blk
+  , Eq blk
+  ) => ConformanceTest blk
+test_chainSyncKillsBlockFetch =
+  mkConformanceTest id id
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
     )

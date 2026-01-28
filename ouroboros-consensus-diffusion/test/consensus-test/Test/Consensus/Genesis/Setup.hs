@@ -9,12 +9,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Genesis.Setup (
-    module Test.Consensus.Genesis.Setup.GenChains
+    ConformanceTest (..)
+  , module Test.Consensus.Genesis.Setup.GenChains
   , castHeaderHash
-  , forAllGenesisTest
   , honestImmutableTip
-  , runGenesisTest
-  , runGenesisTest'
+  , mkConformanceTest
+  , runConformanceTest
   , selectedHonestChain
   ) where
 
@@ -77,19 +77,22 @@ data ConformanceTest blk = ConformanceTest
     -- ^ A shrinker allowed to inspect the output value of a test.
    , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to test.
-  --, ctDesiredPasses   :: Int -- TODO: Enable when porting tests
-    -- ^ Sets the expected number of test runs to check the property.
+  , ctDesiredPasses   :: Int -> Int
+    -- ^ Adjust the default number of test runs to check the property.
+  , ctMaxSize :: Int -> Int
+    -- ^ Adjust the default test case maximum size.
   }
 
 mkConformanceTest ::
   (Testable prop) =>
-  -- Int ->
+  (Int -> Int) ->
+  (Int -> Int) ->
   Gen (GenesisTestFull blk) ->
   SchedulerConfig ->
   (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
   (GenesisTestFull blk -> StateView blk -> prop) ->
   ConformanceTest blk
-mkConformanceTest ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+mkConformanceTest ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest {..}
 
@@ -142,18 +145,21 @@ runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
 -- | Variant of 'runGenesisTest' that also takes a property on the final
 -- 'StateView' and returns a QuickCheck property. The trace is printed in case
 -- of counter-example.
-runGenesisTest' ::
+_runGenesisTest' ::
   Testable prop =>
   SchedulerConfig ->
   GenesisTestFull TestBlock ->
   (StateView TestBlock -> prop) ->
   Property
-runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
+_runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
   protocolInfoArgs <- getProtocolInfoArgs
   let RunGenesisTestResult{rgtrTrace, rgtrStateView} =
         runGenesisTest protocolInfoArgs schedulerConfig genesisTest
   pure $ counterexample rgtrTrace $ makeProperty rgtrStateView
 
+-- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
+-- PeerSchedule' from a 'ConformanceTest', runs them with 'runGenesisTest',
+-- and checks whether the given property holds on the resulting 'StateView'.
 runConformanceTest :: forall blk.
   ( Condense (StateView blk)
   , CondenseList (NodeState blk)
@@ -194,6 +200,12 @@ runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
         tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
         tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
         counterexample (rgtrTrace result) $
+        -- | TODO: Here we want to transform the default /max size/ and
+        -- /max success/ values instead of hard coding them to 100. We will be
+        -- implementing the necesary helpers (similar in spirit to
+        -- 'TestEnv.adjustQuickCheckMaxSize' and 'adjustQuickCheckTests'
+        -- respectively) in a follow up PR.
+        withMaxSize (ctMaxSize 100) . withMaxSuccess (ctDesiredPasses 100) $
         ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
   where
     shrinker' gt = ctShrinker gt . rgtrStateView
@@ -214,37 +226,6 @@ runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
         e :: (Exception e) => Maybe e
         e = fromException exn
         true = property True
-
--- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
--- PeerSchedule', runs them with 'runGenesisTest', check whether the given
--- property holds on the resulting 'StateView'.
-forAllGenesisTest :: forall blk prop.
-  ( Testable prop
-  , Condense (StateView blk)
-  , CondenseList (NodeState blk)
-  , ShowProxy blk
-  , ShowProxy (Header blk)
-  , ConfigSupportsNode blk
-  , LedgerSupportsProtocol blk
-  , ChainDB.SerialiseDiskConstraints blk
-  , BlockSupportsDiffusionPipelining blk
-  , InspectLedger blk
-  , HasHardForkHistory blk
-  , ConvertRawHash blk
-  , CanUpgradeLedgerTables (LedgerState blk)
-  , HasPointScheduleTestParams blk
-  , Eq (Header blk)
-  , Eq blk
-  , Terse blk
-  , Condense (NodeState blk)
-  ) =>
-  Gen (GenesisTestFull blk) ->
-  SchedulerConfig ->
-  (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
-  (GenesisTestFull blk -> StateView blk -> prop) ->
-  Property
-forAllGenesisTest generator schedulerConfig shrinker mkProperty =
-  runConformanceTest $ mkConformanceTest generator schedulerConfig shrinker mkProperty
 
 -- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
 -- this function casts this type's hash to its instance, so that it can be used
