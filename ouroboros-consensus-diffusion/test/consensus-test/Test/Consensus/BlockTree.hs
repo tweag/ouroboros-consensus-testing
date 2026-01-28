@@ -82,15 +82,26 @@ data BlockTreeBranch blk = BlockTreeBranch {
 --
 -- REVIEW: Find another name so as not to clash with 'BlockTree' from
 -- `unstable-consensus-testlib/Test/Util/TestBlock.hs`.
-data BlockTree blk = BlockTree {
+data BlockTree blk = RawBlockTree {
     btTrunk    :: AF.AnchoredFragment blk,
-    btBranches :: [BlockTreeBranch blk]
+    btBranches :: [BlockTreeBranch blk],
+
+    -- ^ Cached deforestation of the block tree. This gets queried
+    -- many times and there's no reason to rebuild the tree every time.
+    btDeforested :: DeforestedBlockTree blk
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
+pattern BlockTree trunk branches <- RawBlockTree trunk branches _
+
+-- Smart constructor to cache the deforested block tree at creation time.
+mkBlockTree :: (HasHeader blk) => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
+mkBlockTree trunk branches = RawBlockTree trunk branches (deforestBlockTree trunk branches)
 
 -- | Make a block tree made of only a trunk.
-mkTrunk :: AF.AnchoredFragment blk -> BlockTree blk
-mkTrunk btTrunk = BlockTree { btTrunk, btBranches = [] }
+mkTrunk :: (HasHeader blk) => AF.AnchoredFragment blk -> BlockTree blk
+mkTrunk btTrunk = mkBlockTree btTrunk []
 
 -- | Add a branch to an existing block tree.
 --
@@ -260,13 +271,15 @@ nonemptyPrefixesOf
 nonemptyPrefixesOf frag =
   fmap (AF.fromOldestFirst (AF.anchor frag)) . drop 1 . inits . AF.toOldestFirst $ frag
 
+type DeforestedBlockTree blk = M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
+
 {-
 -- Constructs a map from each block in the tree to the (unique) `AF.AnchoredFragment`
 -- from the anchor of the tree to that block.
 deforestBlockTree
   :: forall blk. (HasHeader blk)
-  => BlockTree blk -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
-deforestBlockTree (BlockTree trunk branches) =
+  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
+deforestBlockTree trunk branches =
   let
     -- Take all the nonempty prefixes of the branch's suffix, then
     -- catenate with the branch prefix on the left. This gives the
@@ -292,13 +305,10 @@ deforestBlockTree (BlockTree trunk branches) =
   -}
 
 
---deforestBlockTree
---  :: forall blk. (HasHeader blk)
---  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
 deforestBlockTree
   :: forall blk. (HasHeader blk)
-  => BlockTree blk -> M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
-deforestBlockTree (BlockTree trunk branches) =
+  => AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> DeforestedBlockTree blk
+deforestBlockTree trunk branches =
   let folder = foldMap $ \af -> either (const mempty) (flip M.singleton af . blockHash) $ AF.head af
    in fold
         $ folder (prefixes (AF.Empty AF.AnchorGenesis) $ AF.toOldestFirst trunk)
@@ -322,11 +332,11 @@ isAncestorOf ::
   WithOrigin blk ->
   WithOrigin blk ->
   Bool
-isAncestorOf bt (At ancestor) (At descendant) =
-  fromMaybe False $ do
-    let m = deforestBlockTree bt
-    afD <- M.lookup (blockHash descendant) m
-    afA <- M.lookup (blockHash ancestor) m
+isAncestorOf tree (At ancestor) (At descendant) =
+  let deforested = btDeforested tree
+  in fromMaybe False $ do
+    afD <- M.lookup (blockHash descendant) deforested
+    afA <- M.lookup (blockHash ancestor) deforested
     pure $ AF.isPrefixOf afA afD
 isAncestorOf _ (At _) Origin = False
 isAncestorOf _ Origin _ = True
