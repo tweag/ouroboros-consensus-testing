@@ -325,6 +325,7 @@ library unstable-consensus-conformance-testlib
     time,
     tree-diff,
     typed-protocols,
+    universe-base,
     unstable-diffusion-testlib,
     vector,
 
