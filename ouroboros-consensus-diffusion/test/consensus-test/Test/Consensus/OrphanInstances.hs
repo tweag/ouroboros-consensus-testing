@@ -22,8 +22,10 @@ import Cardano.Slotting.Time (SlotLength)
 import Control.Monad.Class.MonadTime.SI (Time)
 import Data.Aeson
   ( FromJSON (parseJSON)
+  , FromJSONKey ()
   , KeyValue ((.=))
   , ToJSON (toEncoding, toJSON)
+  , ToJSONKey ()
   , defaultOptions
   , genericToEncoding
   , object
@@ -60,12 +62,12 @@ import Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (..))
 
 deriving instance Generic (GenesisTest blk schedule)
 instance
-  (ToJSON (HeaderHash blk), HasHeader blk, ToJSON schedule, ToJSON blk) =>
+  (ToJSON (HeaderHash blk), HasHeader blk, ToJSON schedule, ToJSON blk, ToJSONKey (HeaderHash blk)) =>
   ToJSON (GenesisTest blk schedule)
   where
   toEncoding = genericToEncoding defaultOptions
 instance
-  (FromJSON (HeaderHash blk), HasHeader blk, FromJSON schedule, FromJSON blk) =>
+  (FromJSON (HeaderHash blk), HasHeader blk, FromJSON schedule, FromJSON blk, FromJSONKey (HeaderHash blk)) =>
   FromJSON (GenesisTest blk schedule)
 
 -- ** 'GenesisTest' field instances
@@ -84,10 +86,6 @@ instance FromJSON ForecastRange
 deriving instance Generic Delta
 instance ToJSON Delta
 instance FromJSON Delta
-
-deriving instance Generic (BlockTree blk)
-instance (ToJSON (HeaderHash blk), HasHeader blk, ToJSON blk) => ToJSON (BlockTree blk)
-instance (FromJSON (HeaderHash blk), HasHeader blk, FromJSON blk) => FromJSON (BlockTree blk)
 
 deriving instance Generic ChainSyncTimeout
 instance ToJSON ChainSyncTimeout
@@ -111,17 +109,6 @@ instance FromJSON SlotLength
 deriving instance Generic (PointSchedule blk)
 instance ToJSON blk => ToJSON (PointSchedule blk)
 instance FromJSON blk => FromJSON (PointSchedule blk)
-
--- *** 'BlockTree' field related instances
-
--- | The underlying 'AnchoredFragment' type of a 'BlockTreeBranch' is
--- responsible for the 'HeaderHash' and 'HasHeader' constraints; the former is
--- a type family, which is justifies the need for @UndecidableInstances@ unless
--- a concrete block type is picked.
-deriving instance Generic (BlockTreeBranch blk)
-
-instance (ToJSON (HeaderHash blk), HasHeader blk, ToJSON blk) => ToJSON (BlockTreeBranch blk)
-instance (FromJSON (HeaderHash blk), HasHeader blk, FromJSON blk) => FromJSON (BlockTreeBranch blk)
 
 instance (ToJSON a, ToJSON b) => ToJSON (AnchoredSeq v a b) where
   toJSON anchoredSeq =
