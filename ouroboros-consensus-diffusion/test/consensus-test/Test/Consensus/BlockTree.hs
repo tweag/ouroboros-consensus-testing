@@ -59,6 +59,11 @@ import           Text.Printf (printf)
 -- INVARIANT: the head of @btbPrefix@ is the anchor of @btbSuffix@.
 --
 -- INVARIANT: @btbFull == fromJust $ AF.join btbPrefix btbSuffix@.
+--
+-- The derived @Generic@ instance here is the reason why this module uses
+-- @UndecidableInstances@. The underlying 'AnchoredFragment' type of a
+-- @BlockTreeBranch@ is responsible for the @HeaderHash@ and @HasHeader@
+-- constraints, and the former is a type family.
 data BlockTreeBranch blk = BlockTreeBranch {
     btbPrefix      :: AF.AnchoredFragment blk,
     btbSuffix      :: AF.AnchoredFragment blk,
@@ -66,10 +71,6 @@ data BlockTreeBranch blk = BlockTreeBranch {
     btbFull        :: AF.AnchoredFragment blk
   }
   deriving (Show, Generic)
-  -- The underlying 'AnchoredFragment' type of a 'BlockTreeBranch' is
-  -- responsible for the 'HeaderHash' and 'HasHeader' constraints; the former is
-  -- a type family, which justifies the need for @UndecidableInstances@ while
-  -- deriving instances unless a concrete block type is picked.
 
 instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
 instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.FromJSON (BlockTreeBranch blk)
@@ -89,6 +90,9 @@ instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk
 --
 -- INVARIANT: for all @BlockTreeBranch{..}@ in the tree, @btTrunk == fromJust $
 -- AF.join btbPrefix btbTrunkSuffix@.
+--
+-- INVARIANT: In @RawBlockTree trunk branches deforested@, we must have
+-- @deforested == deforestRawBlockTree trunk branches@.
 --
 -- REVIEW: Find another name so as not to clash with 'BlockTree' from
 -- `unstable-consensus-testlib/Test/Util/TestBlock.hs`.
