@@ -56,13 +56,13 @@ tests :: TestTree
 tests =
   testGroup
     "LoP"
-    [ testProperty "wait just enough" (prop_wait False)
-    , testProperty "wait too much" (prop_wait True)
+    [ testProperty "wait just enough" (prop_wait "wait just enough" False)
+    , testProperty "wait too much" (prop_wait "wait too much" True)
     , testProperty "wait behind forecast horizon" prop_waitBehindForecastHorizon
-    , testProperty "serve just fast enough" (prop_serve False)
-    , testProperty "serve too slow" (prop_serve True)
-    , testProperty "delaying attack succeeds without LoP" (prop_delayAttack False)
-    , testProperty "delaying attack fails with LoP" (prop_delayAttack True)
+    , testProperty "serve just fast enough" (prop_serve "serve just fast enough" False)
+    , testProperty "serve too slow" (prop_serve "serve too slow" True)
+    , testProperty "delaying attack succeeds without LoP" (prop_delayAttack "delaying attack succeeds without LoP" False)
+    , testProperty "delaying attack fails with LoP" (prop_delayAttack "delaying attack fails with LoP" True)
     ]
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
@@ -72,16 +72,16 @@ tests =
 -- client. If @mustTimeout@ is @False@, then we wait not quite as long, so the
 -- LoP bucket should not be empty at the end of the test and we should observe
 -- no exception in the ChainSync client.
-prop_wait :: Bool -> Property
-prop_wait = runConformanceTest @TestBlock . test_wait
+prop_wait :: String -> Bool -> Property
+prop_wait description = runConformanceTest @TestBlock . test_wait description
 
 test_wait ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
-  ) => Bool -> ConformanceTest blk
-test_wait mustTimeout =
-  mkConformanceTest desiredPasses
+  ) => String -> Bool -> ConformanceTest blk
+test_wait description mustTimeout =
+  mkConformanceTest description desiredPasses
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
     -- significantly more time than the one that does. This is because the former
@@ -135,7 +135,7 @@ test_waitBehindForecastHorizon ::
   , Ord blk
   ) => ConformanceTest blk
 test_waitBehindForecastHorizon =
-  mkConformanceTest desiredPasses testMaxSize
+  mkConformanceTest "wait behind forecast horizon" desiredPasses testMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let ps = dullSchedule (btTrunk gtBlockTree)
@@ -180,17 +180,17 @@ test_waitBehindForecastHorizon =
 -- We will have two versions of this test: one where we serve the @n-1@th block
 -- but succumb before serving the @n@th block, and one where we do manage to
 -- serve the @n@th block, barely.
-prop_serve :: Bool -> Property
-prop_serve =
-  runConformanceTest @TestBlock . test_serve
+prop_serve :: String -> Bool -> Property
+prop_serve description =
+  runConformanceTest @TestBlock . test_serve description
 
 test_serve ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
-  ) => Bool -> ConformanceTest blk
-test_serve mustTimeout =
-  mkConformanceTest desiredPasses testMaxSize
+  ) => String -> Bool -> ConformanceTest blk
+test_serve description mustTimeout =
+  mkConformanceTest description desiredPasses testMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let lbpRate = borderlineRate (AF.length (btTrunk gtBlockTree))
@@ -240,12 +240,12 @@ test_serve mustTimeout =
       }
 
 -- NOTE: Same as 'LoE.prop_adversaryHitsTimeouts' with LoP instead of timeouts.
-prop_delayAttack :: Bool -> Property
-prop_delayAttack =
+prop_delayAttack :: String -> Bool -> Property
+prop_delayAttack description =
   -- Here we can't shrink because we exploit the properties of the point schedule to wait
   -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
   -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-  noShrinking . runConformanceTest @TestBlock . test_delayAttack
+  noShrinking . runConformanceTest @TestBlock . test_delayAttack description
 
 test_delayAttack ::
   ( HasHeader blk
@@ -253,9 +253,9 @@ test_delayAttack ::
   , IssueTestBlock blk
   , Ord blk
   ) =>
-  Bool -> ConformanceTest blk
-test_delayAttack lopEnabled =
-  mkConformanceTest desiredPasses testMaxSize
+  String -> Bool -> ConformanceTest blk
+test_delayAttack description lopEnabled =
+  mkConformanceTest description desiredPasses testMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}

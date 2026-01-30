@@ -81,10 +81,12 @@ data ConformanceTest blk = ConformanceTest
     -- ^ Adjust the default number of test runs to check the property.
   , ctMaxSize :: Int -> Int
     -- ^ Adjust the default test case maximum size.
+  , ctDescription :: String
   }
 
 mkConformanceTest ::
   (Testable prop) =>
+  String ->
   (Int -> Int) ->
   (Int -> Int) ->
   Gen (GenesisTestFull blk) ->
@@ -92,7 +94,7 @@ mkConformanceTest ::
   (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
   (GenesisTestFull blk -> StateView blk -> prop) ->
   ConformanceTest blk
-mkConformanceTest ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+mkConformanceTest ctDescription ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest {..}
 

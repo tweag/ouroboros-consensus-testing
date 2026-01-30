@@ -48,8 +48,8 @@ tests :: TestTree
 tests =
   testGroup
     "LoE"
-    [ testProperty "adversary does not hit timeouts" (prop_adversaryHitsTimeouts False)
-    , testProperty "adversary hits timeouts" (prop_adversaryHitsTimeouts True)
+    [ testProperty "adversary does not hit timeouts" (prop_adversaryHitsTimeouts "adversary does not hit timeouts" False)
+    , testProperty "adversary hits timeouts" (prop_adversaryHitsTimeouts "adversary hits timeouts" True)
     ]
 
 -- | Tests that the selection advances in presence of the LoE when a peer is
@@ -62,12 +62,12 @@ tests =
 -- stuck at the intersection between trunk and other chain.
 --
 -- NOTE: Same as 'LoP.prop_delayAttack' with timeouts instead of LoP.
-prop_adversaryHitsTimeouts :: Bool -> Property
-prop_adversaryHitsTimeouts =
+prop_adversaryHitsTimeouts :: String -> Bool -> Property
+prop_adversaryHitsTimeouts description =
   -- Here we can't shrink because we exploit the properties of the point schedule to wait
   -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
   -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-  noShrinking . runConformanceTest @TestBlock . test_adversaryHitsTimeouts
+  noShrinking . runConformanceTest @TestBlock . test_adversaryHitsTimeouts description
 
 
 test_adversaryHitsTimeouts ::
@@ -75,9 +75,9 @@ test_adversaryHitsTimeouts ::
   , HasHeader (Header blk)
   , IssueTestBlock blk
   , Ord blk
-  ) => Bool -> ConformanceTest blk
-test_adversaryHitsTimeouts timeoutsEnabled =
-    mkConformanceTest desiredPasses testMaxSize
+  ) => String -> Bool -> ConformanceTest blk
+test_adversaryHitsTimeouts description timeoutsEnabled =
+    mkConformanceTest description desiredPasses testMaxSize
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree

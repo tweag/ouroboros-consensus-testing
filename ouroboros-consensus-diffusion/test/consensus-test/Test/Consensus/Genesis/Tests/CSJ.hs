@@ -50,13 +50,13 @@ tests =
     "CSJ"
     [ testGroup
         "Happy Path"
-        [ testProperty "honest peers are synchronised" $ prop_CSJ NoAdversaries OneScheduleForAllPeers,
-          testProperty "honest peers do their own thing" $ prop_CSJ NoAdversaries OneSchedulePerHonestPeer
+        [ testProperty "honest peers are synchronised" $ prop_CSJ "honest peers are synchronised" NoAdversaries OneScheduleForAllPeers,
+          testProperty "honest peers do their own thing" $ prop_CSJ "honest peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
         ],
       testGroup
         "With some adversaries"
-        [ testProperty "honest peers are synchronised" $ prop_CSJ WithAdversaries OneScheduleForAllPeers,
-          testProperty "honest peers do their own thing" $ prop_CSJ WithAdversaries OneSchedulePerHonestPeer
+        [ testProperty "honest peers are synchronised" $ prop_CSJ "honest peers are synchronised" WithAdversaries OneScheduleForAllPeers,
+          testProperty "honest peers do their own thing" $ prop_CSJ "honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
         ]
     ]
 
@@ -89,9 +89,9 @@ data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
 -- duplication of headers, but only in a window of @jumpSize@ slots near the tip
 -- of the chain.
 --
-prop_CSJ :: WithAdversariesFlag -> NumHonestSchedulesFlag -> Property
-prop_CSJ adversariesFlag numHonestSchedules =
-  runConformanceTest @TestBlock $ test_csj adversariesFlag numHonestSchedules
+prop_CSJ :: String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> Property
+prop_CSJ description adversariesFlag numHonestSchedules =
+  runConformanceTest @TestBlock $ test_csj description adversariesFlag numHonestSchedules
 
 test_csj :: forall blk.
   ( HasHeader blk
@@ -100,12 +100,12 @@ test_csj :: forall blk.
   , Ord blk
   , Condense (Header blk)
   , Eq (Header blk)
-  ) => WithAdversariesFlag -> NumHonestSchedulesFlag -> ConformanceTest blk
-test_csj adversariesFlag numHonestSchedules = do
+  ) => String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> ConformanceTest blk
+test_csj description adversariesFlag numHonestSchedules = do
   let genForks = case adversariesFlag of
                    NoAdversaries   -> pure 0
                    WithAdversaries -> choose (2, 4)
-  mkConformanceTest desiredPasses testMaxSize
+  mkConformanceTest description desiredPasses testMaxSize
     ( disableBoringTimeouts <$> case numHonestSchedules of
         OneScheduleForAllPeers ->
           genChains genForks
