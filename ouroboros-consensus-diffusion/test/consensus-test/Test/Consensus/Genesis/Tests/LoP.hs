@@ -42,12 +42,12 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 import           Test.Util.TestBlock (TestBlock)
 
--- | General adjustment of required property test passes.
+-- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
 desiredPasses :: Int -> Int
 desiredPasses = (* 10)
 
--- | General adjustment of max test case size.
+-- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
 testMaxSize :: Int -> Int
 testMaxSize = (`div` 5)
@@ -67,7 +67,7 @@ tests =
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
 -- the block tree trunk and then does nothing. If the given boolean,
--- @mustTimeout@, if @True@, then we wait just long enough for the LoP bucket to
+-- @mustTimeout@, is @True@, then we wait just long enough for the LoP bucket to
 -- empty; we expect to observe an 'EmptyBucket' exception in the ChainSync
 -- client. If @mustTimeout@ is @False@, then we wait not quite as long, so the
 -- LoP bucket should not be empty at the end of the test and we should observe
@@ -167,7 +167,7 @@ test_waitBehindForecastHorizon =
 -- slow enough to lose against the LoP bucket.
 --
 -- Let @c@ be the bucket capacity, @r@ be the bucket rate and @t@ be the time
--- between blocks, then the bucket level right right before getting the token
+-- between blocks, then the bucket level right before getting the token
 -- for the @k@th block will be:
 --
 -- > c - krt + (k-1)

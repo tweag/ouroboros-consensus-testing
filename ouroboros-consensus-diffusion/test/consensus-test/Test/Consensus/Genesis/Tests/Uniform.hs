@@ -66,9 +66,13 @@ import           Test.Util.QuickCheck (le)
 import           Test.Util.TestBlock (TestBlock)
 import           Text.Printf (printf)
 
+-- | Default adjustment of required property test passes.
+-- Can be set individually on each test definition.
 desiredPasses :: Int -> Int
 desiredPasses = (* 10)
 
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
 testMaxSize :: Int -> Int
 testMaxSize = (`div` 5)
 

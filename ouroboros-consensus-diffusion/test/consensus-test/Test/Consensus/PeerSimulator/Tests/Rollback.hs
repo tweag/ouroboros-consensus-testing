@@ -36,6 +36,8 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (TestBlock)
 
+-- | Default adjustment of required property test passes.
+-- Can be set individually on each test definition.
 desiredPasses :: Int -> Int
 desiredPasses = (`div` 2)
 

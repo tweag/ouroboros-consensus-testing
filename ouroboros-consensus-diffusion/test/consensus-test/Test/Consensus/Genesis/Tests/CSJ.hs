@@ -38,9 +38,13 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 import           Test.Util.TestBlock (TestBlock)
 
+-- | Default adjustment of required property test passes.
+-- Can be set individually on each test definition.
 desiredPasses :: Int -> Int
 desiredPasses = (* 10)
 
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
 testMaxSize :: Int -> Int
 testMaxSize = (`div` 5)
 
