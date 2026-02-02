@@ -1,12 +1,14 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
+-- | ChainSync Jumping tests.
 module Test.Consensus.Genesis.Tests.CSJ (
-    test_csj
-  , tests
+    Test
+  , testSuite
   ) where
 
 import           Data.List (nub)
@@ -24,6 +26,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Test.Consensus.BlockTree (BlockTree (..))
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Tests.Uniform (genUniformSchedulePoints)
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run (SchedulerConfig (..),
                      defaultSchedulerConfig)
 import           Test.Consensus.PeerSimulator.StateView (StateView (..))
@@ -32,11 +35,9 @@ import           Test.Consensus.PointSchedule
 import qualified Test.Consensus.PointSchedule.Peers as Peers
 import           Test.Consensus.PointSchedule.Peers (Peers (..), peers')
 import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
-import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
-import           Test.Util.TestBlock (TestBlock)
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
@@ -48,29 +49,38 @@ desiredPasses = (* 10)
 testMaxSize :: Int -> Int
 testMaxSize = (`div` 5)
 
-tests :: TestTree
-tests =
-  testGroup
-    "CSJ"
-    [ testGroup
-        "Happy Path"
-        [ testProperty "honest peers are synchronised" $ prop_CSJ "honest peers are synchronised" NoAdversaries OneScheduleForAllPeers,
-          testProperty "honest peers do their own thing" $ prop_CSJ "honest peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
-        ],
-      testGroup
-        "With some adversaries"
-        [ testProperty "honest peers are synchronised" $ prop_CSJ "honest peers are synchronised" WithAdversaries OneScheduleForAllPeers,
-          testProperty "honest peers do their own thing" $ prop_CSJ "honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
-        ]
-    ]
+data Test = ChainSyncJump !WithAdversariesFlag !NumHonestSchedulesFlag
+          deriving stock (Eq, Ord, Generic)
+          deriving (Universe, Finite) via (GenericUniverse Test)
+
+testSuite ::
+  ( HasHeader blk
+  , HasHeader (Header blk)
+  , IssueTestBlock blk
+  , Ord blk
+  , Condense (Header blk)
+  , Eq (Header blk)
+  ) => TestSuite blk Test
+testSuite = group "CSJ" $ newTestSuite $ \case
+  ChainSyncJump NoAdversaries OneScheduleForAllPeers ->
+    test_csj "adversary free: honest peers are synchronised" NoAdversaries OneScheduleForAllPeers
+  ChainSyncJump NoAdversaries OneSchedulePerHonestPeer ->
+    test_csj "adversary free: peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
+  ChainSyncJump WithAdversaries OneScheduleForAllPeers ->
+    test_csj "with some adversaries: honest peers are synchronised" WithAdversaries OneScheduleForAllPeers
+  ChainSyncJump WithAdversaries OneSchedulePerHonestPeer ->
+    test_csj "with some adversaries: honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
 
 -- | A flag to indicate if properties are tested with adversarial peers
 data WithAdversariesFlag = NoAdversaries | WithAdversaries
-  deriving Eq
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via (GenericUniverse WithAdversariesFlag)
 
 -- | A flag to indicate if properties are tested using the same schedule for the
 -- honest peers, or if each peer should used its own schedule.
 data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via (GenericUniverse NumHonestSchedulesFlag)
 
 -- | Test of ChainSync Jumping (CSJ).
 --
@@ -92,11 +102,6 @@ data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
 -- jumpers takes its place and starts serving headers. This might lead to
 -- duplication of headers, but only in a window of @jumpSize@ slots near the tip
 -- of the chain.
---
-prop_CSJ :: String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> Property
-prop_CSJ description adversariesFlag numHonestSchedules =
-  runConformanceTest @TestBlock $ test_csj description adversariesFlag numHonestSchedules
-
 test_csj :: forall blk.
   ( HasHeader blk
   , HasHeader (Header blk)

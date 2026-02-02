@@ -1,13 +1,15 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- | The scheduled ChainSync and BlockFetch servers are supposed to be linked,
 -- such that if one gets disconnected, then so does the other. This module
 -- contains a collection of smoke tests to make sure of that.
 module Test.Consensus.PeerSimulator.Tests.LinkedThreads (
-    test_chainSyncKillsBlockFetch
-  , tests
+    Test
+  , testSuite
   ) where
 
 import           Control.Monad.Class.MonadAsync (AsyncCancelled (..))
@@ -20,6 +22,7 @@ import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Codec (mustReplyTimeout)
 import           Test.Consensus.BlockTree (BlockTree (..))
 import           Test.Consensus.Genesis.Setup
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run
                      (SchedulerConfig (scEnableChainSyncTimeouts),
                      defaultSchedulerConfig)
@@ -28,23 +31,25 @@ import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Peers (peersOnlyHonest)
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleHeaderPoint,
                      scheduleTipPoint)
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock)
 
-tests :: TestTree
-tests = testProperty "ChainSync kills BlockFetch" prop_chainSyncKillsBlockFetch
+data Test = ChainSyncKillsBlockFetch
+  deriving (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse Test
+
+testSuite ::
+  ( IssueTestBlock blk
+  , AF.HasHeader blk
+  , Eq blk
+  ) => TestSuite blk Test
+testSuite = group "ChainSync kill BlockFetch" . newTestSuite $ \case
+  ChainSyncKillsBlockFetch -> test_chainSyncKillsBlockFetch
 
 -- | Check that when the scheduled ChainSync server gets killed, it takes the
 -- BlockFetch one with it. For this, we rely on ChainSync timeouts: the
 -- ChainSync server serves just one header and then waits long enough to get
 -- disconnected. After that, we give a tick for the BlockFetch server to serve
 -- the corresponding block. We check that the block is not served.
-prop_chainSyncKillsBlockFetch :: Property
-prop_chainSyncKillsBlockFetch = runConformanceTest @TestBlock test_chainSyncKillsBlockFetch
-
 test_chainSyncKillsBlockFetch ::
   ( IssueTestBlock blk
   , AF.HasHeader blk

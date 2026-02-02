@@ -1,17 +1,16 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | Limit on Patience tests.
 module Test.Consensus.Genesis.Tests.LoP (
-    test_delayAttack
-  , test_serve
-  , test_wait
-  , test_waitBehindForecastHorizon
-  , tests
+    Test
+  , testSuite
   ) where
 
 import           Data.Functor (($>))
@@ -27,6 +26,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..))
 import           Test.Consensus.Genesis.Setup
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run (SchedulerConfig (..),
                      defaultSchedulerConfig)
 import           Test.Consensus.PeerSimulator.StateView
@@ -36,11 +36,9 @@ import           Test.Consensus.PointSchedule.Peers (peers', peersOnlyAdversary,
 import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
                      scheduleHeaderPoint, scheduleTipPoint)
-import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
-import           Test.Util.TestBlock (TestBlock)
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
@@ -52,18 +50,27 @@ desiredPasses = (* 10)
 testMaxSize :: Int -> Int
 testMaxSize = (`div` 5)
 
-tests :: TestTree
-tests =
-  testGroup
-    "LoP"
-    [ testProperty "wait just enough" (prop_wait "wait just enough" False)
-    , testProperty "wait too much" (prop_wait "wait too much" True)
-    , testProperty "wait behind forecast horizon" prop_waitBehindForecastHorizon
-    , testProperty "serve just fast enough" (prop_serve "serve just fast enough" False)
-    , testProperty "serve too slow" (prop_serve "serve too slow" True)
-    , testProperty "delaying attack succeeds without LoP" (prop_delayAttack "delaying attack succeeds without LoP" False)
-    , testProperty "delaying attack fails with LoP" (prop_delayAttack "delaying attack fails with LoP" True)
-    ]
+data Test = WaitUntilEmpty !Bool
+          | WaitBehindForecastHorizon
+          | ServeSlow !Bool
+          | DelayAttack !Bool
+          deriving stock (Eq, Ord, Generic)
+          deriving (Universe, Finite) via (GenericUniverse Test)
+
+testSuite ::
+  ( HasHeader blk
+  , HasHeader (Header blk)
+  , IssueTestBlock blk
+  , Ord blk
+  ) => TestSuite blk Test
+testSuite = group "LoP" $ newTestSuite $ \case
+  WaitUntilEmpty False -> test_wait "wait just enough" False
+  WaitUntilEmpty True -> test_wait "wait too much" True
+  WaitBehindForecastHorizon -> test_waitBehindForecastHorizon
+  ServeSlow False -> test_serve "serve just fast enough" False
+  ServeSlow True -> test_serve "serve too slow" True
+  DelayAttack False -> test_delayAttack "delaying attack succeeds without LoP" False
+  DelayAttack True -> test_delayAttack "delaying attack fails with LoP" True
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
 -- the block tree trunk and then does nothing. If the given boolean,
@@ -72,9 +79,6 @@ tests =
 -- client. If @mustTimeout@ is @False@, then we wait not quite as long, so the
 -- LoP bucket should not be empty at the end of the test and we should observe
 -- no exception in the ChainSync client.
-prop_wait :: String -> Bool -> Property
-prop_wait description = runConformanceTest @TestBlock . test_wait description
-
 test_wait ::
   ( HasHeader blk
   , IssueTestBlock blk
@@ -125,10 +129,6 @@ test_wait description mustTimeout =
 -- then be disabled and that, therefore, one could wait forever in this state.
 -- We disable the timeouts and check that, indeed, the ChainSync client observes
 -- no exception.
-prop_waitBehindForecastHorizon :: Property
-prop_waitBehindForecastHorizon = runConformanceTest @TestBlock test_waitBehindForecastHorizon
-
-
 test_waitBehindForecastHorizon ::
   ( HasHeader blk
   , IssueTestBlock blk
@@ -180,10 +180,6 @@ test_waitBehindForecastHorizon =
 -- We will have two versions of this test: one where we serve the @n-1@th block
 -- but succumb before serving the @n@th block, and one where we do manage to
 -- serve the @n@th block, barely.
-prop_serve :: String -> Bool -> Property
-prop_serve description =
-  runConformanceTest @TestBlock . test_serve description
-
 test_serve ::
   ( HasHeader blk
   , IssueTestBlock blk
@@ -239,14 +235,7 @@ test_serve description mustTimeout =
         psMinEndTime = Time 0
       }
 
--- NOTE: Same as 'LoE.prop_adversaryHitsTimeouts' with LoP instead of timeouts.
-prop_delayAttack :: String -> Bool -> Property
-prop_delayAttack description =
-  -- Here we can't shrink because we exploit the properties of the point schedule to wait
-  -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
-  -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-  noShrinking . runConformanceTest @TestBlock . test_delayAttack description
-
+-- NOTE: Same as 'LoE.test_adversaryHitsTimeouts' with LoP instead of timeouts.
 test_delayAttack ::
   ( HasHeader blk
   , HasHeader (Header blk)
@@ -284,7 +273,12 @@ test_delayAttack description lopEnabled =
               []                                           -> not lopEnabled
               [fromException -> Just CSClient.EmptyBucket] -> lopEnabled
               _                                            -> False
-         in selectedCorrect && exceptionsCorrect
+
+            -- Here we can't shrink because we exploit the properties of the point schedule to wait
+            -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
+            -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
+            -- REVIEW: Does this /inner/ call to noShrinking behaves as the outer call from before?
+         in noShrinking $ selectedCorrect && exceptionsCorrect
     )
   where
     delaySchedule :: (HasHeader blk) => BlockTree blk -> PointSchedule blk
