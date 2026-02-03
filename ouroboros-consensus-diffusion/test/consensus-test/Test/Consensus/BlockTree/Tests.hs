@@ -104,7 +104,7 @@ prop_deforestBlockTree_headPointsAreDistinct =
 
 -- | The deforested branches are all populated.
 prop_deforestBlockTree_imagesAreNonempty
-  :: (HasHeader blk) => BlockTree blk -> QC.Property
+  :: BlockTree blk -> QC.Property
 prop_deforestBlockTree_imagesAreNonempty =
   QC.property . all (not . AF.null) . deforestBlockTree
 

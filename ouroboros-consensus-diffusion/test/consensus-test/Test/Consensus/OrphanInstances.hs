@@ -43,7 +43,6 @@ import Ouroboros.Network.AnchoredSeq
   , toOldestFirst
   )
 import Ouroboros.Network.Block (HasHeader, HeaderHash)
-import Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..))
 import Test.Consensus.PointSchedule
   ( BlockFetchTimeout (..)
   , CSJParams (..)
