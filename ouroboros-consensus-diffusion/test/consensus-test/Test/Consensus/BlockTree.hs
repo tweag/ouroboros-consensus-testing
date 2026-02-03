@@ -118,6 +118,8 @@ instance
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _
 
+{-# COMPLETE BlockTree #-}
+
 deforestBlockTree :: BlockTree blk -> DeforestedBlockTree blk
 deforestBlockTree = btDeforested
 
