@@ -7,6 +7,7 @@ import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.PeerSimulator.Tests (tests)
 import qualified Test.Consensus.PointSchedule.Shrinking.Tests (tests)
 import qualified Test.Consensus.PointSchedule.Tests (tests)
+import qualified Test.Consensus.Serialize.Tests (tests)
 import           Test.Tasty
 import           Test.Util.TestEnv (defaultMainWithTestEnv,
                      defaultTestEnvConfig)
@@ -28,4 +29,5 @@ tests =
   , Test.Consensus.PeerSimulator.Tests.tests
   , Test.Consensus.PointSchedule.Shrinking.Tests.tests
   , Test.Consensus.PointSchedule.Tests.tests
+  , Test.Consensus.Serialize.Tests.tests
   ]

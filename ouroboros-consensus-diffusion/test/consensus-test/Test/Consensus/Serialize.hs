@@ -99,8 +99,8 @@ parseBlockTreeAndPointSchedule =
           <$> parseUnitBlockTree <*> parseUnitPointSchedule
 
 parseBlockType :: Aeson.Value -> Either String BlockType
-parseBlockType = Aeson.withString txt -> case txt of
-  "unit" -> UnitBlockType
+parseBlockType = undefined {- Aeson.withString txt $ case txt of
+  "unit" -> UnitBlockType -}
 
 parseUnitBlockTree :: Aeson.Parser (BlockTree ())
 parseUnitBlockTree = undefined
