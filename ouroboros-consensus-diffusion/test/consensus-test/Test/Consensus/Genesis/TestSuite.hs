@@ -50,6 +50,8 @@ import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty.QuickCheck as QC
 import           Test.Util.TersePrinting (Terse)
 
+-- | A data type with generically defined  'Universe' and 'Finite' instances.
+-- Intended to derive said instances (via @DerivingVia@ extension) for 'TestSuite' keys.
 newtype GenericUniverse a = GenericUniverse a
 
 instance (Generic a, GUniverse (Rep a)) => Universe (GenericUniverse a) where
@@ -67,6 +69,7 @@ data TestSuiteData blk = TestSuiteData
   , tsTest   :: ConformanceTest blk
   }
 
+-- | A @TestSuite blk key@ contains one 'ConformanceTest'@blk@ for each @key@.
 newtype TestSuite blk key = TestSuite (Map key (TestSuiteData blk))
 
 -- | Build a 'TestSuite' from a mapping function.
