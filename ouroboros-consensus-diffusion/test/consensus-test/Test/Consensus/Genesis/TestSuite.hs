@@ -22,7 +22,7 @@ module Test.Consensus.Genesis.TestSuite (
   ) where
 
 import           Data.Coerce (coerce)
-import           Data.List (partition)
+import           Data.List (foldl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Universe.Class (Finite (..), Universe (..))
@@ -95,6 +95,29 @@ group pfs (TestSuite m) = TestSuite $
   Map.map (\testData ->
              testData {tsPrefix = pfs : tsPrefix testData}) m
 
+-- * Compile 'TestSuite' into a 'TestTree'
+
+-- | Intermediary representation for a 'TestSuite' to be compiled into a 'TestTree'.
+data TestTrie = TestTrie
+  { _here     :: [TestTree] -- ^ Top level tests (whose prefix ends here).
+  , _children :: Map String TestTrie -- ^ Grouped tests correspond to prefix maps.
+  }
+
+insert :: [String] -> TestTree -> TestTrie -> TestTrie
+insert [] t (TestTrie ts ch) = TestTrie (t:ts) ch
+insert (p:ps) t (TestTrie ts ch) =
+  let go :: Maybe TestTrie -> Maybe TestTrie
+      go Nothing  = Just (insert ps t (TestTrie [] Map.empty))
+      go (Just c) = Just (insert ps t c)
+   in TestTrie ts (Map.alter go p ch)
+
+buildTrie :: [([String], TestTree)] -> TestTrie
+buildTrie = foldl' (\tt (ps, t) -> insert ps t tt) (TestTrie [] Map.empty)
+
+render :: TestTrie -> [TestTree]
+render (TestTrie here children) =
+  here <> fmap (\(p,tt) -> testGroup p (render tt)) (Map.toList children)
+
 -- | Produces a single-test tasty 'TestTree', along with its containing
 -- 'group' prefixes, out a 'TestSuiteData'.
 compileSingleTest ::
@@ -124,33 +147,6 @@ compileSingleTest (TestSuiteData {tsPrefix, tsTest}) =
   let testName = ctDescription tsTest
    in (tsPrefix, QC.testProperty testName (runConformanceTest tsTest))
 
--- | Recursively build test groups by following the hierarchy described by
--- the '[String]'. The resulting '[TestTree]' are considered to be part
--- of the same top level group.
-buildGroups :: [([String], TestTree)] -> [TestTree]
-buildGroups entries =
-  let
-    -- Distinguish between tests that belong to the top level
-    -- from the nested ones (i.e. those with a non-empty prefix).
-    (toplevel, nested) = partition (null . fst) entries
-
-    topLevelTests :: [TestTree]
-    topLevelTests = fmap snd toplevel
-
-    -- Group the nested tests by their first prefix.
-    grouped :: Map String [([String], TestTree)]
-    grouped =
-      Map.fromListWith (<>) $ do
-        (p:ps, t) <- nested
-        pure (p, [(ps, t)])
-
-    subgroups :: [TestTree]
-    subgroups = do
-      (p, xs) <- Map.toList grouped
-      pure $ testGroup p (buildGroups xs)
-  in
-    topLevelTests <> subgroups
-
 -- | Compile a 'TestSuite' into a tasty 'TestTree', with the given 'String'
 -- as the top level description/name of the resulting group.
 toTestTree ::
@@ -174,6 +170,6 @@ toTestTree ::
   ) =>
   String -> TestSuite blk key -> TestTree
 toTestTree p (TestSuite m) =
-  let leafs = fmap snd $ Map.toAscList m
-      entries = fmap compileSingleTest leafs
-   in testGroup p $ buildGroups entries
+  let tests = fmap snd $ Map.toList m
+      prefixedTests = fmap compileSingleTest tests
+   in testGroup p . render . buildTrie $ prefixedTests
