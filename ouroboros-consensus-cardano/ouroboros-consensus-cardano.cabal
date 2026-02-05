@@ -161,6 +161,7 @@ library
     ouroboros-consensus ^>=0.27,
     ouroboros-consensus-diffusion:unstable-consensus-conformance-testlib,
     cardano-ledger-shelley-test,
+    cardano-ledger-conway-test,
     cardano-ledger-binary:testlib,
     cardano-ledger-core:{cardano-ledger-core, testlib},
     ouroboros-consensus-protocol ^>=0.12,
