@@ -57,7 +57,7 @@ test_longRangeAttack ::
   , Ord blk
   ) => ConformanceTest blk
 test_longRangeAttack =
-  mkConformanceTest desiredPasses id
+  mkConformanceTest "one adversary" desiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)

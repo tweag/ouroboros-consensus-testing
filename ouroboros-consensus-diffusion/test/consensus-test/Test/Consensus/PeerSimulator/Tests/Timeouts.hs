@@ -40,12 +40,12 @@ desiredPasses = (`div` 10)
 
 tests :: TestTree
 tests = testGroup "timeouts"
-  [ testProperty "does time out" (prop_timeouts True)
-  , testProperty "does not time out" (prop_timeouts False)
+  [ testProperty "does time out" (prop_timeouts "does time out" True)
+  , testProperty "does not time out" (prop_timeouts "does not time out" False)
   ]
 
-prop_timeouts :: Bool -> Property
-prop_timeouts = runConformanceTest @TestBlock . test_timeouts
+prop_timeouts :: String -> Bool -> Property
+prop_timeouts description = runConformanceTest @TestBlock . test_timeouts description
 
 test_timeouts ::
   ( IssueTestBlock blk
@@ -53,9 +53,9 @@ test_timeouts ::
   , AF.HasHeader (Header blk)
   , Condense (HeaderHash blk)
   , Condense (Header blk)
-  ) => Bool -> ConformanceTest blk
-test_timeouts mustTimeout =
-  mkConformanceTest desiredPasses id
+  ) => String -> Bool -> ConformanceTest blk
+test_timeouts description mustTimeout =
+  mkConformanceTest description desiredPasses id
 
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
