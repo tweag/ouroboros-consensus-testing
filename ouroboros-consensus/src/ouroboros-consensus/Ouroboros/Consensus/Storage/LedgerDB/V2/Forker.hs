@@ -5,171 +5,197 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
--- |
 
-module Ouroboros.Consensus.Storage.LedgerDB.V2.Forker (
-    ForkerEnv (..)
+module Ouroboros.Consensus.Storage.LedgerDB.V2.Forker
+  ( ForkerEnv (..)
   , implForkerCommit
   , implForkerGetLedgerState
   , implForkerPush
   , implForkerRangeReadTables
   , implForkerReadStatistics
   , implForkerReadTables
+
     -- * The API
   , module Ouroboros.Consensus.Storage.LedgerDB.Forker
   ) where
 
-import           Control.Tracer
-import           Data.Maybe (fromMaybe)
-import           GHC.Generics
-import           NoThunks.Class
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.Tables.Utils
-import           Ouroboros.Consensus.Storage.LedgerDB.API
-import           Ouroboros.Consensus.Storage.LedgerDB.Args
-import           Ouroboros.Consensus.Storage.LedgerDB.Forker
-import           Ouroboros.Consensus.Storage.LedgerDB.V2.LedgerSeq
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.NormalForm.StrictTVar ()
+import Control.RAWLock (RAWLock)
+import Control.ResourceRegistry
+import Control.Tracer
+import Data.Functor.Contravariant ((>$<))
+import Data.Maybe (fromMaybe)
+import GHC.Generics
+import NoThunks.Class
+import Ouroboros.Consensus.Block
+import Ouroboros.Consensus.Ledger.Abstract
+import Ouroboros.Consensus.Ledger.SupportsProtocol
+import Ouroboros.Consensus.Ledger.Tables.Utils
+import Ouroboros.Consensus.Storage.LedgerDB.API
+import Ouroboros.Consensus.Storage.LedgerDB.Args
+import Ouroboros.Consensus.Storage.LedgerDB.Forker
+import Ouroboros.Consensus.Storage.LedgerDB.V2.LedgerSeq
+import Ouroboros.Consensus.Util (whenJust)
+import Ouroboros.Consensus.Util.CallStack
+import Ouroboros.Consensus.Util.Enclose
+import Ouroboros.Consensus.Util.IOLike
+import Ouroboros.Consensus.Util.NormalForm.StrictTVar ()
 import qualified Ouroboros.Network.AnchoredSeq as AS
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
 {-------------------------------------------------------------------------------
   Forker operations
 -------------------------------------------------------------------------------}
 
-data ForkerEnv m l blk = ForkerEnv {
-    -- | Local version of the LedgerSeq
-    foeLedgerSeq          :: !(StrictTVar m (LedgerSeq m l))
-    -- | This TVar is the same as the LedgerDB one
-  , foeSwitchVar          :: !(StrictTVar m (LedgerSeq m l))
-    -- | Config
-  , foeSecurityParam      :: !SecurityParam
-    -- | Config
-  , foeTracer             :: !(Tracer m TraceForkerEvent)
-    -- | Release the resources
-  , foeResourcesToRelease :: !(StrictTVar m (m ()))
+data ForkerEnv m l blk = ForkerEnv
+  { foeLedgerSeq :: !(StrictTVar m (LedgerSeq m l))
+  -- ^ Local version of the LedgerSeq
+  , foeSwitchVar :: !(StrictTVar m (LedgerSeq m l))
+  -- ^ This TVar is the same as the LedgerDB one
+  , foeLedgerDbRegistry :: !(ResourceRegistry m)
+  -- ^ The registry in the LedgerDB to move handles to in case we commit the
+  -- forker.
+  , foeLedgerDbToClose :: !(StrictTVar m [LedgerSeq m l])
+  , foeTracer :: !(Tracer m TraceForkerEvent)
+  -- ^ Config
+  , foeResourceRegistry :: !(ResourceRegistry m)
+  -- ^ The registry local to the forker
+  , foeInitialHandleKey :: !(ResourceKey m)
+  -- ^ Resource key for the initial handle to ensure it is released. See
+  -- comments in 'implForkerCommit'.
+  , foeCleanup :: !(StrictTVar m (m ()))
+  -- ^ An action to run on cleanup. If the forker was not committed this will be
+  -- the trivial action. Otherwise it will move the required handles to the
+  -- LedgerDB and release the discarded ones.
+  , foeLedgerDbLock :: !(RAWLock m ())
+  -- ^ 'ldbOpenHandlesLock'.
+  , foeWasCommitted :: !(StrictTVar m Bool)
   }
   deriving Generic
 
-deriving instance ( IOLike m
-                  , LedgerSupportsProtocol blk
-                  , NoThunks (l EmptyMK)
-                  , NoThunks (TxIn l)
-                  , NoThunks (TxOut l)
-                  ) => NoThunks (ForkerEnv m l blk)
+deriving instance
+  ( IOLike m
+  , LedgerSupportsProtocol blk
+  , NoThunks (l EmptyMK)
+  , NoThunks (TxIn l)
+  , NoThunks (TxOut l)
+  ) =>
+  NoThunks (ForkerEnv m l blk)
 
 implForkerReadTables ::
-     (MonadSTM m, GetTip l)
-  => ForkerEnv m l blk
-  -> LedgerTables l KeysMK
-  -> m (LedgerTables l ValuesMK)
-implForkerReadTables env ks = do
-    traceWith (foeTracer env) ForkerReadTablesStart
+  (IOLike m, GetTip l) =>
+  ForkerEnv m l blk ->
+  LedgerTables l KeysMK ->
+  m (LedgerTables l ValuesMK)
+implForkerReadTables env ks =
+  encloseTimedWith (ForkerReadTables >$< foeTracer env) $ do
     lseq <- readTVarIO (foeLedgerSeq env)
-    tbs <- read (tables $ currentHandle lseq) ks
-    traceWith (foeTracer env) ForkerReadTablesEnd
-    pure tbs
+    let stateRef = currentHandle lseq
+    read (tables stateRef) (state stateRef) ks
 
 implForkerRangeReadTables ::
-     (MonadSTM m, GetTip l, HasLedgerTables l)
-  => QueryBatchSize
-  -> ForkerEnv m l blk
-  -> RangeQueryPrevious l
-  -> m (LedgerTables l ValuesMK)
-implForkerRangeReadTables qbs env rq0 = do
-    traceWith (foeTracer env) ForkerRangeReadTablesStart
+  (IOLike m, GetTip l, HasLedgerTables l) =>
+  QueryBatchSize ->
+  ForkerEnv m l blk ->
+  RangeQueryPrevious l ->
+  m (LedgerTables l ValuesMK, Maybe (TxIn l))
+implForkerRangeReadTables qbs env rq0 =
+  encloseTimedWith (ForkerRangeReadTables >$< foeTracer env) $ do
     ldb <- readTVarIO $ foeLedgerSeq env
     let n = fromIntegral $ defaultQueryBatchSize qbs
+        stateRef = currentHandle ldb
     case rq0 of
-      NoPreviousQuery -> readRange (tables $ currentHandle ldb) (Nothing, n)
-      PreviousQueryWasFinal -> pure $ LedgerTables emptyMK
-      PreviousQueryWasUpTo k -> do
-        tbs <- readRange (tables $ currentHandle ldb) (Just k, n)
-        traceWith (foeTracer env) ForkerRangeReadTablesEnd
-        pure tbs
+      NoPreviousQuery -> readRange (tables stateRef) (state stateRef) (Nothing, n)
+      PreviousQueryWasFinal -> pure (LedgerTables emptyMK, Nothing)
+      PreviousQueryWasUpTo k ->
+        readRange (tables stateRef) (state stateRef) (Just k, n)
 
 implForkerGetLedgerState ::
-     (MonadSTM m, GetTip l)
-  => ForkerEnv m l blk
-  -> STM m (l EmptyMK)
+  (MonadSTM m, GetTip l) =>
+  ForkerEnv m l blk ->
+  STM m (l EmptyMK)
 implForkerGetLedgerState env = current <$> readTVar (foeLedgerSeq env)
 
 implForkerReadStatistics ::
-     (MonadSTM m, GetTip l)
-  => ForkerEnv m l blk
-  -> m (Maybe Statistics)
+  (MonadSTM m, GetTip l) =>
+  ForkerEnv m l blk ->
+  m Statistics
 implForkerReadStatistics env = do
   traceWith (foeTracer env) ForkerReadStatistics
-  fmap (fmap Statistics) . tablesSize . tables . currentHandle =<< readTVarIO (foeLedgerSeq env)
+  fmap Statistics . tablesSize . tables . currentHandle =<< readTVarIO (foeLedgerSeq env)
 
 implForkerPush ::
-     (IOLike m, GetTip l, HasLedgerTables l, HasCallStack)
-  => ForkerEnv m l blk
-  -> l DiffMK
-  -> m ()
-implForkerPush env newState = do
-  traceWith (foeTracer env) ForkerPushStart
-  lseq <- readTVarIO (foeLedgerSeq env)
+  (IOLike m, GetTip l, HasLedgerTables l, HasCallStack) =>
+  ForkerEnv m l blk ->
+  l DiffMK ->
+  m ()
+implForkerPush env newState =
+  encloseTimedWith (ForkerPush >$< foeTracer env) $ do
+    lseq <- readTVarIO (foeLedgerSeq env)
 
-  let st0 = current lseq
-      st = forgetLedgerTables newState
+    let st0 = current lseq
+        st = forgetLedgerTables newState
 
-  bracketOnError
-    (duplicate (tables $ currentHandle lseq))
-    close
-    (\newtbs -> do
-        pushDiffs newtbs st0 newState
+    bracketOnError
+      (duplicate (tables $ currentHandle lseq) (foeResourceRegistry env))
+      (release . fst)
+      ( \(_, newtbs) -> do
+          pushDiffs newtbs st0 newState
 
-        let lseq' = extend (StateRef st newtbs) lseq
+          let lseq' = extend (StateRef st newtbs) lseq
 
-        traceWith (foeTracer env) ForkerPushEnd
-        atomically $ do
-               writeTVar (foeLedgerSeq env) lseq'
-               modifyTVar (foeResourcesToRelease env) (>> close newtbs)
-     )
+          atomically $ writeTVar (foeLedgerSeq env) lseq'
+      )
 
 implForkerCommit ::
-     (IOLike m, GetTip l, StandardHash l)
-  => ForkerEnv m l blk
-  -> STM m ()
+  (IOLike m, GetTip l, StandardHash l) =>
+  ForkerEnv m l blk ->
+  STM m ()
 implForkerCommit env = do
   LedgerSeq lseq <- readTVar foeLedgerSeq
   let intersectionSlot = getTipSlot $ state $ AS.anchor lseq
   let predicate = (== getTipHash (state (AS.anchor lseq))) . getTipHash . state
-  (discardedBySelection, LedgerSeq discardedByPruning) <- do
+  (transfer, ldbToClose) <-
     stateTVar
       foeSwitchVar
-      (\(LedgerSeq olddb) -> fromMaybe theImpossible $ do
+      ( \(LedgerSeq olddb) -> fromMaybe theImpossible $ do
           -- Split the selection at the intersection point. The snd component will
           -- have to be closed.
-          (olddb', toClose) <- AS.splitAfterMeasure intersectionSlot (either predicate predicate) olddb
+          (toKeepBase, toCloseLdb) <- AS.splitAfterMeasure intersectionSlot (either predicate predicate) olddb
+          (toCloseForker, toKeepTip) <-
+            AS.splitAfterMeasure intersectionSlot (either predicate predicate) lseq
           -- Join the prefix of the selection with the sequence in the forker
-          newdb <- AS.join (const $ const True) olddb' lseq
-          -- Prune the resulting sequence to keep @k@ states
-          let (l, s) = prune (LedgerDbPruneKeeping (foeSecurityParam env)) (LedgerSeq newdb)
-          pure ((toClose, l), s)
+          newdb <- AS.join (const $ const True) toKeepBase toKeepTip
+          -- Do /not/ close the anchor of @toClose@, as that is also the
+          -- tip of @olddb'@ which will be used in @newdb@.
+          let ldbToClose = case toCloseLdb of
+                AS.Empty _ -> Nothing
+                _ AS.:< closeOld' -> Just (LedgerSeq closeOld')
+              transferCommitted = do
+                closeLedgerSeq (LedgerSeq toCloseForker)
+
+                -- All the other remaining handles are transferred to the LedgerDB registry
+                keys <- transferRegistry foeResourceRegistry foeLedgerDbRegistry
+                mapM_ (\(k, v) -> transfer (tables v) k) $ zip keys (AS.toOldestFirst toKeepTip)
+
+          pure ((transferCommitted, ldbToClose), LedgerSeq newdb)
       )
+  whenJust ldbToClose (modifyTVar foeLedgerDbToClose . (:))
+  writeTVar foeCleanup transfer
+  writeTVar foeWasCommitted True
+ where
+  ForkerEnv
+    { foeLedgerSeq
+    , foeSwitchVar
+    , foeResourceRegistry
+    , foeLedgerDbRegistry
+    , foeCleanup
+    , foeLedgerDbToClose
+    , foeWasCommitted
+    } = env
 
-  -- We are discarding the previous value in the TVar because we had accumulated
-  -- actions for closing the states pushed to the forker. As we are committing
-  -- those we have to close the ones discarded in this function and forget about
-  -- those releasing actions.
-  writeTVar foeResourcesToRelease $
-       mapM_ (close . tables) $ AS.toOldestFirst discardedBySelection ++ AS.toOldestFirst discardedByPruning
-
-  where
-    ForkerEnv {
-        foeLedgerSeq
-      , foeSwitchVar
-      , foeResourcesToRelease
-      } = env
-
-    theImpossible =
-      error $ unwords [ "Critical invariant violation:"
-                      , "Forker chain does no longer intersect with selected chain."
-                      ]
+  theImpossible =
+    error $
+      unwords
+        [ "Critical invariant violation:"
+        , "Forker chain does no longer intersect with selected chain."
+        ]

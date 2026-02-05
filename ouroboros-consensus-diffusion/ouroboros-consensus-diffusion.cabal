@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-consensus-diffusion
-version: 0.23.0.0
+version: 0.24.0.0
 synopsis: Integration for the Ouroboros Network layer
 description:
   Top level integration for consensus & network layers of the Ouroboros blockchain protocol.
@@ -60,7 +60,6 @@ library
     Ouroboros.Consensus.Node
     Ouroboros.Consensus.Node.DbLock
     Ouroboros.Consensus.Node.DbMarker
-    Ouroboros.Consensus.Node.ErrorPolicy
     Ouroboros.Consensus.Node.Exit
     Ouroboros.Consensus.Node.ExitPolicy
     Ouroboros.Consensus.Node.GSM
@@ -76,36 +75,34 @@ library
     Ouroboros.Consensus.Node.Run,
 
   build-depends:
+    aeson,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
+    cardano-base,
+    cardano-binary,
+    cardano-diffusion:{api, cardano-diffusion, protocols} ^>=0.1,
     cardano-slotting,
     cborg ^>=0.2.2,
     containers >=0.5 && <0.8,
     contra-tracer,
     deepseq,
-    dns,
     filepath,
-    fs-api ^>=0.3,
+    fs-api ^>=0.4,
     hashable,
-    io-classes ^>=1.5,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     mtl,
-    network-mux ^>=0.8,
-    ouroboros-consensus ^>=0.27,
-    ouroboros-network ^>=0.21,
-    ouroboros-network-api ^>=0.14,
-    ouroboros-network-framework ^>=0.18,
-    ouroboros-network-protocols ^>=0.14,
+    network-mux ^>=0.10,
+    ouroboros-consensus ^>=0.28,
+    ouroboros-consensus-protocol ^>=0.13,
+    ouroboros-network:{api, framework, ouroboros-network, protocols} ^>=0.24,
     random,
-    resource-registry ^>=0.1,
+    resource-registry ^>=0.2,
     safe-wild-cards ^>=1.0,
     serialise ^>=0.2,
-    si-timers ^>=1.5,
-    strict-stm ^>=1.5,
     text,
     time,
     transformers,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{stateful, typed-protocols},
 
 library unstable-diffusion-testlib
   import: common-lib
@@ -130,31 +127,27 @@ library unstable-diffusion-testlib
     QuickCheck,
     base,
     bytestring,
+    cardano-diffusion:cardano-diffusion,
     cardano-ledger-core,
     cborg,
     containers,
     contra-tracer,
     fgl,
-    fs-sim ^>=0.3,
+    fs-sim ^>=0.4,
     graphviz >=2999.20.1.0,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     mtl,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-diffusion,
-    ouroboros-network,
-    ouroboros-network-api,
-    ouroboros-network-framework,
-    ouroboros-network-mock,
-    ouroboros-network-protocols,
+    ouroboros-consensus-protocol,
+    ouroboros-network:{api, api-tests-lib, framework, ouroboros-network, protocols},
     quiet ^>=0.2,
     random,
     resource-registry,
-    si-timers,
     sop-core ^>=0.5,
     sop-extras ^>=0.4,
     strict-sop-core ^>=0.1,
-    strict-stm,
     text,
     typed-protocols,
 
@@ -215,7 +208,7 @@ test-suite mock-test
     constraints,
     containers,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib, unstable-mock-block},
-    ouroboros-network-mock,
+    ouroboros-network:api-tests-lib,
     serialise,
     tasty,
     tasty-quickcheck,
@@ -231,7 +224,6 @@ test-suite consensus-test
     Test.Consensus.BlockTree
     Test.Consensus.BlockTree.Tests
     Test.Consensus.GSM
-    Test.Consensus.GSM.Model
     Test.Consensus.Genesis.Setup
     Test.Consensus.Genesis.Setup.Classifiers
     Test.Consensus.Genesis.Setup.GenChains
@@ -239,13 +231,13 @@ test-suite consensus-test
     Test.Consensus.Genesis.Tests.CSJ
     Test.Consensus.Genesis.Tests.DensityDisconnect
     Test.Consensus.Genesis.Tests.LoE
+    Test.Consensus.Genesis.Tests.LoE.CaughtUp
     Test.Consensus.Genesis.Tests.LoP
     Test.Consensus.Genesis.Tests.LongRangeAttack
     Test.Consensus.Genesis.Tests.Uniform
     Test.Consensus.HardFork.Combinator
     Test.Consensus.HardFork.Combinator.A
     Test.Consensus.HardFork.Combinator.B
-    Test.Consensus.IOSimQSM.Test.StateMachine.Sequential
     Test.Consensus.Network.AnchoredFragment.Extras
     Test.Consensus.Node
     Test.Consensus.PeerSimulator.BlockFetch
@@ -282,40 +274,37 @@ test-suite consensus-test
     base,
     binary,
     bytestring,
+    cardano-binary,
     cardano-crypto-class ^>=2.2,
+    cardano-diffusion:api,
     cardano-ledger-core,
     cardano-slotting:{cardano-slotting, testlib},
     cardano-strict-containers,
     containers,
     contra-tracer,
     directory,
-    fs-api ^>=0.3,
-    fs-sim ^>=0.3,
+    fs-api ^>=0.4,
+    fs-sim ^>=0.4,
     hashable,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     mempack,
     mtl,
     nothunks,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-diffusion,
-    ouroboros-network,
-    ouroboros-network-api,
-    ouroboros-network-framework,
-    ouroboros-network-mock,
-    ouroboros-network-protocols,
-    pretty-show,
-    quickcheck-state-machine:no-vendored-treediff,
+    ouroboros-network:{api, api-tests-lib, framework, ouroboros-network, protocols},
+    pretty,
+    quickcheck-dynamic ^>=4.0.0,
     quiet,
     random,
+    reflection,
     resource-registry,
     serialise,
-    si-timers,
     sop-core,
     sop-extras,
     strict-checked-vars,
     strict-sop-core,
-    strict-stm,
     tasty,
     tasty-hunit,
     tasty-quickcheck,

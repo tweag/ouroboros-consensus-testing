@@ -1,14 +1,15 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE BlockArguments            #-}
+{-# LANGUAGE DerivingStrategies        #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
 
-module Test.Consensus.Genesis.Setup (
-    module Test.Consensus.Genesis.Setup.GenChains
+module Test.Consensus.Genesis.Setup
+  ( module Test.Consensus.Genesis.Setup.GenChains
   , castHeaderHash
   , forAllGenesisTest
   , honestImmutableTip
@@ -17,53 +18,68 @@ module Test.Consensus.Genesis.Setup (
   , selectedHonestChain
   ) where
 
-import           Control.Exception (throw)
-import           Control.Monad.Class.MonadAsync
-                     (AsyncCancelled (AsyncCancelled))
-import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
-import           Control.Tracer (debugTracer, traceWith)
-import           Data.Maybe (mapMaybe)
-import           Ouroboros.Consensus.Block.Abstract (ChainHash (..),
-                     ConvertRawHash, GetHeader, Header)
-import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
-                     (BlockSupportsDiffusionPipelining)
-import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
-import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
-import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-                     (LedgerSupportsProtocol)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ChainSyncClientException (..))
+import Control.Exception (throw)
+import Control.Monad.Class.MonadAsync
+  ( AsyncCancelled (AsyncCancelled)
+  )
+import Control.Monad.IOSim (IOSim, runSimStrictShutdown)
+import Control.Tracer (debugTracer, traceWith)
+import Data.Maybe (mapMaybe)
+import Ouroboros.Consensus.Block.Abstract
+  ( ChainHash (..)
+  , ConvertRawHash
+  , GetHeader
+  , Header
+  )
+import Ouroboros.Consensus.Block.SupportsDiffusionPipelining
+  ( BlockSupportsDiffusionPipelining
+  )
+import Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
+import Ouroboros.Consensus.HardFork.Abstract
+import Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
+import Ouroboros.Consensus.Ledger.SupportsProtocol
+  ( LedgerSupportsProtocol
+  )
+import Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+  ( ChainSyncClientException (..)
+  )
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB
-import           Ouroboros.Consensus.Storage.LedgerDB.API
-                     (CanUpgradeLedgerTables)
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.IOLike (Exception, fromException)
+import Ouroboros.Consensus.Storage.LedgerDB.API
+  ( CanUpgradeLedgerTables
+  )
+import Ouroboros.Consensus.Util.Condense
+import Ouroboros.Consensus.Util.IOLike (Exception, fromException)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Driver.Limits
-                     (ProtocolLimitFailure (ExceededTimeLimit))
-import           Ouroboros.Network.Util.ShowProxy
-import           Test.Consensus.BlockTree (onTrunk)
-import           Test.Consensus.Genesis.Setup.Classifiers (Classifiers (..),
-                     ResultClassifiers (..), ScheduleClassifiers (..),
-                     classifiers, resultClassifiers, scheduleClassifiers)
-import           Test.Consensus.Genesis.Setup.GenChains
-import           Test.Consensus.PeerSimulator.Config ()
-import           Test.Consensus.PeerSimulator.Run
-import           Test.Consensus.PeerSimulator.StateView
-import           Test.Consensus.PeerSimulator.Trace (traceLinesWith,
-                     tracerTestBlock)
-import           Test.Consensus.PointSchedule
-import           Test.Consensus.PointSchedule.NodeState (NodeState)
-import           Test.QuickCheck
-import           Test.Util.Orphans.IOLike ()
-import           Test.Util.QuickCheck (forAllGenRunShrinkCheck)
-import           Test.Util.TersePrinting (Terse)
-import           Test.Util.TestBlock (TestBlock)
-import           Test.Util.Tracer (recordingTracerM)
-import           Text.Printf (printf)
-
+import Ouroboros.Network.Driver.Limits
+  ( ProtocolLimitFailure (ExceededTimeLimit)
+  )
+import Ouroboros.Network.Util.ShowProxy
+import Test.Consensus.BlockTree (onTrunk)
+import Test.Consensus.Genesis.Setup.Classifiers
+  ( Classifiers (..)
+  , ResultClassifiers (..)
+  , ScheduleClassifiers (..)
+  , classifiers
+  , resultClassifiers
+  , scheduleClassifiers
+  )
+import Test.Consensus.Genesis.Setup.GenChains
+import Test.Consensus.PeerSimulator.Config ()
+import Test.Consensus.PeerSimulator.Run
+import Test.Consensus.PeerSimulator.StateView
+import Test.Consensus.PeerSimulator.Trace
+  ( traceLinesWith
+  , tracerTestBlock
+  )
+import Test.Consensus.PointSchedule
+import Test.Consensus.PointSchedule.NodeState (NodeState)
+import Test.QuickCheck
+import Test.Util.Orphans.IOLike ()
+import Test.Util.QuickCheck (forAllGenRunShrinkCheck)
+import Test.Util.TersePrinting (Terse)
+import Test.Util.Tracer (recordingTracerM)
+import Text.Printf (printf)
 
 -- | Like 'runSimStrictShutdown' but fail when the main thread terminates if
 -- there are other threads still running or blocked. If one is trying to follow
@@ -71,7 +87,7 @@ import           Text.Printf (printf)
 runSimStrictShutdownOrThrow :: forall a. (forall s. IOSim s a) -> a
 runSimStrictShutdownOrThrow action =
   case runSimStrictShutdown action of
-    Left e  -> throw e
+    Left e -> throw e
     Right x -> x
 
 -- | Runs the given 'GenesisTest' and 'PointSchedule' and evaluates the given
@@ -109,19 +125,37 @@ runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
     traceWith tracer (condense rgtrStateView)
     rgtrTrace <- unlines <$> getTrace
 
-    pure $ RunGenesisTestResult {rgtrTrace, rgtrStateView}
+    pure $ RunGenesisTestResult{rgtrTrace, rgtrStateView}
 
 -- | Variant of 'runGenesisTest' that also takes a property on the final
 -- 'StateView' and returns a QuickCheck property. The trace is printed in case
 -- of counter-example.
-runGenesisTest' ::
-  Testable prop =>
+runGenesisTest' :: forall blk prop.
+  ( Condense (StateView blk)
+  , CondenseList (NodeState blk)
+  , ShowProxy blk
+  , ShowProxy (Header blk)
+  , ConfigSupportsNode blk
+  , LedgerSupportsProtocol blk
+  , ChainDB.SerialiseDiskConstraints blk
+  , BlockSupportsDiffusionPipelining blk
+  , InspectLedger blk
+  , HasHardForkHistory blk
+  , ConvertRawHash blk
+  , CanUpgradeLedgerTables (LedgerState blk)
+  , HasPointScheduleTestParams blk
+  , Eq (Header blk)
+  , Eq blk
+  , Terse blk
+  , Condense (NodeState blk)
+  , Testable prop
+  ) =>
   SchedulerConfig ->
-  GenesisTestFull TestBlock ->
-  (StateView TestBlock -> prop) ->
+  GenesisTestFull blk ->
+  (StateView blk -> prop) ->
   Property
 runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty $ do
-  protocolInfoArgs <- getProtocolInfoArgs
+  protocolInfoArgs <- getProtocolInfoArgs @blk
   let RunGenesisTestResult{rgtrTrace, rgtrStateView} =
         runGenesisTest protocolInfoArgs schedulerConfig genesisTest
   pure $ counterexample rgtrTrace $ makeProperty rgtrStateView
@@ -144,7 +178,6 @@ forAllGenesisTest :: forall blk prop.
   , HasPointScheduleTestParams blk
   , ConvertRawHash blk
   , CanUpgradeLedgerTables (LedgerState blk)
-  , HasPointScheduleTestParams blk
   , Eq (Header blk)
   , Eq blk
   , Terse blk
@@ -156,46 +189,52 @@ forAllGenesisTest :: forall blk prop.
   (GenesisTestFull blk -> StateView blk -> prop) ->
   Property
 forAllGenesisTest generator schedulerConfig shrinker mkProperty = idempotentIOProperty $ do
-  protocolInfoArgs <- getProtocolInfoArgs
-  pure $ forAllGenRunShrinkCheck generator runner shrinker' $ \genesisTest result ->
+  protocolInfoArgs <- getProtocolInfoArgs @blk
+  pure $ forAllGenRunShrinkCheck generator (runGenesisTest protocolInfoArgs schedulerConfig) shrinker' $ \genesisTest result ->
     let cls = classifiers genesisTest
         resCls = resultClassifiers genesisTest result
         schCls = scheduleClassifiers genesisTest
         stateView = rgtrStateView result
-     in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection" $
-        classify (allAdversariesForecastable cls) "All adversaries have at least 1 forecastable block after intersection" $
-        classify (allAdversariesKPlus1InForecast cls) "All adversaries have k+1 blocks in forecast window after intersection" $
-        classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection" $
-        classify (adversaryRollback schCls) "An adversary did a rollback" $
-        classify (honestRollback schCls) "The honest peer did a rollback" $
-        classify (allAdversariesEmpty schCls) "All adversaries have empty schedules" $
-        classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules" $
-        tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls] $
-        tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls] $
-        tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
-        tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
-        counterexample (rgtrTrace result) $
-        mkProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
-  where
-    runner = runGenesisTest schedulerConfig
-    shrinker' gt = shrinker gt . rgtrStateView
-    hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
-      conjoin $ isExpectedException <$> mapMaybe
-        (pscrToException . pseResult)
-        svPeerSimulatorResults
-    isExpectedException exn
-      | Just EmptyBucket           <- e = true
-      | Just DensityTooLow         <- e = true
-      | Just (ExceededTimeLimit _) <- e = true
-      | Just AsyncCancelled        <- e = true
-      | Just CandidateTooSparse{}  <- e = true
-      | otherwise = counterexample
-        ("Encountered unexpected exception: " ++ show exn)
-        False
-      where
-        e :: (Exception e) => Maybe e
-        e = fromException exn
-        true = property True
+     in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection"
+          $ classify
+            (allAdversariesForecastable cls)
+            "All adversaries have at least 1 forecastable block after intersection"
+          $ classify
+            (allAdversariesKPlus1InForecast cls)
+            "All adversaries have k+1 blocks in forecast window after intersection"
+          $ classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection"
+          $ classify (adversaryRollback schCls) "An adversary did a rollback"
+          $ classify (honestRollback schCls) "The honest peer did a rollback"
+          $ classify (allAdversariesEmpty schCls) "All adversaries have empty schedules"
+          $ classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules"
+          $ tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls]
+          $ tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls]
+          $ tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls]
+          $ tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls]
+          $ counterexample (rgtrTrace result)
+          $ mkProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
+ where
+  shrinker' gt = shrinker gt . rgtrStateView
+  hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
+    conjoin $
+      isExpectedException
+        <$> mapMaybe
+          (pscrToException . pseResult)
+          svPeerSimulatorResults
+  isExpectedException exn
+    | Just EmptyBucket <- e = true
+    | Just DensityTooLow <- e = true
+    | Just (ExceededTimeLimit _) <- e = true
+    | Just AsyncCancelled <- e = true
+    | Just CandidateTooSparse{} <- e = true
+    | otherwise =
+        counterexample
+          ("Encountered unexpected exception: " ++ show exn)
+          False
+   where
+    e :: Exception e => Maybe e
+    e = fromException exn
+    true = property True
 
 -- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
 -- this function casts this type's hash to its instance, so that it can be used
@@ -210,11 +249,11 @@ castHeaderHash = \case
 -- (see 'Ouroboros.Consensus.Storage.ChainDB.API.getCurrentChain') and
 -- the honest chain is represented by the test 'BlockTree' trunk.
 honestImmutableTip :: GetHeader blk => GenesisTestFull blk -> StateView blk -> Bool
-honestImmutableTip GenesisTest {gtBlockTree} StateView{svSelectedChain} =
+honestImmutableTip GenesisTest{gtBlockTree} StateView{svSelectedChain} =
   onTrunk gtBlockTree $ AF.anchorPoint svSelectedChain
 
 -- | Check if the tip of the selected chain of a 'GenesisTest' is honest.
 -- In this setting, the honest chain corresponds to the test 'BlockTree' trunk.
 selectedHonestChain :: GetHeader blk => GenesisTestFull blk -> StateView blk -> Bool
-selectedHonestChain GenesisTest {gtBlockTree} StateView{svSelectedChain} =
-   onTrunk gtBlockTree $ AF.headPoint $ svSelectedChain
+selectedHonestChain GenesisTest{gtBlockTree} StateView{svSelectedChain} =
+  onTrunk gtBlockTree $ AF.headPoint $ svSelectedChain

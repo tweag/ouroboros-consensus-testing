@@ -7,29 +7,45 @@
 -- | Helpers for printing various objects in a terse way. Terse printing is
 -- similar to that provided by the 'Condense' typeclass except it can be
 -- sometimes even more compact and it is very specific to tests.
-module Test.Util.TersePrinting (
-    Terse (..)
+module Test.Util.TersePrinting
+  ( Terse (..)
   , terseAnchor
   , terseMaybe
   , terseRealPoint
   , terseWithOrigin
   ) where
 
-import           Cardano.Slotting.Block (BlockNo (BlockNo))
-import           Data.List (intercalate)
-import           Data.List.NonEmpty (NonEmpty ((:|)), toList)
+import Cardano.Slotting.Block (BlockNo (BlockNo))
+import Data.List (intercalate)
+import Data.List.NonEmpty (NonEmpty ((:|)), toList)
 import qualified Data.List.NonEmpty as NE
-import           Ouroboros.Consensus.Block (Header,
-                     Point (BlockPoint, GenesisPoint), RealPoint,
-                     SlotNo (SlotNo), blockHash, blockNo, blockSlot,
-                     realPointToPoint)
-import           Ouroboros.Consensus.HeaderValidation (HeaderWithTime (..))
-import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
-                     anchor, anchorToPoint, mapAnchoredFragment, toOldestFirst)
-import           Ouroboros.Network.Block (Tip (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-import           Test.Util.TestBlock (Header (TestHeader), TestBlock,
-                     TestHash (TestHash), unTestHash)
+import Ouroboros.Consensus.Block
+  ( Header
+  , Point (BlockPoint, GenesisPoint)
+  , RealPoint
+  , SlotNo (SlotNo)
+  , blockHash
+  , blockNo
+  , blockSlot
+  , realPointToPoint
+  )
+import Ouroboros.Consensus.HeaderValidation (HeaderWithTime (..))
+import Ouroboros.Network.AnchoredFragment
+  ( Anchor
+  , AnchoredFragment
+  , anchor
+  , anchorToPoint
+  , mapAnchoredFragment
+  , toOldestFirst
+  )
+import Ouroboros.Network.Block (Tip (..))
+import Ouroboros.Network.Point (WithOrigin (..))
+import Test.Util.TestBlock
+  ( Header (TestHeader)
+  , TestBlock
+  , TestHash (TestHash)
+  , unTestHash
+  )
 
 terseRealPoint :: Terse blk => RealPoint blk -> String
 terseRealPoint = tersePoint . realPointToPoint
@@ -92,21 +108,20 @@ runLengthEncoding xs = [(length ys, NE.head ys) | ys <- NE.group xs]
 -- for other functions.
 terseBlockSlotHash :: BlockNo -> SlotNo -> TestHash -> String
 terseBlockSlotHash (BlockNo bno) (SlotNo sno) (TestHash hash) =
-    show bno ++ "-" ++ show sno ++ renderHash
-  where
-    renderHash = case runLengthEncoding (reverse (toList hash)) of
-      [(_, 0)]    -> ""
-      hashGrouped -> "[" ++ intercalate "," (map renderGroup hashGrouped) ++ "]"
-    renderGroup (1, e) = show e
-    renderGroup (n, e) = show n ++ "x" ++ show e
+  show bno ++ "-" ++ show sno ++ renderHash
+ where
+  renderHash = case runLengthEncoding (reverse (toList hash)) of
+    [(_, 0)] -> ""
+    hashGrouped -> "[" ++ intercalate "," (map renderGroup hashGrouped) ++ "]"
+  renderGroup (1, e) = show e
+  renderGroup (n, e) = show n ++ "x" ++ show e
 
 -- | Same as 'terseBlockSlotHash' except only the last element of the hash
 -- shows, if it is non-zero. This makes sense when showing a fragment.
 terseBlockSlotHash' :: BlockNo -> SlotNo -> TestHash -> String
 terseBlockSlotHash' (BlockNo bno) (SlotNo sno) (TestHash hash) =
-    show bno ++ "-" ++ show sno ++ renderHashSuffix hash
-  where
-    renderHashSuffix (forkNo :| _)
-      | forkNo == 0 = ""
-      | otherwise = "[" ++ show forkNo ++ "]"
-
+  show bno ++ "-" ++ show sno ++ renderHashSuffix hash
+ where
+  renderHashSuffix (forkNo :| _)
+    | forkNo == 0 = ""
+    | otherwise = "[" ++ show forkNo ++ "]"

@@ -36,16 +36,10 @@ package ouroboros-consensus-cardano
 package ouroboros-consensus-diffusion
   flags: +asserts
 
+package cardano-diffusion
+  flags: +asserts
+
 package ouroboros-network
-  flags: +asserts
-
-package ouroboros-network-api
-  flags: +asserts
-
-package ouroboros-network-mock
-  flags: +asserts
-
-package ouroboros-network-protocols
   flags: +asserts
 
 package si-timers
@@ -56,3 +50,6 @@ package strict-stm
 
 package text-short
   flags: +asserts
+
+package strict-checked-vars
+  flags: +checktvarinvariants +checkmvarinvariants

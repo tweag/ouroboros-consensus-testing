@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-consensus-cardano
-version: 0.25.1.0
+version: 0.26.0.0
 synopsis:
   The instantation of the Ouroboros consensus layer used by Cardano
 
@@ -22,6 +22,10 @@ build-type: Simple
 extra-doc-files:
   CHANGELOG.md
   README.md
+
+data-files:
+  cddl/**/*.cddl
+  cddl/base.cddl
 
 source-repository head
   type: git
@@ -112,6 +116,8 @@ library
     Ouroboros.Consensus.Shelley.Ledger.PeerSelection
     Ouroboros.Consensus.Shelley.Ledger.Protocol
     Ouroboros.Consensus.Shelley.Ledger.Query
+    Ouroboros.Consensus.Shelley.Ledger.Query.LegacyPParams
+    Ouroboros.Consensus.Shelley.Ledger.Query.LegacyShelleyGenesis
     Ouroboros.Consensus.Shelley.Ledger.Query.Types
     Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol
     Ouroboros.Consensus.Shelley.Node
@@ -126,6 +132,7 @@ library
     Ouroboros.Consensus.Shelley.ShelleyHFC
 
   build-depends:
+    aeson,
     base >=4.14 && <4.22,
     base-deriving-via,
     bytestring >=0.10 && <0.13,
@@ -133,22 +140,24 @@ library
     cardano-crypto,
     cardano-crypto-class ^>=2.2,
     cardano-crypto-wrapper,
-    cardano-ledger-allegra ^>=1.7,
-    cardano-ledger-alonzo ^>=1.13,
-    cardano-ledger-api ^>=1.11,
-    cardano-ledger-babbage ^>=1.11,
-    cardano-ledger-binary ^>=1.6,
-    cardano-ledger-byron ^>=1.1,
-    cardano-ledger-conway ^>=1.19,
-    cardano-ledger-core ^>=1.17,
-    cardano-ledger-mary ^>=1.8,
-    cardano-ledger-shelley ^>=1.16,
+    cardano-ledger-allegra ^>=1.9,
+    cardano-ledger-alonzo ^>=1.15,
+    cardano-ledger-api ^>=1.13,
+    cardano-ledger-babbage ^>=1.13,
+    cardano-ledger-binary ^>=1.8,
+    cardano-ledger-byron ^>=1.3,
+    cardano-ledger-conway ^>=1.21,
+    cardano-ledger-core ^>=1.19,
+    cardano-ledger-dijkstra ^>=0.2,
+    cardano-ledger-mary ^>=1.10,
+    cardano-ledger-shelley ^>=1.18,
     cardano-prelude,
-    cardano-protocol-tpraos ^>=1.4,
+    cardano-protocol-tpraos ^>=1.5,
     cardano-slotting,
     cardano-strict-containers,
     cborg ^>=0.2.2,
     containers >=0.5 && <0.8,
+    contra-tracer,
     crypton,
     deepseq,
     formatting >=6.3 && <7.3,
@@ -157,9 +166,9 @@ library
     microlens,
     mtl,
     nothunks,
-    ouroboros-consensus ^>=0.27,
-    ouroboros-consensus-protocol ^>=0.12,
-    ouroboros-network-api ^>=0.14,
+    ouroboros-consensus ^>=0.28,
+    ouroboros-consensus-protocol ^>=0.13,
+    ouroboros-network:api ^>=0.24,
     serialise ^>=0.2,
     singletons ^>=3.0,
     small-steps,
@@ -195,12 +204,12 @@ library unstable-byronspec
     byron-spec-ledger,
     cardano-binary,
     cardano-ledger-binary,
-    cardano-ledger-byron-test,
+    cardano-ledger-byron:testlib,
     cborg >=0.2.2 && <0.3,
     containers >=0.5 && <0.8,
     mtl,
     nothunks,
-    ouroboros-consensus ^>=0.27,
+    ouroboros-consensus ^>=0.28,
     serialise ^>=0.2,
     small-steps,
     transformers,
@@ -230,11 +239,9 @@ library unstable-byron-testlib
     cardano-binary,
     cardano-crypto,
     cardano-crypto-class,
-    cardano-crypto-test,
-    cardano-crypto-wrapper,
+    cardano-crypto-wrapper:{cardano-crypto-wrapper, testlib},
     cardano-ledger-binary:{cardano-ledger-binary, testlib},
-    cardano-ledger-byron,
-    cardano-ledger-byron-test,
+    cardano-ledger-byron:{cardano-ledger-byron, testlib},
     cardano-ledger-core,
     containers,
     hedgehog-quickcheck,
@@ -242,7 +249,7 @@ library unstable-byron-testlib
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion:unstable-diffusion-testlib,
-    ouroboros-network-api,
+    ouroboros-network:api,
     serialise,
     text,
     unstable-byronspec,
@@ -269,8 +276,7 @@ test-suite byron-test
     cardano-crypto-class,
     cardano-crypto-wrapper,
     cardano-ledger-binary,
-    cardano-ledger-byron,
-    cardano-ledger-byron-test,
+    cardano-ledger-byron:{cardano-ledger-byron, testlib},
     cardano-ledger-core,
     cardano-slotting:testlib,
     cborg,
@@ -282,7 +288,7 @@ test-suite byron-test
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion:unstable-diffusion-testlib,
-    ouroboros-network-mock,
+    ouroboros-network:api-tests-lib,
     small-steps:{small-steps, testlib},
     tasty,
     tasty-quickcheck,
@@ -306,13 +312,13 @@ library unstable-shelley-testlib
     bytestring,
     cardano-crypto-class,
     cardano-data,
-    cardano-ledger-allegra,
-    cardano-ledger-alonzo,
+    cardano-ledger-allegra:cardano-ledger-allegra,
     cardano-ledger-alonzo-test,
-    cardano-ledger-babbage-test,
-    cardano-ledger-conway-test >=1.3.1,
+    cardano-ledger-babbage:testlib,
+    cardano-ledger-conway:testlib,
     cardano-ledger-core:{cardano-ledger-core, testlib},
-    cardano-ledger-mary,
+    cardano-ledger-dijkstra:testlib,
+    cardano-ledger-mary:cardano-ledger-mary,
     cardano-ledger-shelley:{cardano-ledger-shelley, testlib},
     cardano-ledger-shelley-ma-test,
     cardano-ledger-shelley-test,
@@ -320,14 +326,16 @@ library unstable-shelley-testlib
     cardano-slotting,
     cardano-strict-containers,
     containers,
-    generic-random,
+    contra-tracer,
+    kes-agent ^>=1.1,
+    kes-agent-crypto ^>=1.0,
     microlens,
     mtl,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion:unstable-diffusion-testlib,
     ouroboros-consensus-protocol:{ouroboros-consensus-protocol, unstable-protocol-testlib},
-    ouroboros-network-api,
+    ouroboros-network:api,
     quiet ^>=0.2,
     small-steps,
 
@@ -348,21 +356,22 @@ test-suite shelley-test
     QuickCheck,
     base,
     bytestring,
-    cardano-ledger-alonzo,
-    cardano-ledger-alonzo-test,
+    cardano-ledger-alonzo:{cardano-ledger-alonzo, testlib},
     cardano-ledger-api,
     cardano-ledger-babbage:testlib,
-    cardano-ledger-babbage-test,
     cardano-ledger-conway:testlib,
     cardano-ledger-core,
+    cardano-ledger-dijkstra:testlib,
     cardano-ledger-shelley,
     cardano-protocol-tpraos,
     cardano-slotting,
     cborg,
     constraints,
     containers,
+    contra-tracer,
     filepath,
     measures,
+    mempack,
     microlens,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},
     ouroboros-consensus-cardano,
@@ -399,19 +408,20 @@ library unstable-cardano-testlib
     cardano-crypto-class,
     cardano-crypto-wrapper,
     cardano-ledger-alonzo:testlib,
-    cardano-ledger-alonzo-test,
-    cardano-ledger-api,
+    cardano-ledger-api:cardano-ledger-api,
     cardano-ledger-binary,
     cardano-ledger-byron,
-    cardano-ledger-conway:testlib,
-    cardano-ledger-conway-test ^>=1.3,
+    cardano-ledger-conway:{cardano-ledger-conway, testlib},
     cardano-ledger-core:{cardano-ledger-core, testlib},
+    cardano-ledger-dijkstra:testlib,
     cardano-ledger-shelley,
+    cardano-ledger-shelley:testlib,
     cardano-protocol-tpraos,
     cardano-slotting,
     cardano-strict-containers,
     cborg,
     containers,
+    contra-tracer,
     mempack,
     microlens,
     mtl,
@@ -420,7 +430,7 @@ library unstable-cardano-testlib
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion:{ouroboros-consensus-diffusion, unstable-diffusion-testlib},
     ouroboros-consensus-protocol:{ouroboros-consensus-protocol, unstable-protocol-testlib},
-    ouroboros-network-api,
+    ouroboros-network:api,
     sop-core,
     sop-extras,
     strict-sop-core,
@@ -435,6 +445,7 @@ test-suite cardano-test
   main-is: Main.hs
   other-modules:
     Test.Consensus.Cardano.DiffusionPipelining
+    Test.Consensus.Cardano.GenCDDLs
     Test.Consensus.Cardano.Golden
     Test.Consensus.Cardano.MiniProtocol.LocalTxSubmission.ByteStringTxParser
     Test.Consensus.Cardano.MiniProtocol.LocalTxSubmission.Server
@@ -448,43 +459,47 @@ test-suite cardano-test
     Test.ThreadNet.MaryAlonzo
     Test.ThreadNet.ShelleyAllegra
 
+  other-modules: Paths_ouroboros_consensus_cardano
   build-depends:
     QuickCheck,
     base,
     base16-bytestring,
     bytestring,
-    cardano-ledger-alonzo,
-    cardano-ledger-alonzo-test,
+    cardano-ledger-allegra:testlib,
+    cardano-ledger-alonzo:{cardano-ledger-alonzo, testlib},
     cardano-ledger-api,
-    cardano-ledger-babbage-test,
+    cardano-ledger-babbage:testlib,
     cardano-ledger-binary:testlib,
-    cardano-ledger-byron,
+    cardano-ledger-byron:{cardano-ledger-byron, testlib},
     cardano-ledger-conway:testlib,
     cardano-ledger-core:{cardano-ledger-core, testlib},
-    cardano-ledger-shelley,
-    cardano-ledger-shelley-test,
+    cardano-ledger-dijkstra:testlib,
+    cardano-ledger-mary:testlib,
+    cardano-ledger-shelley:{cardano-ledger-shelley, testlib},
     cardano-protocol-tpraos,
     cardano-slotting,
     cborg,
     constraints,
     containers,
     contra-tracer,
+    directory,
     filepath,
     microlens,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib, unstable-mempool-test-utils},
     ouroboros-consensus-cardano:{ouroboros-consensus-cardano, unstable-cardano-testlib},
     ouroboros-consensus-diffusion:unstable-diffusion-testlib,
     ouroboros-consensus-protocol,
-    ouroboros-network-api,
-    ouroboros-network-protocols:{ouroboros-network-protocols, testlib},
+    ouroboros-network:{api, protocols, protocols-tests-lib},
     pretty-simple,
+    process-extras,
     sop-core,
     sop-extras,
     strict-sop-core,
     tasty,
     tasty-hunit,
     tasty-quickcheck,
-    typed-protocols ^>=0.3,
+    temporary,
+    typed-protocols ^>=1.1,
     unstable-byron-testlib,
     unstable-cardano-testlib,
     unstable-shelley-testlib,
@@ -495,9 +510,6 @@ library unstable-cardano-tools
   hs-source-dirs: src/unstable-cardano-tools
   exposed-modules:
     Cardano.Api.Any
-    Cardano.Api.Protocol.Types
-    Cardano.Node.Protocol
-    Cardano.Node.Protocol.Types
     Cardano.Node.Types
     Cardano.Tools.DBAnalyser.Analysis
     Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.FileWriting
@@ -544,6 +556,7 @@ library unstable-cardano-tools
     cardano-crypto,
     cardano-crypto-class,
     cardano-crypto-wrapper,
+    cardano-diffusion:cardano-diffusion,
     cardano-git-rev ^>=0.2.1,
     cardano-ledger-allegra,
     cardano-ledger-alonzo,
@@ -553,10 +566,11 @@ library unstable-cardano-tools
     cardano-ledger-byron,
     cardano-ledger-conway,
     cardano-ledger-core,
+    cardano-ledger-dijkstra,
     cardano-ledger-mary,
     cardano-ledger-shelley,
     cardano-prelude,
-    cardano-protocol-tpraos ^>=1.4,
+    cardano-protocol-tpraos ^>=1.5,
     cardano-slotting,
     cardano-strict-containers,
     cborg ^>=0.2.2,
@@ -566,21 +580,19 @@ library unstable-cardano-tools
     directory,
     dot,
     filepath,
-    fs-api ^>=0.3,
+    fs-api ^>=0.4,
     githash,
     microlens,
     mtl,
     network,
     network-mux,
     nothunks,
-    ouroboros-consensus ^>=0.27,
+    ouroboros-consensus:{ouroboros-consensus, ouroboros-consensus-lmdb, ouroboros-consensus-lsm} ^>=0.28,
     ouroboros-consensus-cardano,
-    ouroboros-consensus-diffusion ^>=0.23,
-    ouroboros-consensus-protocol:{ouroboros-consensus-protocol, unstable-protocol-testlib} ^>=0.12,
-    ouroboros-network,
-    ouroboros-network-api,
-    ouroboros-network-framework ^>=0.18,
-    ouroboros-network-protocols,
+    ouroboros-consensus-diffusion ^>=0.24,
+    ouroboros-consensus-protocol:{ouroboros-consensus-protocol, unstable-protocol-testlib} ^>=0.13,
+    ouroboros-network:{api, framework, ouroboros-network, protocols} ^>=0.24,
+    random,
     resource-registry,
     singletons,
     sop-core,
@@ -598,7 +610,6 @@ executable db-analyser
   build-depends:
     base,
     cardano-crypto-class,
-    cardano-crypto-wrapper,
     optparse-applicative,
     ouroboros-consensus,
     ouroboros-consensus-cardano:{ouroboros-consensus-cardano, unstable-cardano-tools},
@@ -656,7 +667,6 @@ executable db-truncater
   build-depends:
     base,
     cardano-crypto-class,
-    cardano-crypto-wrapper,
     optparse-applicative,
     ouroboros-consensus,
     ouroboros-consensus-cardano:{ouroboros-consensus-cardano, unstable-cardano-tools},
@@ -682,24 +692,35 @@ executable immdb-server
 executable snapshot-converter
   import: common-exe
   hs-source-dirs: app
+  other-modules:
+    Ouroboros.Consensus.Cardano.StreamingLedgerTables
+
   main-is: snapshot-converter.hs
   build-depends:
+    ansi-terminal,
     base,
-    bytestring,
     cardano-crypto-class,
-    cardano-crypto-wrapper,
-    contra-tracer,
+    cardano-ledger-binary,
+    cardano-ledger-core,
+    cardano-ledger-shelley,
+    cborg,
+    directory,
     filepath,
     fs-api,
+    microlens,
     mtl,
     optparse-applicative,
-    ouroboros-consensus,
+    ouroboros-consensus:{ouroboros-consensus, ouroboros-consensus-lmdb, ouroboros-consensus-lsm},
     ouroboros-consensus-cardano,
     ouroboros-consensus-cardano:unstable-cardano-tools,
+    random,
     resource-registry,
     serialise,
     sop-core,
-    temporary,
+    sop-extras,
+    strict-sop-core,
+    terminal-progress-bar,
+    text,
     with-utf8,
 
   other-modules:

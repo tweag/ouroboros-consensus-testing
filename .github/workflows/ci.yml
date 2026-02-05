@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.6.6", "9.10.1", "9.12"]
+        ghc: ["9.6.7", "9.10.2", "9.12.2"]
         variant: [default, no-thunks]
         test-set: [all, no-thunks-safe]
         exclude:
@@ -53,7 +53,12 @@ jobs:
       CABAL: "3.12.1.0"
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+
+    - name: Check CDDLs up-to-date with Blueprints
+      continue-on-error: true
+      run: |
+        ./scripts/ci/diff-cddls.sh
 
     - name: Install base libraries
       uses: input-output-hk/actions/base@latest
@@ -108,7 +113,7 @@ jobs:
     # Otherwise, we could restore a cache from a previous month, which makes
     # caches grow unboundedly.
     - name: "Restore cache for cabal-store"
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       id: restore-cabal-store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -128,7 +133,7 @@ jobs:
     #
     # See https://github.com/actions/cache/tree/v3/save#always-save-cache.
     - name: "Save cache for cabal-store"
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       id: save-cabal-store
       if: steps.build-dependencies.outcome == 'success' && steps.restore-cabal-store.outputs.cache-hit != 'true'
       with:
@@ -138,9 +143,20 @@ jobs:
     - name: Build projects [build]
       run: cabal build all -j
 
+    - name: Install Ruby for CDDL
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.4'
+        bundler-cache: true
+
+    - name: Install cddl tools
+      run: |
+        gem install cddlc
+        cabal install cuddle-0.5.0.0
+
     - name: Test
       if: matrix.test-set == 'all'
-      run: cabal test all -j --test-show-details=streaming
+      run: cabal test all -j --test-show-details=streaming --test-options '--hide-successes'
 
     - name: Test (NoThunks-safe tests only)
       if: matrix.test-set == 'no-thunks-safe'
@@ -151,7 +167,7 @@ jobs:
         cp $(cabal list-bin mempool-bench) mempool-bench
 
     - name: Upload benchmark executables
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: benchmark-exes-${{ runner.os }}-${{ matrix.ghc }}
         path: mempool-bench
@@ -163,7 +179,7 @@ jobs:
       if: |
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
-        && matrix.ghc=='9.10.1'
+        && matrix.ghc=='9.10.2'
       run: |
         # need for latex, dvisvgm and standalone
         sudo apt install texlive-latex-extra texlive-latex-base
@@ -178,8 +194,8 @@ jobs:
       if: |
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
-        && matrix.ghc=='9.10.1'
-      uses: actions/upload-artifact@v4
+        && matrix.ghc=='9.10.2'
+      uses: actions/upload-artifact@v6
       with:
         name: haddocks
         path: haddocks.tgz
@@ -193,10 +209,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.6.6", "9.10.1"]
+        ghc: ["9.6.7", "9.10.2"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install base libraries
       uses: input-output-hk/actions/base@latest
@@ -204,7 +220,7 @@ jobs:
         use-sodium-vrf: false
 
     - name: Download benchmark executables
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: benchmark-exes-${{ runner.os }}-${{ matrix.ghc }}
 
@@ -228,7 +244,7 @@ jobs:
     # run on the `main` branch. If we run this workflow in the context of a PR,
     # then we will save the same results we just restored.
     - name: Cache benchmark baseline results
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: baseline-mempool-benchmarks.csv
         key:  baseline-mempool-benchmarks-${{ runner.os }}-${{ matrix.ghc }}-${{ github.run_id }}
@@ -242,7 +258,7 @@ jobs:
     # TODO: this will be necessary when we publish the benchmarks results.
     # - name: Upload mempool benchmark baseline results
     #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    #   uses: actions/upload-artifact@v4
+    #   uses: actions/upload-artifact@v6
     #   with:
     #     name: baseline-mempool-benchmarks
     #     path: baseline-mempool-benchmarks.csv
@@ -273,11 +289,11 @@ jobs:
     strategy:
        fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 24
           cache: yarn
           cache-dependency-path: './docs/website/yarn.lock'
 
@@ -292,7 +308,7 @@ jobs:
           cp -r --no-preserve=mode,ownership result/ static/pdfs
 
       - name: Download haddocks
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: haddocks
 
@@ -307,7 +323,7 @@ jobs:
       - name: Build website
         run: yarn build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: ./docs/website/build
 

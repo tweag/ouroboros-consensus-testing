@@ -9,13 +9,16 @@ hsPkgs.shellFor {
     pkgs.cabal-docspec
     pkgs.fd
     pkgs.nixpkgs-fmt
-    pkgs.stylish-haskell
     pkgs.dos2unix
     pkgs.cabal-gild
     pkgs.hlint
     pkgs.cabal-hoogle
     pkgs.ghcid
     pkgs.xrefcheck
+    pkgs.fourmolu
+    pkgs.cuddle
+    pkgs.cddlc
+    pkgs.pretty-simple
 
     # release management
     pkgs.scriv
@@ -26,8 +29,11 @@ hsPkgs.shellFor {
   # version as used in hsPkgs.
   tools = {
     haskell-language-server = {
-      src = inputs.haskellNix.inputs."hls-2.9";
+      src = inputs.hls;
       configureArgs = "--disable-benchmarks --disable-tests";
+      cabalProjectLocal = ''
+        allow-newer: haddock-library:base
+      '';
     };
   };
 
