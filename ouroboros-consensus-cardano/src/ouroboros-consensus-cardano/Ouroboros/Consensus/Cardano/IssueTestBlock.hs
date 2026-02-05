@@ -37,8 +37,8 @@ import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock (..))
 
 instance IssueTestBlock (CardanoBlock StandardCrypto) where
   issueFirstBlock fork slot = makeCardanoBlock (Just fork) 0 slot Nothing
-  issueSuccessorBlock fork slot (BlockShelley (ShelleyBlock (Block (BHeader (BHBody {bheaderBlockNo}) _) _) (ShelleyHash hh))) =
-    makeCardanoBlock fork (bheaderBlockNo + 1) slot $ Just $ HashHeader hh
+  issueSuccessorBlock fork slot (BlockShelley (ShelleyBlock (Block (BHeader (BHBody {bheaderBlockNo, bheaderSlotNo}) _) _) (ShelleyHash hh))) =
+    makeCardanoBlock fork (bheaderBlockNo + 1) (bheadederSlotNo + slot) $ Just $ HashHeader hh
   issueSuccessorBlock _ _ _ =
     -- Impossible because we only ever produce 'BlockShelley' in
     -- 'makeCardanoBlock'.
