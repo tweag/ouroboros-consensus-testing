@@ -297,6 +297,7 @@ library unstable-consensus-conformance-testlib
     io-classes,
     io-sim,
     mempack,
+    monoidal-containers,
     mtl,
     nothunks,
     ouroboros-consensus:{ouroboros-consensus, unstable-consensus-testlib},

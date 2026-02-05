@@ -1,4 +1,5 @@
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -7,14 +8,17 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | A 'TestSuite' data structure for quick access to 'ConformanceTest' valuesa
--- providing facilities to arrange them in nested hierarchical groups.
+-- | A 'TestSuite' data structure for quick access to 'ConformanceTest' values.
+-- It encodes a hierarchical nested structure allowing it to compile into a
+-- tasty 'TestTree'.
 -- It's purpose is interfacing between property test execution and the
 -- conformance testing harness.
 module Test.Consensus.Genesis.TestSuite (
-    Generic
+    Finite
+  , Generic
   , GenericUniverse (..)
   , TestSuite
+  , Universe
   , get
   , group
   , mkTestSuite
@@ -22,12 +26,14 @@ module Test.Consensus.Genesis.TestSuite (
   ) where
 
 import           Data.Coerce (coerce)
-import           Data.List (foldl')
+import           Data.Map.Monoidal (MonoidalMap)
+import qualified Data.Map.Monoidal as MMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Monoid (Endo (..))
 import           Data.Universe.Class (Finite (..), Universe (..))
 import           Data.Universe.Generic (GUniverse, universeGeneric)
-import           GHC.Generics (Generic (Rep))
+import           GHC.Generics (Generic (Rep), Generically (..))
 import           Ouroboros.Consensus.Block (BlockSupportsDiffusionPipelining,
                      ConvertRawHash, Header)
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
@@ -72,7 +78,12 @@ data TestSuiteData blk = TestSuiteData
 -- | A @TestSuite blk key@ contains one 'ConformanceTest'@blk@ for each @key@.
 newtype TestSuite blk key = TestSuite (Map key (TestSuiteData blk))
 
--- | Build a 'TestSuite' from a mapping function.
+-- | Build a 'TestSuite' from a function mapping a @key@ type to 'ConformanceTest'.
+-- 'Universe' and 'Finite' constraints on @key@ are meant to be derived
+-- generically by means of the 'GenericUniverse' wrapper.
+-- NOTE: Using a @key@ having a constructor with a big finite type parameter
+-- (such as 'Int') should be avoided as this is likely to flood the memory.
+-- TODO: Reimplement 'Finite' to prevent instances of big finite types.
 mkTestSuite :: (Ord key, Finite key)
             => (key -> ConformanceTest blk)
             -> TestSuite blk key
@@ -99,26 +110,38 @@ group pfs (TestSuite m) = TestSuite $
 
 -- | Intermediary representation for a 'TestSuite' to be compiled into a 'TestTree'.
 data TestTrie = TestTrie
-  { _here     :: [TestTree] -- ^ Top level tests (whose prefix ends here).
-  , _children :: Map String TestTrie -- ^ Grouped tests correspond to prefix maps.
+  { _here     :: ![TestTree] -- ^ Top level tests (whose prefix ends here).
+  , _children :: !(MonoidalMap String TestTrie) -- ^ Grouped tests correspond to prefix maps.
   }
+  deriving stock (Generic)
+  deriving (Semigroup, Monoid) via (Generically TestTrie)
 
-insert :: [String] -> TestTree -> TestTrie -> TestTrie
-insert [] t (TestTrie ts ch) = TestTrie (t:ts) ch
-insert (p:ps) t (TestTrie ts ch) =
-  let go :: Maybe TestTrie -> Maybe TestTrie
-      go Nothing  = Just (insert ps t (TestTrie [] Map.empty))
-      go (Just c) = Just (insert ps t c)
-   in TestTrie ts (Map.alter go p ch)
+-- | Create a 'TestTrie' with a single value.
+mkTestTrie :: [String] -> TestTree -> TestTrie
+mkTestTrie pfs t =
+  let nest :: String -> Endo TestTrie
+      nest pf = Endo $ \tt -> TestTrie [] (MMap.singleton pf tt)
+      leaf = TestTrie [t] mempty
+  in appEndo (foldMap nest pfs) leaf
 
+-- | Fold a list of prefixed tests into a 'TestTrie'.
+--
+-- Each input pair @([Prefix], TestTree)@ is interpreted as a path
+-- in the trie, and the resulting trie merges common prefixes into
+-- shared nodes.
 buildTrie :: [([String], TestTree)] -> TestTrie
-buildTrie = foldl' (\tt (ps, t) -> insert ps t tt) (TestTrie [] Map.empty)
+buildTrie = foldMap (uncurry mkTestTrie)
 
+-- | Fold a 'TestTrie' into a list of 'TestTree's by recursively
+-- rendering each trie node as a 'testGroup'.
 render :: TestTrie -> [TestTree]
 render (TestTrie here children) =
-  here <> fmap (\(p,tt) -> testGroup p (render tt)) (Map.toList children)
+  here <>
+    fmap
+      (\(p,tt) -> testGroup p (render tt))
+      (MMap.toList children)
 
--- | Produces a single-test tasty 'TestTree', along with its containing
+-- | Produces a single-test 'TestTree', along with its containing
 -- 'group' prefixes, out a 'TestSuiteData'.
 compileSingleTest ::
   ( Condense (StateView blk)
@@ -141,9 +164,6 @@ compileSingleTest ::
   ) =>
   TestSuiteData blk -> ([String], TestTree)
 compileSingleTest (TestSuiteData {tsPrefix, tsTest}) =
-  -- The 'last' element of the 'tcPrefix' corresponds to the individual test
-  -- description/name. Conversely, the 'init' corresponds to the enclosing
-  -- test groups.
   let testName = ctDescription tsTest
    in (tsPrefix, QC.testProperty testName (runConformanceTest tsTest))
 
