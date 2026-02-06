@@ -7,6 +7,9 @@ module Test.Consensus.Serialize (
     ReifiedTestCase(..)
   , serializeTestCase
   , deserializeTestCase
+  , BlockType(..)
+  , TestVersion(..)
+  , SomeBlockTreeAndPointSchedule(..)
 ) where
 
 import qualified Data.Aeson as Aeson
@@ -16,6 +19,7 @@ import           Data.Proxy
 import qualified Data.Text as T
 import           Test.Consensus.BlockTree
 import           Test.Consensus.PointSchedule
+import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random
 import           Test.Util.TestBlock (TestBlock)
 import           Text.Read
@@ -49,6 +53,10 @@ newtype FormatVersion = FormatVersion String
 
 newtype TestVersion = TestVersion String
   deriving (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON)
+
+instance QC.Arbitrary TestVersion where
+  arbitrary = TestVersion <$> QC.oneof (fmap pure ["v1", "v2", "v3"])
+  shrink (TestVersion x) = if x == "v1" then [] else [TestVersion "v1"]
 
 data BlockType
   = TestBlockType
