@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -36,6 +37,7 @@ module Test.Consensus.BlockTree (
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
 import qualified Data.Aeson as Aeson
+import           Data.Aeson ((.:), (.=))
 import           Data.Foldable (asum, fold)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
@@ -72,8 +74,12 @@ data BlockTreeBranch blk = BlockTreeBranch {
   }
   deriving (Show, Generic)
 
-instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
-instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.FromJSON (BlockTreeBranch blk)
+instance
+  ( Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ) => Aeson.ToJSON (BlockTreeBranch blk)
+instance
+  ( Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ) => Aeson.FromJSON (BlockTreeBranch blk)
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -107,13 +113,24 @@ data BlockTree blk = RawBlockTree {
   deriving (Show, Generic)
 
 instance
-  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk, Aeson.ToJSONKey (HeaderHash blk)
+  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk
+  , Aeson.ToJSONKey (HeaderHash blk)
   , Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.ToJSON (BlockTree blk)
+  where
+    toJSON blockTree = Aeson.object
+      [ "trunk" .= Aeson.toJSON (btTrunk' blockTree)
+      , "branches" .= Aeson.toJSON (btBranches' blockTree)
+      ]
+
 instance
-  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk, Aeson.FromJSONKey (HeaderHash blk)
+  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk
+  , Aeson.FromJSONKey (HeaderHash blk)
   , Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.FromJSON (BlockTree blk)
+  where
+    parseJSON = Aeson.withObject "BlockTree" $ \o ->
+      mkBlockTree <$>  o .: "trunk" <*> o .: "branches"
 
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _

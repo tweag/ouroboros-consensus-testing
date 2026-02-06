@@ -1,47 +1,35 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Test.Consensus.Serialize where
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+module Test.Consensus.Serialize (
+    ReifiedTestCase(..)
+  , serializeTestCase
+  , deserializeTestCase
+) where
 
 import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.KeyMap as Aeson
+import           Data.Aeson ((.=), (.:))
 import qualified Data.Aeson.Types as Aeson
--- import           Test.Consensus.Genesis.TestSuite
+import           Data.Proxy
+import qualified Data.Text as T
 import           Test.Consensus.BlockTree
 import           Test.Consensus.PointSchedule
 import           Test.QuickCheck.Random
+import           Test.Util.TestBlock (TestBlock)
+import           Text.Read
 
-newtype FormatVersion = FormatVersion String
-  deriving (Eq, Ord, Show)
 
-newtype TestVersion = TestVersion String
-  deriving (Eq, Ord, Show)
-  
-data TestClass -- dummy, only here until this lands:
-               -- https://github.com/tweag/ouroboros-consensus-testing/pull/28
 
--- TODO: From the quickcheck documentation:
---   Note: saving a seed from one version of QuickCheck and replaying it in
---   another is not supported. If you want to store a test case permanently
---   you should save the test case itself.
---
--- If the versions of quickcheck used to generate a test case and later run it
--- are different, then the seed might be meaningless. Probably the easist way
--- to fix this is just say that bumping the version number of the quickcheck
--- dependency requires bumbing the version number on the tests too, but that
--- is hard to enforce. Do we need to keep the quickcheck version number too?
-
--- | A fully concrete test case, suitable for serialization.
-data ReifiedTestCase = ReifiedTestCase
+-- | A fully concrete consensus test case, suitable for serialization.
+data ReifiedTestCase key = ReifiedTestCase
   -- ^ A key used by the test runner to identify a test or group of tests.
-  { rtcTestClass   :: TestClass
+  { rtcTestKey :: key
 
   -- ^ Since serialized tests can exist beyond a single run, and tests can
   -- change over time, we need a way to let the test case specify which version
   -- of the test it was generated for.
-  --
-  -- TODO: What exactly does TestClass represent? Is it a single test or multiple?
-  -- If multiple then the TestVersion will not be a well-defined concept, since
-  -- individual tests would change at different times. We may need something like
-  -- [(TestClass, TestVersion)] instead.
   , rtcTestVersion :: TestVersion
 
   -- ^ Although the tests are block polymorphic, to actually run them the block
@@ -49,16 +37,21 @@ data ReifiedTestCase = ReifiedTestCase
   -- hidden these behind a constructor that acts a little like an existential.
   , rtcBlockTreeAndPointSchedule :: SomeBlockTreeAndPointSchedule
 
+  -- ^ Used for specifying a shrink of the generated test case.
+  , rtcShrinkIndex :: [Int]
+
   -- ^ Used for replaying tests.
   , rtcSeed :: QCGen
-  
-  -- ^ Used for replaying tests. The ShrinkIndex type is defined in a package this
-  -- one has no access to (TODO: I think, need to look at this again.)
-  , rtcShrinkIndex :: [Int]
   }
 
+newtype FormatVersion = FormatVersion String
+  deriving (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON)
+
+newtype TestVersion = TestVersion String
+  deriving (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON)
+
 data BlockType
-  = UnitBlockType
+  = TestBlockType
   deriving (Eq, Show)
 
 -- | The PointSchedule type is parameterized over a block type.
@@ -67,50 +60,83 @@ data BlockType
 -- this tool will be used with a pretty small number of different block
 -- types; we wrap them into a type to hide the `blk` parameter.
 data SomeBlockTreeAndPointSchedule
-  = UnitBlockTreeAndPointSchedule (BlockTree ()) (PointSchedule ())
+  = TestBlockTreeAndPointSchedule (BlockTree TestBlock) (PointSchedule TestBlock)
 
+serializeTestCase
+  :: (Aeson.ToJSON key) => FormatVersion -> ReifiedTestCase key
+  -> Either T.Text Aeson.Value
+serializeTestCase fmtVersion testCase =
+  Right $ Aeson.object
+    [ "formatVersion" .= fmtVersion
+    , "key" .= Aeson.toJSON (rtcTestKey testCase)
+    , "testVersion" .= rtcTestVersion testCase
+    , "testData" .= serializeSomeBlockTreeAndPointSchedule
+        (rtcBlockTreeAndPointSchedule testCase)
+    , "shrinkIndex" .= rtcShrinkIndex testCase
+    , "seed" .= serializeQCGen (rtcSeed testCase)
+    ]
 
-data SerializationError = SerializationError
-  deriving (Eq, Show)
+-- QCGen implements Read and Show for serialization
+serializeQCGen :: QCGen -> String
+serializeQCGen = show
 
-serializeTestCase :: ReifiedTestCase -> Either SerializationError Aeson.Value
-serializeTestCase testCase = Left SerializationError
+deserializeQCGen :: Aeson.Value -> Aeson.Parser QCGen
+deserializeQCGen = Aeson.withText "seed" $ \txt ->
+  case readMaybe $ T.unpack txt of
+    Nothing -> fail "unable to parse seed"
+    Just gen -> pure gen
 
-data DeserializationError = DeserializationError
-  deriving (Eq, Show)
+serializeSomeBlockTreeAndPointSchedule
+  :: SomeBlockTreeAndPointSchedule -> Aeson.Value
+serializeSomeBlockTreeAndPointSchedule x = case x of
+  TestBlockTreeAndPointSchedule blockTree pointSchedule -> Aeson.object
+    [ "blockType" .= ("test" :: T.Text)
+    , "blockTree" .= Aeson.toJSON blockTree
+    , "pointSchedule" .= Aeson.toJSON pointSchedule
+    ]
 
-deserializeTestCase :: Aeson.Value -> Aeson.Parser ReifiedTestCase
-deserializeTestCase value = undefined
+deserializeTestCase
+  :: (Aeson.FromJSON key)
+  => Proxy key -> Aeson.Value -> Aeson.Parser (ReifiedTestCase key)
+deserializeTestCase _ = Aeson.withObject "ReifiedTestCase" $ \obj -> ReifiedTestCase
+  <$> obj .: "key"
+  <*> obj .: "testVersion"
+  <*> (parseBlockTreeAndPointSchedule =<< (obj .: "testData"))
+  <*> obj .: "shrinkIndex"
+  <*> Aeson.explicitParseField deserializeQCGen obj "seed"
 
--- | Cannot use (just) the applicative interface here because which
+-- Cannot use (just) the applicative interface here because which
 -- type gets parsed depends on the value of the 'block_type' field.
 parseBlockTreeAndPointSchedule
   :: Aeson.Value -> Aeson.Parser SomeBlockTreeAndPointSchedule
 parseBlockTreeAndPointSchedule =
-  Aeson.withObject "SomeBlockTreeAndPointSchedule" $ \obj ->
-    let
-      getBlockType = case Aeson.lookup "block_type" obj of
-        Nothing -> Left "block_type key not found."
-        Just v -> parseBlockType v
-    in case getBlockType of
+  Aeson.withObject "SomeBlockTreeAndPointSchedule" $ \obj -> do
+    rawBlockType <- obj .: "blockType"
+    case parseBlockType rawBlockType of
       Left msg -> Aeson.parseFail msg
       Right blockType -> case blockType of
-        UnitBlockType -> UnitBlockTreeAndPointSchedule
-          <$> parseUnitBlockTree <*> parseUnitPointSchedule
+        TestBlockType -> TestBlockTreeAndPointSchedule
+          <$> obj .: "blockTree"
+          <*> obj .: "pointSchedule"
 
-parseBlockType :: Aeson.Value -> Either String BlockType
-parseBlockType = undefined {- Aeson.withString txt $ case txt of
-  "unit" -> UnitBlockType -}
+parseBlockType :: T.Text -> Either String BlockType
+parseBlockType txt = case txt of
+  "test" -> Right TestBlockType
+  _ -> Left $ "invalid block type: " <> T.unpack txt
 
-parseUnitBlockTree :: Aeson.Parser (BlockTree ())
-parseUnitBlockTree = undefined
 
-parseUnitPointSchedule :: Aeson.Parser (PointSchedule ())
-parseUnitPointSchedule = undefined
 
--- properties:
---   deserializeTestCase . serializeTestCase === id
---
---   * this direction is more complicated because of the file format version string;
---     serializeTestCase may use a different version than what the test was originally serialized with.
---   ignoreFileFormatVersion . serializeTestCase . deserializeTestCase === ignoreFileFormatVersion
+
+
+
+
+
+
+
+
+
+
+
+
+
+
