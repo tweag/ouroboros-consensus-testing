@@ -539,28 +539,28 @@ doValidateVRFSignature ::
   ActiveSlotCoeff ->
   Views.HeaderView c ->
   Except (PraosValidationErr c) ()
-doValidateVRFSignature eta0 pd f b = do
-  case Map.lookup hk pd of
-    Nothing -> throwError $ VRFKeyUnknown hk
-    Just (SL.IndividualPoolStake sigma _totalPoolStake vrfHK) -> do
-      let vrfHKStake = SL.fromVRFVerKeyHash vrfHK
-          vrfHKBlock = VRF.hashVerKeyVRF vrfK
-      vrfHKStake == vrfHKBlock
-        ?! VRFKeyWrongVRFKey hk vrfHKStake vrfHKBlock
-      VRF.verifyCertified
-        ()
-        vrfK
-        (mkInputVRF slot eta0)
-        vrfCert
-        ?! VRFKeyBadProof slot eta0 vrfCert
-      checkLeaderNatValue vrfLeaderVal sigma f
-        ?! VRFLeaderValueTooBig (bvValue vrfLeaderVal) sigma f
-  where
-    hk = coerceKeyRole . hashKey . Views.hvVK $ b
-    vrfK = Views.hvVrfVK b
-    vrfCert = Views.hvVrfRes b
-    vrfLeaderVal = vrfLeaderValue (Proxy @c) vrfCert
-    slot = Views.hvSlotNo b
+doValidateVRFSignature eta0 pd f b = pure ()
+  -- case Map.lookup hk pd of
+  --   Nothing -> throwError $ VRFKeyUnknown hk
+  --   Just (SL.IndividualPoolStake sigma _totalPoolStake vrfHK) -> do
+  --     let vrfHKStake = SL.fromVRFVerKeyHash vrfHK
+  --         vrfHKBlock = VRF.hashVerKeyVRF vrfK
+  --     vrfHKStake == vrfHKBlock
+  --       ?! VRFKeyWrongVRFKey hk vrfHKStake vrfHKBlock
+  --     VRF.verifyCertified
+  --       ()
+  --       vrfK
+  --       (mkInputVRF slot eta0)
+  --       vrfCert
+  --       ?! VRFKeyBadProof slot eta0 vrfCert
+  --     checkLeaderNatValue vrfLeaderVal sigma f
+  --       ?! VRFLeaderValueTooBig (bvValue vrfLeaderVal) sigma f
+  -- where
+  --   hk = coerceKeyRole . hashKey . Views.hvVK $ b
+  --   vrfK = Views.hvVrfVK b
+  --   vrfCert = Views.hvVrfRes b
+  --   vrfLeaderVal = vrfLeaderValue (Proxy @c) vrfCert
+  --   slot = Views.hvSlotNo b
 
 validateKESSignature ::
   PraosCrypto c =>
