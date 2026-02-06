@@ -19,9 +19,11 @@ module Test.Consensus.Genesis.TestSuite (
   , GenericUniverse (..)
   , TestSuite
   , Universe
+  , at
   , get
   , group
   , mkTestSuite
+  , newTestSuite
   , toTestTree
   ) where
 
@@ -78,27 +80,41 @@ data TestSuiteData blk = TestSuiteData
 -- | A @TestSuite blk key@ contains one 'ConformanceTest'@blk@ for each @key@.
 newtype TestSuite blk key = TestSuite (Map key (TestSuiteData blk))
 
--- | Build a 'TestSuite' from a function mapping a @key@ type to 'ConformanceTest'.
+-- NOTE: [GenericFinite]
 -- 'Universe' and 'Finite' constraints on @key@ are meant to be derived
 -- generically by means of the 'GenericUniverse' wrapper.
--- NOTE: Using a @key@ having a constructor with a big finite type parameter
+-- Using a @key@ having a constructor with a big finite type parameter
 -- (such as 'Int') should be avoided as this is likely to flood the memory.
 -- TODO: Reimplement 'Finite' to prevent instances of big finite types.
+
+-- | Build a 'TestSuite' by looking 'at' 'TestSuiteData', allowing to preserve the
+-- hierarchical structure of a previously constructed 'TestSuite'.
+-- See NOTE [GenericFinite]
 mkTestSuite :: (Ord key, Finite key)
+                 => (key -> TestSuiteData blk)
+                 -> TestSuite blk key
+mkTestSuite toData =
+  TestSuite . Map.fromList . fmap ((,) <$> id <*> toData) $ universeF
+
+-- | Build a 'TestSuite' from a function mapping a @key@ type to 'ConformanceTest'
+-- making all tests top-level.
+-- See NOTE [GenericFinite]
+newTestSuite :: (Ord key, Finite key)
             => (key -> ConformanceTest blk)
             -> TestSuite blk key
-mkTestSuite toConformanceTest = TestSuite . Map.fromList $ do
-  k <- universeF
-  let test = toConformanceTest k
-      tsData = TestSuiteData { tsPrefix = []
-                             , tsTest = test
-                             }
-  pure (k, tsData)
+newTestSuite toConformanceTest =
+  let toData k = TestSuiteData { tsPrefix = []
+                               , tsTest = toConformanceTest k
+                               }
+   in mkTestSuite toData
 
-get :: Ord key => TestSuite blk key -> key ->  ConformanceTest blk
-get (TestSuite m) k = tsTest $ case Map.lookup k m of
+at :: Ord key => TestSuite blk key -> key ->  TestSuiteData blk
+at (TestSuite m) k = case Map.lookup k m of
   Just t  -> t
   Nothing -> error "TestSuite.get: Impossible! A TestSuite is a total map."
+
+get :: Ord key => TestSuite blk key -> key ->  ConformanceTest blk
+get suite = tsTest . at suite
 
 -- | Appends the given string to the prefix of all tests.
 group :: String -> TestSuite blk key -> TestSuite blk key
@@ -167,8 +183,7 @@ compileSingleTest (TestSuiteData {tsPrefix, tsTest}) =
   let testName = ctDescription tsTest
    in (tsPrefix, QC.testProperty testName (runConformanceTest tsTest))
 
--- | Compile a 'TestSuite' into a tasty 'TestTree', with the given 'String'
--- as the top level description/name of the resulting group.
+-- | Compile a 'TestSuite' into a list of tasty 'TestTree'.
 toTestTree ::
   ( Condense (StateView blk)
   , CondenseList (NodeState blk)
@@ -188,8 +203,8 @@ toTestTree ::
   , Terse blk
   , Condense (NodeState blk)
   ) =>
-  String -> TestSuite blk key -> TestTree
-toTestTree p (TestSuite m) =
+  TestSuite blk key -> [TestTree]
+toTestTree (TestSuite m) =
   let tests = fmap snd $ Map.toList m
       prefixedTests = fmap compileSingleTest tests
-   in testGroup p . render . buildTrie $ prefixedTests
+   in render . buildTrie $ prefixedTests
