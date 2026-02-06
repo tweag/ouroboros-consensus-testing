@@ -427,6 +427,7 @@ library unstable-consensus-testlib
   build-depends:
     QuickCheck >=2.15,
     base,
+    aeson,
     base16-bytestring,
     binary,
     bytestring,

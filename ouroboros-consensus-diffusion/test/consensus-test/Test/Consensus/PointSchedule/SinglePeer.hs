@@ -80,6 +80,7 @@
 -- > |   3.1s | E              | E              | E              |
 -- > +--------+----------------+----------------+----------------+
 --
+{-# LANGUAGE DeriveGeneric #-}
 module Test.Consensus.PointSchedule.SinglePeer (
     IsTrunk (..)
   , PeerScheduleParams (..)
@@ -99,10 +100,12 @@ module Test.Consensus.PointSchedule.SinglePeer (
 import           Cardano.Slotting.Slot (WithOrigin (At, Origin), withOrigin)
 import           Control.Arrow (second)
 import           Control.Monad.Class.MonadTime.SI (Time)
+import qualified Data.Aeson as Aeson
 import           Data.List (mapAccumL)
 import           Data.Time.Clock (DiffTime)
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
+import           GHC.Generics
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (unBlockNo), blockSlot)
 import qualified System.Random.Stateful as R (StatefulGen)
@@ -115,7 +118,7 @@ data SchedulePoint blk
   = ScheduleTipPoint (WithOrigin blk)
   | ScheduleHeaderPoint (WithOrigin blk)
   | ScheduleBlockPoint (WithOrigin blk)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 scheduleTipPoint :: blk -> SchedulePoint blk
 scheduleTipPoint = ScheduleTipPoint . At
@@ -130,6 +133,9 @@ schedulePointToBlock :: SchedulePoint blk -> WithOrigin blk
 schedulePointToBlock (ScheduleTipPoint b)    = b
 schedulePointToBlock (ScheduleHeaderPoint b) = b
 schedulePointToBlock (ScheduleBlockPoint b)  = b
+
+instance Aeson.ToJSON blk => Aeson.ToJSON (SchedulePoint blk)
+instance Aeson.FromJSON blk => Aeson.FromJSON (SchedulePoint blk)
 
 -- | Parameters for generating a schedule for a single peer.
 --
