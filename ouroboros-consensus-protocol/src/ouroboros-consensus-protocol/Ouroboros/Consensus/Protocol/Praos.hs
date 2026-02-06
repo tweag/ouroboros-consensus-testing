@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -13,6 +14,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ViewPatterns #-}
+
+#ifdef DISABLE_VRF_CHECKS
+{-# OPTIONS -Wno-unused-imports #-}
+{-# OPTIONS -Wno-redundant-constraints #-}
+#endif
 
 module Ouroboros.Consensus.Protocol.Praos (
     ConsensusConfig (..)
@@ -539,6 +545,9 @@ doValidateVRFSignature ::
   ActiveSlotCoeff ->
   Views.HeaderView c ->
   Except (PraosValidationErr c) ()
+#ifdef DISABLE_VRF_CHECKS
+doValidateVRFSignature _eta0 _pd _f _b = pure ()
+#else
 doValidateVRFSignature eta0 pd f b = do
   case Map.lookup hk pd of
     Nothing -> throwError $ VRFKeyUnknown hk
@@ -561,6 +570,7 @@ doValidateVRFSignature eta0 pd f b = do
     vrfCert = Views.hvVrfRes b
     vrfLeaderVal = vrfLeaderValue (Proxy @c) vrfCert
     slot = Views.hvSlotNo b
+#endif
 
 validateKESSignature ::
   PraosCrypto c =>
