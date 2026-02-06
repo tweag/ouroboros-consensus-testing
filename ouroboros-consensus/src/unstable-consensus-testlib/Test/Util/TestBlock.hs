@@ -91,6 +91,7 @@ import           Codec.Serialise (Serialise (..), serialise)
 import           Control.DeepSeq (force)
 import           Control.Monad (guard, replicateM, replicateM_)
 import           Control.Monad.Except (throwError)
+import qualified Data.Aeson as Aeson
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as BL
@@ -201,6 +202,11 @@ pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
   TestHash path = UnsafeTestHash (force path)
 
+instance Aeson.ToJSON TestHash
+instance Aeson.ToJSONKey TestHash
+instance Aeson.FromJSON TestHash
+instance Aeson.FromJSONKey TestHash
+
 {-# COMPLETE TestHash #-}
 
 testHashFromList :: [Word64] -> TestHash
@@ -215,6 +221,9 @@ instance Condense TestHash where
 data Validity = Valid | Invalid
   deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
+
+instance Aeson.ToJSON Validity
+instance Aeson.FromJSON Validity
 
 
 instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
@@ -245,6 +254,9 @@ data TestBlockWith ptype = TestBlockWith {
     }
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
+
+instance (Aeson.ToJSON ptype) => Aeson.ToJSON (TestBlockWith ptype)
+instance (Aeson.FromJSON ptype) => Aeson.FromJSON (TestBlockWith ptype)
 
 -- | Create a block directly with the given parameters. This allows creating
 -- inconsistent blocks; prefer 'firstBlockWithPayload' or 'successorBlockWithPayload'.
