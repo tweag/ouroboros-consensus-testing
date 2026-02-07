@@ -1,12 +1,14 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Test.Consensus.PeerSimulator.Tests.Timeouts (
-    test_timeouts
-  , tests
+    Test
+  , testSuite
   ) where
 
 import           Data.Functor (($>))
@@ -20,6 +22,7 @@ import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Codec (mustReplyTimeout)
 import           Test.Consensus.BlockTree (btTrunk)
 import           Test.Consensus.Genesis.Setup
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run
                      (SchedulerConfig (scEnableChainSyncTimeouts),
                      defaultSchedulerConfig)
@@ -30,22 +33,25 @@ import           Test.Consensus.PointSchedule.Peers (peersOnlyAdversary,
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
                      scheduleHeaderPoint, scheduleTipPoint)
 import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock)
 
 desiredPasses :: Int -> Int
 desiredPasses = (`div` 10)
 
-tests :: TestTree
-tests = testGroup "timeouts"
-  [ testProperty "does time out" (prop_timeouts "does time out" True)
-  , testProperty "does not time out" (prop_timeouts "does not time out" False)
-  ]
+data Test = Timeouts !Bool
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse Test
 
-prop_timeouts :: String -> Bool -> Property
-prop_timeouts description = runConformanceTest @TestBlock . test_timeouts description
+testSuite ::
+  ( IssueTestBlock blk
+  , AF.HasHeader blk
+  , AF.HasHeader (Header blk)
+  , Condense (HeaderHash blk)
+  , Condense (Header blk)
+  ) => TestSuite blk Test
+testSuite = group "timeouts" . newTestSuite $ \case
+  Timeouts True -> test_timeouts "does time out" True
+  Timeouts False -> test_timeouts "does not time out" False
 
 test_timeouts ::
   ( IssueTestBlock blk
