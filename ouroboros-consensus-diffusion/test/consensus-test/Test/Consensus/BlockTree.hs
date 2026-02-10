@@ -72,16 +72,40 @@ data BlockTreeBranch blk = BlockTreeBranch {
     btbTrunkSuffix :: AF.AnchoredFragment blk,
     btbFull        :: AF.AnchoredFragment blk
   }
-  deriving (Show, Generic)
+  deriving (Show)
 
 instance
-  ( Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ( Aeson.ToJSON (AF.Anchor blk)
+  , Aeson.ToJSON blk
   ) => Aeson.ToJSON (BlockTreeBranch blk)
-  -- xyzzy-TODO: convert anchored fragments to a list representation, map to 
+  where
+    toJSON branch = Aeson.object
+      [ "prefix" .= toJSONFragment (btbPrefix branch)
+      , "suffix" .= toJSONFragment (btbSuffix branch)
+      , "trunkSuffix" .= toJSONFragment (btbTrunkSuffix branch)
+      ]
+      where
+        toJSONFragment frag = Aeson.object
+          [ "anchor" .= Aeson.toJSON (AF.anchor frag)
+          , "blocks" .= Aeson.toJSON (AF.toOldestFirst frag)
+          ]
 instance
-  ( Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
+  ( Aeson.FromJSON (AF.Anchor blk)
+  , Aeson.FromJSON blk
+  , HasHeader blk
   ) => Aeson.FromJSON (BlockTreeBranch blk)
-  -- xyzzy-TODO: 
+  where
+    parseJSON = Aeson.withObject "BlockTreeBranch" $ \o -> do
+      btbPrefix <- parseJSONFragment =<< o .: "prefix"
+      btbSuffix <- parseJSONFragment =<< o .: "suffix"
+      btbTrunkSuffix <- parseJSONFragment =<< o .: "trunkSuffix"
+      let btbFull = fromJust $ AF.join btbPrefix btbSuffix
+      pure BlockTreeBranch { .. }
+      where
+        parseJSONFragment = Aeson.withObject "Fragment" $ \fo -> do
+          anchor <- fo .: "anchor"
+          blocks <- fo .: "blocks"
+          pure $ AF.fromOldestFirst anchor blocks
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -116,7 +140,7 @@ data BlockTree blk = RawBlockTree {
 
 instance
   ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk
-  , Aeson.ToJSONKey (HeaderHash blk)
+  , Aeson.ToJSONKey (HeaderHash blk), Aeson.ToJSON (AF.Anchor blk)
   , Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.ToJSON (BlockTree blk)
   where
@@ -127,7 +151,7 @@ instance
 
 instance
   ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk
-  , Aeson.FromJSONKey (HeaderHash blk)
+  , Aeson.FromJSONKey (HeaderHash blk), Aeson.FromJSON (AF.Anchor blk)
   , Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.FromJSON (BlockTree blk)
   where

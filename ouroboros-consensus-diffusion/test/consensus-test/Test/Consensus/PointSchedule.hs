@@ -60,6 +60,7 @@ import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
                      diffTime)
 import           Control.Monad.ST (ST)
 import qualified Data.Aeson as Aeson
+import           Data.Aeson ((.=), (.:))
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
@@ -554,7 +555,7 @@ data GenesisTest blk schedule = GenesisTest
     -- and @1 + gtExtraHonestPeers@ honest peers.
     gtExtraHonestPeers   :: Word,
     gtSchedule           :: schedule
-  } deriving (Generic)
+  }
 
 -- Needs UndecidableInstances
 instance
@@ -562,12 +563,39 @@ instance
   , Aeson.ToJSONKey (HeaderHash blk)
   ) => Aeson.ToJSON (GenesisTest blk schedule)
   where
-  toEncoding = Aeson.genericToEncoding Aeson.defaultOptions
+    toJSON gt = Aeson.object
+      [ "securityParam" .= gtSecurityParam gt
+      , "genesisWindow" .= gtGenesisWindow gt
+      , "forecastRange" .= gtForecastRange gt
+      , "delay" .= gtDelay gt
+      , "blockTree" .= gtBlockTree gt
+      , "chainSyncTimeouts" .= gtChainSyncTimeouts gt
+      , "blockFetchTimeouts" .= gtBlockFetchTimeouts gt
+      , "loPBucketParams" .= gtLoPBucketParams gt
+      , "csjParams" .= gtCSJParams gt
+      , "slotLength" .= gtSlotLength gt
+      , "extraHonestPeers" .= gtExtraHonestPeers gt
+      , "schedule" .= gtSchedule gt
+      ]
 
 instance
   ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON schedule
   , Aeson.FromJSON blk, Aeson.FromJSONKey (HeaderHash blk)
   ) => Aeson.FromJSON (GenesisTest blk schedule)
+  where
+    parseJSON = Aeson.withObject "GenesisTest" $ \o -> GenesisTest
+      <$> o .: "securityParam"
+      <*> o .: "genesisWindow"
+      <*> o .: "forecastRange"
+      <*> o .: "delay"
+      <*> o .: "blockTree"
+      <*> o .: "chainSyncTimeouts"
+      <*> o .: "blockFetchTimeouts"
+      <*> o .: "loPBucketParams"
+      <*> o .: "csjParams"
+      <*> o .: "slotLength"
+      <*> o .: "extraHonestPeers"
+      <*> o .: "schedule"
 
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
