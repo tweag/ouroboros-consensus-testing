@@ -9,6 +9,7 @@ module Test.Consensus.Serialize (
   , deserializeTestCase
   , BlockType(..)
   , TestVersion(..)
+  , FormatVersion(..)
   , SomeBlockTreeAndPointSchedule(..)
 ) where
 
