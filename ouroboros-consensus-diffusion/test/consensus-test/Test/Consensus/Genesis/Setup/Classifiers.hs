@@ -19,8 +19,12 @@ import Cardano.Slotting.Slot (WithOrigin (..))
 import Data.List (sortOn, tails)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
-import Ouroboros.Consensus.Block (blockSlot, succWithOrigin)
-import Ouroboros.Consensus.Block.Abstract (SlotNo (SlotNo), withOrigin)
+import Ouroboros.Consensus.Block.Abstract
+  ( SlotNo (SlotNo)
+  , blockSlot
+  , succWithOrigin
+  , withOrigin
+  )
 import Ouroboros.Consensus.Config
 import Ouroboros.Consensus.MiniProtocol.ChainSync.Client
   ( ChainSyncClientException (DensityTooLow, EmptyBucket)

@@ -38,13 +38,15 @@ import qualified Data.Map.Strict as M
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
 import Ouroboros.Consensus.Block.Abstract
   ( GetHeader (..)
   , HasHeader
   , Header
   , HeaderHash
   , Point
+  , blockHash
+  , blockNo
+  , blockSlot
   , fromWithOrigin
   , pointSlot
   , unBlockNo
