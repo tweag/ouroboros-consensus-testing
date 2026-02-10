@@ -362,10 +362,10 @@ prop_loeStalling =
       , scEnableBlockFetchTimeouts = False
       }
     shrinkPeerSchedules
-    mkProperty
+    prop
  where
-  mkProperty :: forall blk. (AF.HasHeader blk, GetHeader blk) => GenesisTestFull blk -> StateView blk -> Property
-  mkProperty gt@GenesisTest{gtBlockTree = BlockTree{btTrunk, btBranches}} sv@StateView{svSelectedChain} =
+  prop :: forall blk. (AF.HasHeader blk, GetHeader blk) => GenesisTestFull blk -> StateView blk -> Property
+  prop gt@GenesisTest{gtBlockTree = BlockTree{btTrunk, btBranches}} sv@StateView{svSelectedChain} =
     classify (any (== selectionTip) allTips) "The selection is at a branch tip" $
       classify (any anchorIsImmutableTip suffixes) "The immutable tip is at a fork intersection" $
         honestImmutableTip gt sv

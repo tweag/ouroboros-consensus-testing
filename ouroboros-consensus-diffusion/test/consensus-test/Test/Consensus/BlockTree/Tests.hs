@@ -22,8 +22,6 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv
 
-
-
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
 genTestBlockTree = fmap gtBlockTree . genChains
 
@@ -62,8 +60,6 @@ tests =
       ]
     ]
 
-
-
 -- | The nonempty prefixes of an `AF.AnchoredFragment` are in fact prefixes.
 prop_nonemptyPrefixesOf_nonemptyPrefixesArePrefixes
   :: (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
@@ -93,8 +89,6 @@ prop_nonemptyPrefixesOf_allShareInputAnchor
 prop_nonemptyPrefixesOf_allShareInputAnchor fragment =
   let sharesTrunkAnchor = ((==) `on` AF.anchor) fragment
   in QC.property . all sharesTrunkAnchor . nonemptyPrefixesOf $ fragment
-
-
 
 -- | The head points of all the branches are distinct.
 -- (Points uniquely determine positions in the tree.)
@@ -149,9 +143,9 @@ prop_deforestBlockTree_prefixMaximalPrefixesAreBranches tree@(BlockTree trunk br
     (foldr (insertIfMaximalBy AF.isPrefixOf) [] $ deforestBlockTree tree)
     (trunk : fmap btbFull branches)
 
--- | If u is smaller than any of the elements of xs, return xs.
--- Otherwise, remove any elements of xs smaller than u and append
--- u to the remainder on the right. cmp is analogous to `<`.
+-- | If @u@ is smaller than any of the elements of @xs@, return @xs@.
+-- Otherwise, remove any elements of @xs@ smaller than @u@ and append @u@ to
+-- the remainder on the right.
 insertIfMaximalBy :: forall u. (u -> u -> Bool) -> u -> [u] -> [u]
 insertIfMaximalBy lessThan u =
   let
@@ -159,6 +153,8 @@ insertIfMaximalBy lessThan u =
       [] -> [u]
       x:rest -> case x `lessThan` u of
         True -> go rest
-        False -> x : case u `lessThan` x of
-          True -> rest; False -> go rest
+        False -> x :
+          case u `lessThan` x of
+            True -> rest
+            False -> go rest
   in go

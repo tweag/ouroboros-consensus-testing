@@ -122,6 +122,7 @@ rollbackSchedule n blockTree =
   banalSchedulePoints' :: blk -> [SchedulePoint blk]
   banalSchedulePoints' block = [scheduleTipPoint block, scheduleHeaderPoint block, scheduleBlockPoint block]
 
+-- | Given a hash, checks whether it is on the trunk of the block tree.
 hashOnTrunk :: (AF.HasHeader blk, Eq blk) => BlockTree blk -> ChainHash (Header blk) -> Bool
 hashOnTrunk _ GenesisHash = True
 hashOnTrunk bt (BlockHash hash) = do

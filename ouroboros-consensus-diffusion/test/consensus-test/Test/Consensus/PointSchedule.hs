@@ -135,7 +135,6 @@ import Test.QuickCheck.Random (QCGen)
 import Test.Util.TersePrinting (Terse, terseFragment)
 import Text.Printf (printf)
 
-
 prettyPointSchedule ::
   forall blk.
   CondenseList (NodeState blk) =>

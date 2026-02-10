@@ -1,12 +1,7 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -290,7 +285,6 @@ nonemptyPrefixesOf frag =
 type DeforestedBlockTree blk = M.Map (HeaderHash blk) (AF.AnchoredFragment blk)
 
 deforestRawBlockTree ::
-  forall blk.
   HasHeader blk =>
   AF.AnchoredFragment blk ->
   [BlockTreeBranch blk] ->
