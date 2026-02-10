@@ -209,13 +209,15 @@ class IssueTestBlock blk where
   issueFirstBlock ::
     -- | The fork number
     Int ->
-    -- | The amount of lapsed slots before this block was issued.
+    -- | The slot number for this block.
     SlotNo ->
     blk
   issueSuccessorBlock ::
-    -- | A new fork number, if this block should fork off the trunk.
+    -- | A new fork number, or 'Nothing' if the block should inherit the fork
+    -- number of its parent.
     Maybe Int ->
-    -- | The amount of lapsed slots before this block was issued.
+    -- | The /relative number of slots elapsed/ since the parent block was
+    -- issued, NOT the desired slot number of the block itself.
     SlotNo ->
     blk ->
     blk

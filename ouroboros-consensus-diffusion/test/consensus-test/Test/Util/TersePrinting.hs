@@ -60,13 +60,22 @@ terseWithOrigin :: (a -> String) -> WithOrigin a -> String
 terseWithOrigin _ Origin      = "G"
 terseWithOrigin terseA (At a) = terseA a
 
+-- | Helpers for printing various objects in a terse way. Terse printing is
+-- similar to that provided by the 'Condense' typeclass except it can be
+-- sometimes even more compact and it is very specific to tests.
 class Terse blk where
+  -- | Same as 'terseBlock' for points.
   tersePoint :: Point blk -> String
+  -- | Print a fragment of 'TestBlock' in a terse way.
   terseFragment :: AnchoredFragment blk -> String
+  -- | Same as 'terseFragment' for fragments of headers.
   terseHFragment :: AnchoredFragment (Header blk) -> String
+  -- | Same as 'terseFragment' for fragments of headers with time.
   terseHWTFragment :: AnchoredFragment (HeaderWithTime blk) -> String
   terseBlock :: blk -> String
+  -- | Same as 'tersePoint' for tips.
   terseTip :: Tip blk -> String
+  -- | Same as 'terseBlock' for headers.
   terseHeader :: Header blk -> String
 
 -- | Same as 'terseWithOrigin' for 'Maybe'.
@@ -74,10 +83,12 @@ terseMaybe :: (a -> String) -> Maybe a -> String
 terseMaybe _ Nothing       = "X"
 terseMaybe terseA (Just a) = terseA a
 
-
 instance Terse TestBlock where
   terseHWTFragment = terseHFragment . mapAnchoredFragment hwtHeader
   terseHFragment = terseFragment . mapAnchoredFragment (\(TestHeader block) -> block)
+  -- This shows as @anchor | block ...@ where @anchor@ is printed with
+  -- 'terseAnchor' and @block@s are printed with @terseBlock'@; in particular,
+  -- only the last element of the hash shows and only when it is non-zero.
   terseFragment fragment =
       terseAnchor (anchor fragment) ++ renderBlocks
     where
@@ -91,8 +102,10 @@ instance Terse TestBlock where
   tersePoint (BlockPoint slot hash) =
     terseBlockSlotHash (BlockNo (fromIntegral (length (unTestHash hash)))) slot hash
   terseHeader (TestHeader block) = terseBlock block
+  -- Print a 'TestBlock' as @block-slot[hash]@. @hash@ only shows if there is
+  -- a non-zero element in it. When it shows, it shows in a compact form. For
+  -- instance, the hash @[0,0,1,0,0,0]@ shows as @[2x0,1,3x0]@.
   terseBlock block = terseBlockSlotHash (blockNo block) (blockSlot block) (blockHash block)
-
 
 -- | Run-length encoding of a list. This groups consecutive duplicate elements,
 -- counting them. Only the first element of the equality is kept. For instance:
