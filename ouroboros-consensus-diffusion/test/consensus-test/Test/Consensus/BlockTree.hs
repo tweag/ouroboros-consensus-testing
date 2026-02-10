@@ -77,9 +77,11 @@ data BlockTreeBranch blk = BlockTreeBranch {
 instance
   ( Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.ToJSON (BlockTreeBranch blk)
+  -- xyzzy-TODO: convert anchored fragments to a list representation, map to 
 instance
   ( Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
   ) => Aeson.FromJSON (BlockTreeBranch blk)
+  -- xyzzy-TODO: 
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
