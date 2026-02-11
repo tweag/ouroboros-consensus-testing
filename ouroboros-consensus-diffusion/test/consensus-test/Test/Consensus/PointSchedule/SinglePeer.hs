@@ -80,7 +80,10 @@
 -- > |   3.1s | E              | E              | E              |
 -- > +--------+----------------+----------------+----------------+
 --
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Test.Consensus.PointSchedule.SinglePeer (
     IsTrunk (..)
   , PeerScheduleParams (..)
@@ -101,6 +104,8 @@ import           Cardano.Slotting.Slot (WithOrigin (At, Origin), withOrigin)
 import           Control.Arrow (second)
 import           Control.Monad.Class.MonadTime.SI (Time)
 import qualified Data.Aeson as Aeson
+import           Data.Aeson ((.=))
+import qualified Data.Aeson.Types as Aeson
 import           Data.List (mapAccumL)
 import           Data.Time.Clock (DiffTime)
 import           Data.Vector (Vector)
@@ -134,8 +139,40 @@ schedulePointToBlock (ScheduleTipPoint b)    = b
 schedulePointToBlock (ScheduleHeaderPoint b) = b
 schedulePointToBlock (ScheduleBlockPoint b)  = b
 
-instance Aeson.ToJSON blk => Aeson.ToJSON (SchedulePoint blk)
-instance Aeson.FromJSON blk => Aeson.FromJSON (SchedulePoint blk)
+instance (Aeson.ToJSON blk) => Aeson.ToJSON (SchedulePoint blk) where
+  toJSON schedulePoint =
+    let
+      woToJSON :: WithOrigin blk -> Aeson.Value
+      woToJSON Origin = Aeson.object ["origin" .= True]
+      woToJSON (At x) = Aeson.object ["at" .= Aeson.toJSON x]
+    in
+      Aeson.object
+        [ "pointType" .= case schedulePoint of
+            ScheduleTipPoint _ -> "tip" :: String
+            ScheduleHeaderPoint _ -> "header" :: String
+            ScheduleBlockPoint _ -> "block" :: String
+        , "point" .= case schedulePoint of
+            ScheduleTipPoint wo -> woToJSON wo
+            ScheduleHeaderPoint wo -> woToJSON wo
+            ScheduleBlockPoint wo -> woToJSON wo
+        ]
+
+instance (Aeson.FromJSON blk) => Aeson.FromJSON (SchedulePoint blk) where
+  parseJSON = Aeson.withObject "SchedulePoint" $ \v -> do
+    let
+      woParseJSON :: Aeson.Value -> Aeson.Parser (WithOrigin blk)
+      woParseJSON = Aeson.withObject "WithOrigin" $ \wo -> do
+        mOrigin <- wo Aeson..:? "origin"
+        case mOrigin of
+          Just True -> return Origin
+          _ -> At <$> wo Aeson..: "at"
+    pointType <- v Aeson..: "pointType"
+    pointValue <- v Aeson..: "point"
+    case pointType :: String of
+      "tip" -> ScheduleTipPoint <$> woParseJSON pointValue
+      "header" -> ScheduleHeaderPoint <$> woParseJSON pointValue
+      "block" -> ScheduleBlockPoint <$> woParseJSON pointValue
+      _ -> fail $ "Unknown pointType: " ++ pointType
 
 -- | Parameters for generating a schedule for a single peer.
 --

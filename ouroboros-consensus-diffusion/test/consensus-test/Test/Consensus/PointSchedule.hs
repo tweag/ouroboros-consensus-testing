@@ -557,46 +557,6 @@ data GenesisTest blk schedule = GenesisTest
     gtSchedule           :: schedule
   }
 
--- Needs UndecidableInstances
-instance
-  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON schedule, Aeson.ToJSON blk
-  , Aeson.ToJSONKey (HeaderHash blk)
-  ) => Aeson.ToJSON (GenesisTest blk schedule)
-  where
-    toJSON gt = Aeson.object
-      [ "securityParam" .= gtSecurityParam gt
-      , "genesisWindow" .= gtGenesisWindow gt
-      , "forecastRange" .= gtForecastRange gt
-      , "delay" .= gtDelay gt
-      , "blockTree" .= gtBlockTree gt
-      , "chainSyncTimeouts" .= gtChainSyncTimeouts gt
-      , "blockFetchTimeouts" .= gtBlockFetchTimeouts gt
-      , "loPBucketParams" .= gtLoPBucketParams gt
-      , "csjParams" .= gtCSJParams gt
-      , "slotLength" .= gtSlotLength gt
-      , "extraHonestPeers" .= gtExtraHonestPeers gt
-      , "schedule" .= gtSchedule gt
-      ]
-
-instance
-  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON schedule
-  , Aeson.FromJSON blk, Aeson.FromJSONKey (HeaderHash blk)
-  ) => Aeson.FromJSON (GenesisTest blk schedule)
-  where
-    parseJSON = Aeson.withObject "GenesisTest" $ \o -> GenesisTest
-      <$> o .: "securityParam"
-      <*> o .: "genesisWindow"
-      <*> o .: "forecastRange"
-      <*> o .: "delay"
-      <*> o .: "blockTree"
-      <*> o .: "chainSyncTimeouts"
-      <*> o .: "blockFetchTimeouts"
-      <*> o .: "loPBucketParams"
-      <*> o .: "csjParams"
-      <*> o .: "slotLength"
-      <*> o .: "extraHonestPeers"
-      <*> o .: "schedule"
-
 type GenesisTestFull blk = GenesisTest blk (PointSchedule blk)
 
 -- | All the data describing the result of a test

@@ -41,6 +41,7 @@ module Test.Consensus.PointSchedule.Peers (
   ) where
 
 import qualified Data.Aeson as Aeson
+import           Data.Aeson ((.=))
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -77,8 +78,24 @@ instance CondenseList PeerId where
 
 instance Hashable PeerId
 
-instance Aeson.ToJSON PeerId
-instance Aeson.FromJSON PeerId
+instance Aeson.ToJSON PeerId where
+  toJSON peerId = Aeson.object
+    [ "peerType" .= case peerId of
+        HonestPeer _ -> "honest" :: String
+        AdversarialPeer _ -> "adversarial" :: String
+    , "peerIndex" .= case peerId of
+        HonestPeer n -> n
+        AdversarialPeer n -> n
+    ]
+
+instance Aeson.FromJSON PeerId where
+  parseJSON = Aeson.withObject "PeerId" $ \v -> do
+    peerType <- v Aeson..: "peerType"
+    peerIndex <- v Aeson..: "peerIndex"
+    case peerType :: String of
+      "honest" -> return $ HonestPeer peerIndex
+      "adversarial" -> return $ AdversarialPeer peerIndex
+      _ -> fail $ "Unknown peerType: " ++ peerType
 
 -- | General-purpose functor associated with a peer.
 data Peer a =
