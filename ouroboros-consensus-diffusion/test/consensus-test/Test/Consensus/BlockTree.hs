@@ -99,7 +99,9 @@ instance
       btbPrefix <- parseJSONFragment =<< o .: "prefix"
       btbSuffix <- parseJSONFragment =<< o .: "suffix"
       btbTrunkSuffix <- parseJSONFragment =<< o .: "trunkSuffix"
-      let btbFull = fromJust $ AF.join btbPrefix btbSuffix
+      btbFull <- case AF.join btbPrefix btbSuffix of
+        Nothing -> fail "Invalid BlockTreeBranch: prefix and suffix do not join"
+        Just full -> pure full
       pure BlockTreeBranch { .. }
       where
         parseJSONFragment = Aeson.withObject "Fragment" $ \fo -> do
