@@ -72,27 +72,30 @@ data ConformanceTest blk = ConformanceTest
   { ctGenerator       :: Gen (GenesisTestFull blk)
     -- ^ The test generator.
   , ctSchedulerConfig :: SchedulerConfig
-    -- ^ Scheduler configuration parameters.
+    -- ^ Peer simulator scheduler configuration.
   , ctShrinker        :: (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk])
     -- ^ A shrinker allowed to inspect the output value of a test.
   , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
-    -- ^ The property to test.
+    -- ^ The property to check on the test result.
   , ctDesiredPasses   :: Int -> Int
     -- ^ Adjust the default number of test runs to check the property.
   , ctMaxSize :: Int -> Int
     -- ^ Adjust the default test case maximum size.
+  , ctDescription :: String
+    -- ^ A description for the test.
   }
 
 mkConformanceTest ::
-  (Testable prop) =>
-  (Int -> Int) ->
-  (Int -> Int) ->
-  Gen (GenesisTestFull blk) ->
-  SchedulerConfig ->
-  (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
-  (GenesisTestFull blk -> StateView blk -> prop) ->
-  ConformanceTest blk
-mkConformanceTest ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+  (Testable prop)
+  => String  -- ^ Test description.
+  -> (Int -> Int) -- ^ Transformation of the default desired test passes/successes.
+  -> (Int -> Int) -- ^ Transformation of the default max test size.
+  -> Gen (GenesisTestFull blk) -- ^ Test generator.
+  -> SchedulerConfig -- ^ Peer simulator scheduler configuration.
+  -> (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) -- ^ Result inspecting shrinker.
+  -> (GenesisTestFull blk -> StateView blk -> prop) -- ^ Property on test result.
+  -> ConformanceTest blk
+mkConformanceTest ctDescription ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest {..}
 

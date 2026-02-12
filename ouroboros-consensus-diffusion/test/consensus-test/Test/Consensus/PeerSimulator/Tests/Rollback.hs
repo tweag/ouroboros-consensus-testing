@@ -58,7 +58,7 @@ test_rollback ::
   , Eq blk
   ) => ConformanceTest blk
 test_rollback =
-  mkConformanceTest desiredPasses id
+  mkConformanceTest "can rollback" desiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain, such that we can rollback
         -- from the trunk to that chain.
@@ -89,7 +89,7 @@ test_cannotRollback ::
   , Eq blk
   ) => ConformanceTest blk
 test_cannotRollback =
-  mkConformanceTest desiredPasses id
+  mkConformanceTest "cannot rollback" desiredPasses id
     (do gt@GenesisTest{gtSecurityParam, gtBlockTree} <- genChains (pure 1)
         pure gt {gtSchedule = rollbackSchedule (fromIntegral (unNonZero $ maxRollbacks gtSecurityParam) + 1) gtBlockTree})
 
