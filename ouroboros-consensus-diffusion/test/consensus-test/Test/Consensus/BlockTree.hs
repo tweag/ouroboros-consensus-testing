@@ -23,6 +23,7 @@ module Test.Consensus.BlockTree (
   , PathAnchoredAtSource (..)
   , addBranch
   , addBranch'
+  , fromTrunkAndBranches
   , allFragments
   , deforestBlockTree
   , findFragment
@@ -36,6 +37,7 @@ module Test.Consensus.BlockTree (
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
+import           Control.Monad (foldM)
 import qualified Data.Aeson as Aeson
 import           Data.Aeson ((.:), (.=))
 import           Data.Foldable (asum, fold)
@@ -192,6 +194,11 @@ addBranch branch bt = do
   -- catch bugs quicker.
   let btbFull = fromJust $ AF.join btbPrefix btbSuffix
   pure $ mkBlockTree (btTrunk bt) (BlockTreeBranch { .. } : btBranches bt)
+
+-- | Build a block tree from a trunk and a list of anchored branches from genesis to tips.
+fromTrunkAndBranches
+  :: (HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk] -> Maybe (BlockTree blk)
+fromTrunkAndBranches trunk branches = foldM (flip addBranch) (mkTrunk trunk) branches
 
 -- | Same as @addBranch@ but calls to 'error' if the former yields 'Nothing'.
 addBranch' :: AF.HasHeader blk => AF.AnchoredFragment blk -> BlockTree blk -> BlockTree blk

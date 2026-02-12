@@ -208,6 +208,9 @@ class IssueTestBlock blk where
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
     -> blk
+  getForkNumber
+    :: blk
+    -> Int
 
 instance IssueTestBlock TestBlock where
   issueFirstBlock fork slot =
@@ -216,6 +219,7 @@ instance IssueTestBlock TestBlock where
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk
+  getForkNumber = fromIntegral . TB.getTestBlockForkNo
 
 -- | Increment the slot number on a 'TestBlock'.
 incSlot :: SlotNo -> TestBlock -> TestBlock
