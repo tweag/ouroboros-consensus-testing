@@ -75,7 +75,7 @@ data ConformanceTest blk = ConformanceTest
     -- ^ Scheduler configuration parameters.
   , ctShrinker        :: (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk])
     -- ^ A shrinker allowed to inspect the output value of a test.
-   , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
+  , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to test.
   , ctDesiredPasses   :: Int -> Int
     -- ^ Adjust the default number of test runs to check the property.

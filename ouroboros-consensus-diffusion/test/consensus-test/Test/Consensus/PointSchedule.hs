@@ -9,7 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE UndecidableInstances #-} -- For the `ToJSON (HeaderHash blk)` constraint
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -60,7 +62,6 @@ import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
                      diffTime)
 import           Control.Monad.ST (ST)
 import qualified Data.Aeson as Aeson
-import           Data.Aeson ((.=), (.:))
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
@@ -70,7 +71,7 @@ import           Data.Time (DiffTime)
 import           Data.Word (Word64)
 import           GHC.Generics
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
-                     withOriginToMaybe, HeaderHash)
+                     withOriginToMaybe)
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (GenesisWindow (..))
@@ -193,7 +194,7 @@ data PointSchedule blk = PointSchedule {
     -- If no point in the schedule is larger than 'psMinEndTime',
     -- the simulation will still run until this time is reached.
     psMinEndTime :: Time
-  } deriving (Generic)
+  } deriving (Show, Generic, Functor, Foldable, Traversable)
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]

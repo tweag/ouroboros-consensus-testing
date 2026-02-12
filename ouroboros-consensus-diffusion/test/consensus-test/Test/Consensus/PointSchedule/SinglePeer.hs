@@ -84,6 +84,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 module Test.Consensus.PointSchedule.SinglePeer (
     IsTrunk (..)
   , PeerScheduleParams (..)
@@ -123,7 +126,7 @@ data SchedulePoint blk
   = ScheduleTipPoint (WithOrigin blk)
   | ScheduleHeaderPoint (WithOrigin blk)
   | ScheduleBlockPoint (WithOrigin blk)
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 scheduleTipPoint :: blk -> SchedulePoint blk
 scheduleTipPoint = ScheduleTipPoint . At
