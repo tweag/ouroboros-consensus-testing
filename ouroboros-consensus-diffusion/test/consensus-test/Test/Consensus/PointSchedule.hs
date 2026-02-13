@@ -12,6 +12,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -62,6 +63,7 @@ import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
                      diffTime)
 import           Control.Monad.ST (ST)
 import qualified Data.Aeson as Aeson
+import           Data.Aeson ((.=), (.:))
 import           Data.Bifunctor (first)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
@@ -200,8 +202,18 @@ data PointSchedule blk = PointSchedule {
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]
 peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
 
-instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk)
-instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk)
+instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
+  toJSON schedule = Aeson.object
+    [ "schedule" .= psSchedule schedule
+    , "startOrder" .= psStartOrder schedule
+    , "minEndTime" .= psMinEndTime schedule
+    ]
+instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
+  parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
+    psSchedule <- v .: "schedule"
+    psStartOrder <- v .: "startOrder"
+    psMinEndTime <- v .: "minEndTime"
+    pure $ PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------
 -- Schedule generators

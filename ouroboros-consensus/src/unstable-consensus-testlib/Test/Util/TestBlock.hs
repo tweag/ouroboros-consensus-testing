@@ -203,11 +203,6 @@ pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
   TestHash path = UnsafeTestHash (force path)
 
-instance Aeson.ToJSON TestHash
-instance Aeson.ToJSONKey TestHash
-instance Aeson.FromJSON TestHash
-instance Aeson.FromJSONKey TestHash
-
 {-# COMPLETE TestHash #-}
 
 testHashFromList :: [Word64] -> TestHash
@@ -255,9 +250,6 @@ data TestBlockWith ptype = TestBlockWith {
     }
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
-
-instance (Aeson.ToJSON ptype) => Aeson.ToJSON (TestBlockWith ptype)
-instance (Aeson.FromJSON ptype) => Aeson.FromJSON (TestBlockWith ptype)
 
 -- | Create a block directly with the given parameters. This allows creating
 -- inconsistent blocks; prefer 'firstBlockWithPayload' or 'successorBlockWithPayload'.
@@ -798,9 +790,8 @@ modifyFork g tb@TestBlockWith{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
     }
 
 getTestBlockForkNo :: TestBlock -> Word64
-getTestBlockForkNo TestBlockWith{tbHash} =
-  let UnsafeTestHash (forkNum NE.:| h) = tbHash
-  in fromIntegral forkNum
+getTestBlockForkNo TestBlockWith{tbHash = UnsafeTestHash (forkNum NE.:| _)} =
+  fromIntegral forkNum
 
 -- Increase the fork number of the given block:
 -- @[.., f]@ -> @[.., f+1]@
