@@ -229,3 +229,8 @@ instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where
 
 instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) where
   parseJSON = deserializeReifiedTestCase Proxy
+
+
+
+rehydrateTestCase :: ReifiedTestCase key BlockRep -> ReifiedTestCase key blk
+rehydrateTestCase = error "rehydrateTestCase: not implemented"
