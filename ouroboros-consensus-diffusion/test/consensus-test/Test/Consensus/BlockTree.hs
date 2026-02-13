@@ -6,7 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 #if __GLASGOW_HASKELL__ >= 908
@@ -38,8 +37,6 @@ module Test.Consensus.BlockTree (
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
 import           Control.Monad (foldM)
-import qualified Data.Aeson as Aeson
-import           Data.Aeson ((.:), (.=))
 import           Data.Foldable (asum, fold)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
@@ -48,7 +45,6 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import           GHC.Generics
 import           Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
 import           Ouroboros.Consensus.Block.Abstract (GetHeader (..), HasHeader,
                      Header, HeaderHash, Point, fromWithOrigin, pointSlot,
@@ -63,11 +59,6 @@ import           Text.Printf (printf)
 -- INVARIANT: the head of @btbPrefix@ is the anchor of @btbSuffix@.
 --
 -- INVARIANT: @btbFull == fromJust $ AF.join btbPrefix btbSuffix@.
---
--- The derived @Generic@ instance here is the reason why this module uses
--- @UndecidableInstances@. The underlying 'AnchoredFragment' type of a
--- @BlockTreeBranch@ is responsible for the @HeaderHash@ and @HasHeader@
--- constraints, and the former is a type family.
 data BlockTreeBranch blk = BlockTreeBranch {
     btbPrefix      :: AF.AnchoredFragment blk,
     btbSuffix      :: AF.AnchoredFragment blk,
@@ -76,40 +67,7 @@ data BlockTreeBranch blk = BlockTreeBranch {
   }
   deriving (Show)
 
-instance
-  ( Aeson.ToJSON (AF.Anchor blk)
-  , Aeson.ToJSON blk
-  ) => Aeson.ToJSON (BlockTreeBranch blk)
-  where
-    toJSON branch = Aeson.object
-      [ "prefix" .= toJSONFragment (btbPrefix branch)
-      , "suffix" .= toJSONFragment (btbSuffix branch)
-      , "trunkSuffix" .= toJSONFragment (btbTrunkSuffix branch)
-      ]
-      where
-        toJSONFragment frag = Aeson.object
-          [ "anchor" .= Aeson.toJSON (AF.anchor frag)
-          , "blocks" .= Aeson.toJSON (AF.toOldestFirst frag)
-          ]
-instance
-  ( Aeson.FromJSON (AF.Anchor blk)
-  , Aeson.FromJSON blk
-  , HasHeader blk
-  ) => Aeson.FromJSON (BlockTreeBranch blk)
-  where
-    parseJSON = Aeson.withObject "BlockTreeBranch" $ \o -> do
-      btbPrefix <- parseJSONFragment =<< o .: "prefix"
-      btbSuffix <- parseJSONFragment =<< o .: "suffix"
-      btbTrunkSuffix <- parseJSONFragment =<< o .: "trunkSuffix"
-      btbFull <- case AF.join btbPrefix btbSuffix of
-        Nothing -> fail "Invalid BlockTreeBranch: prefix and suffix do not join"
-        Just full -> pure full
-      pure BlockTreeBranch { .. }
-      where
-        parseJSONFragment = Aeson.withObject "Fragment" $ \fo -> do
-          anchor <- fo .: "anchor"
-          blocks <- fo .: "blocks"
-          pure $ AF.fromOldestFirst anchor blocks
+
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -140,27 +98,7 @@ data BlockTree blk = RawBlockTree {
     -- many times and there's no reason to rebuild the tree every time.
     btDeforested :: DeforestedBlockTree blk
   }
-  deriving (Show, Generic)
-
-instance
-  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk
-  , Aeson.ToJSONKey (HeaderHash blk), Aeson.ToJSON (AF.Anchor blk)
-  , Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
-  ) => Aeson.ToJSON (BlockTree blk)
-  where
-    toJSON blockTree = Aeson.object
-      [ "trunk" .= Aeson.toJSON (btTrunk' blockTree)
-      , "branches" .= Aeson.toJSON (btBranches' blockTree)
-      ]
-
-instance
-  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk
-  , Aeson.FromJSONKey (HeaderHash blk), Aeson.FromJSON (AF.Anchor blk)
-  , Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
-  ) => Aeson.FromJSON (BlockTree blk)
-  where
-    parseJSON = Aeson.withObject "BlockTree" $ \o ->
-      mkBlockTree <$>  o .: "trunk" <*> o .: "branches"
+  deriving (Show)
 
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _

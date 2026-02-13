@@ -152,12 +152,9 @@ instance (Aeson.ToJSON blk) => Aeson.ToJSON (SchedulePoint blk) where
       Aeson.object
         [ "pointType" .= case schedulePoint of
             ScheduleTipPoint _ -> "tip" :: String
-            ScheduleHeaderPoint _ -> "header" :: String
-            ScheduleBlockPoint _ -> "block" :: String
-        , "point" .= case schedulePoint of
-            ScheduleTipPoint wo -> woToJSON wo
-            ScheduleHeaderPoint wo -> woToJSON wo
-            ScheduleBlockPoint wo -> woToJSON wo
+            ScheduleHeaderPoint _ -> "header"
+            ScheduleBlockPoint _ -> "block"
+        , "point" .= woToJSON (schedulePointToBlock schedulePoint)
         ]
 
 instance (Aeson.FromJSON blk) => Aeson.FromJSON (SchedulePoint blk) where
@@ -171,11 +168,12 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (SchedulePoint blk) where
           _ -> At <$> wo Aeson..: "at"
     pointType <- v Aeson..: "pointType"
     pointValue <- v Aeson..: "point"
+    let value = woParseJSON pointValue
     case pointType :: String of
-      "tip" -> ScheduleTipPoint <$> woParseJSON pointValue
-      "header" -> ScheduleHeaderPoint <$> woParseJSON pointValue
-      "block" -> ScheduleBlockPoint <$> woParseJSON pointValue
-      _ -> fail $ "Unknown pointType: " ++ pointType
+      "tip" -> fmap ScheduleTipPoint value
+      "header" -> fmap ScheduleHeaderPoint value
+      "block" -> fmap ScheduleBlockPoint value
+      _ -> fail $ "Unknown pointType: " <> pointType
 
 -- | Parameters for generating a schedule for a single peer.
 --
