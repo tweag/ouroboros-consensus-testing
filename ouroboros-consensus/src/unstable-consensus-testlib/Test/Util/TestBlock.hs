@@ -39,6 +39,7 @@ module Test.Util.TestBlock (
   , firstBlockWithPayload
   , forkBlock
   , modifyFork
+  , getTestBlockForkNo
   , successorBlockWithPayload
   , testHashFromList
   , unTestHash
@@ -91,6 +92,7 @@ import           Codec.Serialise (Serialise (..), serialise)
 import           Control.DeepSeq (force)
 import           Control.Monad (guard, replicateM, replicateM_)
 import           Control.Monad.Except (throwError)
+import qualified Data.Aeson as Aeson
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as BL
@@ -215,6 +217,9 @@ instance Condense TestHash where
 data Validity = Valid | Invalid
   deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
+
+instance Aeson.ToJSON Validity
+instance Aeson.FromJSON Validity
 
 
 instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
@@ -783,6 +788,10 @@ modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
 modifyFork g tb@TestBlockWith{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
     { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
+
+getTestBlockForkNo :: TestBlock -> Word64
+getTestBlockForkNo TestBlockWith{tbHash = UnsafeTestHash (forkNum NE.:| _)} =
+  fromIntegral forkNum
 
 -- Increase the fork number of the given block:
 -- @[.., f]@ -> @[.., f+1]@

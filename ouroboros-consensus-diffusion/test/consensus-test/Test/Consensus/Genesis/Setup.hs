@@ -75,7 +75,7 @@ data ConformanceTest blk = ConformanceTest
     -- ^ Peer simulator scheduler configuration.
   , ctShrinker        :: (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk])
     -- ^ A shrinker allowed to inspect the output value of a test.
-   , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
+  , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to check on the test result.
   , ctDesiredPasses   :: Int -> Int
     -- ^ Adjust the default number of test runs to check the property.
