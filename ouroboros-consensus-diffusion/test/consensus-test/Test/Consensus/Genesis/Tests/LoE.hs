@@ -9,7 +9,7 @@
 
 -- | Limit on Eagerness tests.
 module Test.Consensus.Genesis.Tests.LoE (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -37,28 +37,30 @@ import           Test.Util.PartialAccessors
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-data Test = AdversaryHitsTimeouts !Bool
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = AdversaryDoesNotHitTimeouts
+             | AdversaryHitsTimeouts
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
   , Ord blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "LoE" $ newTestSuite $ \case
-  AdversaryHitsTimeouts True ->
+  AdversaryDoesNotHitTimeouts ->
     test_adversaryHitsTimeouts "adversary does not hit timeouts" False
-  AdversaryHitsTimeouts False ->
+  AdversaryHitsTimeouts ->
     test_adversaryHitsTimeouts "adversary hits timeouts" True
 
 -- | Tests that the selection advances in presence of the LoE when a peer is
@@ -78,7 +80,7 @@ test_adversaryHitsTimeouts ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_adversaryHitsTimeouts description timeoutsEnabled =
-    mkConformanceTest description desiredPasses testMaxSize
+    mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree

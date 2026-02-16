@@ -7,7 +7,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Test.Consensus.PeerSimulator.Tests.Timeouts (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -38,9 +38,10 @@ import           Test.Util.Orphans.IOLike ()
 desiredPasses :: Int -> Int
 desiredPasses = (`div` 10)
 
-data Test = Timeouts !Bool
+data TestKey = DoesTimeout
+             | DoesNotTimeout
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( IssueTestBlock blk
@@ -48,10 +49,10 @@ testSuite ::
   , AF.HasHeader (Header blk)
   , Condense (HeaderHash blk)
   , Condense (Header blk)
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "timeouts" . newTestSuite $ \case
-  Timeouts True -> test_timeouts "does time out" True
-  Timeouts False -> test_timeouts "does not time out" False
+  DoesTimeout -> test_timeouts "does time out" True
+  DoesNotTimeout -> test_timeouts "does not time out" False
 
 test_timeouts ::
   ( IssueTestBlock blk

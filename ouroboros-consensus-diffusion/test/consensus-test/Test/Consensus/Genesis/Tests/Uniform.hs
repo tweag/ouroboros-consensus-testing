@@ -13,7 +13,7 @@
 -- other tests cases (eg. long range attack), the schedules are not particularly
 -- biased towards a specific situation.
 module Test.Consensus.Genesis.Tests.Uniform (
-    Test
+    TestKey
   , genUniformSchedulePoints
   , testSuite
   ) where
@@ -61,29 +61,30 @@ import           Text.Printf (printf)
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-data Test = BlockFetchLeashingAttack
-          | Downtime
-          | LeashingAttackStalling
-          | LeashingAttackTimeLimited
-          | LOEStalling
-          | ServeAdversarialBranches
-          deriving stock (Eq, Show, Ord, Generic)
-          deriving (Universe, Finite) via (GenericUniverse Test)
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = BlockFetchLeashingAttack
+             | Downtime
+             | LeashingAttackStalling
+             | LeashingAttackTimeLimited
+             | LOEStalling
+             | ServeAdversarialBranches
+  deriving stock (Eq, Show, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "uniform" $ newTestSuite $ \case
     BlockFetchLeashingAttack -> test_blockFetchLeashingAttack
     Downtime -> test_downtime
@@ -163,7 +164,7 @@ test_serveAdversarialBranches ::
   , IssueTestBlock blk
   ) => ConformanceTest blk
 test_serveAdversarialBranches =
-  mkConformanceTest "serve adversarial branches" desiredPasses testMaxSize
+  mkConformanceTest "serve adversarial branches" adjustDesiredPasses adjustTestMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genUniformSchedulePoints)
 
@@ -231,7 +232,7 @@ test_leashingAttackStalling :: forall blk.
   , Ord blk
   ) => ConformanceTest blk
 test_leashingAttackStalling =
-  mkConformanceTest "stalling leashing attack" desiredPasses testMaxSize
+  mkConformanceTest "stalling leashing attack" adjustDesiredPasses adjustTestMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genLeashingSchedule)
 
@@ -285,7 +286,7 @@ test_leashingAttackTimeLimited :: forall blk.
   , Ord blk
   ) => ConformanceTest blk
 test_leashingAttackTimeLimited =
-  mkConformanceTest "time limited leashing attack" desiredPasses testMaxSize
+  mkConformanceTest "time limited leashing attack" adjustDesiredPasses adjustTestMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genTimeLimitedSchedule)
 
@@ -374,7 +375,7 @@ test_loeStalling :: forall blk.
   , Ord blk
   ) => ConformanceTest blk
 test_loeStalling =
-  mkConformanceTest "the LoE stalls the chain, but the immutable tip is honest" desiredPasses testMaxSize
+  mkConformanceTest "the LoE stalls the chain, but the immutable tip is honest" adjustDesiredPasses adjustTestMaxSize
 
     (do gt <- genChains (QC.choose (1, 4))
                 `enrichedWith`
@@ -419,7 +420,7 @@ test_downtime ::
   , Ord blk
   ) => ConformanceTest blk
 test_downtime =
-  mkConformanceTest "the node is shut down and restarted after some time" desiredPasses (testMaxSize . const 10)
+  mkConformanceTest "the node is shut down and restarted after some time" adjustDesiredPasses (adjustTestMaxSize . const 10)
 
     (genChains (QC.choose (1, 4)) `enrichedWith` \ gt ->
       ensureScheduleDuration gt <$> stToGen (uniformPoints (pointsGeneratorParams gt) (gtBlockTree gt)))
@@ -464,7 +465,7 @@ test_blockFetchLeashingAttack :: forall blk.
   , Ord blk
   ) => ConformanceTest blk
 test_blockFetchLeashingAttack =
-  mkConformanceTest "block fetch leashing attack" desiredPasses testMaxSize
+  mkConformanceTest "block fetch leashing attack" adjustDesiredPasses adjustTestMaxSize
 
     (genChains (pure 0) `enrichedWith` genBlockFetchLeashingSchedule)
 

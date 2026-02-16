@@ -7,7 +7,7 @@
 
 -- | ChainSync Jumping tests.
 module Test.Consensus.Genesis.Tests.CSJ (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -41,17 +41,18 @@ import           Test.Util.PartialAccessors
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-data Test = ChainSyncJump !WithAdversariesFlag !NumHonestSchedulesFlag
-          deriving stock (Eq, Ord, Generic)
-          deriving (Universe, Finite) via (GenericUniverse Test)
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = ChainSyncJump !WithAdversariesFlag !NumHonestSchedulesFlag
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( HasHeader blk
@@ -60,7 +61,7 @@ testSuite ::
   , Ord blk
   , Condense (Header blk)
   , Eq (Header blk)
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "CSJ" $ newTestSuite $ \case
   ChainSyncJump NoAdversaries OneScheduleForAllPeers ->
     test_csj "adversary free: honest peers are synchronised" NoAdversaries OneScheduleForAllPeers
@@ -114,7 +115,7 @@ test_csj description adversariesFlag numHonestSchedules = do
   let genForks = case adversariesFlag of
                    NoAdversaries   -> pure 0
                    WithAdversaries -> choose (2, 4)
-  mkConformanceTest description desiredPasses testMaxSize
+  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
     ( disableBoringTimeouts <$> case numHonestSchedules of
         OneScheduleForAllPeers ->
           genChains genForks

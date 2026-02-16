@@ -8,7 +8,7 @@
 
 -- | Genesis density disconnect tests.
 module Test.Consensus.Genesis.Tests.DensityDisconnect (
-    Test
+    TestKey
   , testSuite
   , tests
   ) where
@@ -77,23 +77,24 @@ import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-data Test = TriggersChainSelection
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = TriggersChainSelection
   deriving stock (Eq,Ord,Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "density disconnect" $ newTestSuite $ \case
   TriggersChainSelection -> test_densityDisconnectTriggersChainSel
 
@@ -506,7 +507,7 @@ test_densityDisconnectTriggersChainSel ::
   , Ord blk
   ) => ConformanceTest blk
 test_densityDisconnectTriggersChainSel =
-  mkConformanceTest "re-triggers chain selection on disconnection" desiredPasses testMaxSize
+  mkConformanceTest "re-triggers chain selection on disconnection" adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree

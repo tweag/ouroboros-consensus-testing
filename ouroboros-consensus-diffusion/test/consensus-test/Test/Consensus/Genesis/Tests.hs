@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Test.Consensus.Genesis.Tests (
-    GenesisTests
+    GenesisTestKey
   , testSuite
   , tests
   ) where
@@ -28,14 +28,15 @@ tests :: TestTree
 tests = testGroup "Genesis tests" $
   [GDD.tests] <> toTestTree @TestBlock testSuite
 
-data GenesisTests = Uniform !Uniform.Test
-                  | CSJ !CSJ.Test
-                  | GDD !GDD.Test
-                  | LRA !LongRangeAttack.Test
-                  | LoE !LoE.Test
-                  | LoP !LoP.Test
-                 deriving stock (Eq, Ord, Generic)
-                 deriving (Universe, Finite) via GenericUniverse GenesisTests
+-- | Each value of this type uniquely corresponds to a Genesis test.
+data GenesisTestKey = Uniform !Uniform.TestKey
+             | CSJ !CSJ.TestKey
+             | GDD !GDD.TestKey
+             | LRA !LongRangeAttack.TestKey
+             | LoE !LoE.TestKey
+             | LoP !LoP.TestKey
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse GenesisTestKey
 
 testSuite ::
   ( HasHeader blk
@@ -44,7 +45,7 @@ testSuite ::
   , Condense (Header blk)
   , Ord blk
   , Eq (Header blk)
-  ) => TestSuite blk GenesisTests
+  ) => TestSuite blk GenesisTestKey
 testSuite = mkTestSuite $ \case
   Uniform t -> at Uniform.testSuite t
   CSJ t -> at CSJ.testSuite t

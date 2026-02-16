@@ -8,7 +8,7 @@
 -- such that if one gets disconnected, then so does the other. This module
 -- contains a collection of smoke tests to make sure of that.
 module Test.Consensus.PeerSimulator.Tests.LinkedThreads (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -33,15 +33,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleHeaderPoint,
                      scheduleTipPoint)
 import           Test.Util.Orphans.IOLike ()
 
-data Test = ChainSyncKillsBlockFetch
+data TestKey = ChainSyncKillsBlockFetch
   deriving (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , Eq blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "ChainSync kill BlockFetch" . newTestSuite $ \case
   ChainSyncKillsBlockFetch -> test_chainSyncKillsBlockFetch
 

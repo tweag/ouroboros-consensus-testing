@@ -9,7 +9,7 @@
 
 -- | Limit on Patience tests.
 module Test.Consensus.Genesis.Tests.LoP (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -42,35 +42,39 @@ import           Test.Util.PartialAccessors
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-data Test = WaitUntilEmpty !Bool
-          | WaitBehindForecastHorizon
-          | ServeSlow !Bool
-          | DelayAttack !Bool
-          deriving stock (Eq, Ord, Generic)
-          deriving (Universe, Finite) via (GenericUniverse Test)
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = WaitJustEnoughUntilEmpty
+             | WaitTooMuchUntilEmpty
+             | WaitBehindForecastHorizon
+             | ServeJustFastEnough
+             | ServeTooSlow
+             | DelayAttackSucceeds
+             | DelayAttackFails
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
   , Ord blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "LoP" $ newTestSuite $ \case
-  WaitUntilEmpty False -> test_wait "wait just enough" False
-  WaitUntilEmpty True -> test_wait "wait too much" True
+  WaitJustEnoughUntilEmpty -> test_wait "wait just enough" False
+  WaitTooMuchUntilEmpty -> test_wait "wait too much" True
   WaitBehindForecastHorizon -> test_waitBehindForecastHorizon
-  ServeSlow False -> test_serve "serve just fast enough" False
-  ServeSlow True -> test_serve "serve too slow" True
-  DelayAttack False -> test_delayAttack "delaying attack succeeds without LoP" False
-  DelayAttack True -> test_delayAttack "delaying attack fails with LoP" True
+  ServeJustFastEnough -> test_serve "serve just fast enough" False
+  ServeTooSlow -> test_serve "serve too slow" True
+  DelayAttackSucceeds -> test_delayAttack "delaying attack succeeds without LoP" False
+  DelayAttackFails -> test_delayAttack "delaying attack fails with LoP" True
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
 -- the block tree trunk and then does nothing. If the given boolean,
@@ -85,14 +89,14 @@ test_wait ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_wait description mustTimeout =
-  mkConformanceTest description desiredPasses
+  mkConformanceTest description adjustDesiredPasses
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
     -- significantly more time than the one that does. This is because the former
     -- does all the computation (serving the headers, validating them, serving the
     -- block, validating them) while the latter does nothing, because it timeouts
     -- before reaching the last tick of the point schedule.
-    (case mustTimeout of False -> testMaxSize; True -> id)
+    (case mustTimeout of False -> adjustTestMaxSize; True -> id)
 
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
@@ -135,7 +139,7 @@ test_waitBehindForecastHorizon ::
   , Ord blk
   ) => ConformanceTest blk
 test_waitBehindForecastHorizon =
-  mkConformanceTest "wait behind forecast horizon" desiredPasses testMaxSize
+  mkConformanceTest "wait behind forecast horizon" adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let ps = dullSchedule (btTrunk gtBlockTree)
@@ -186,7 +190,7 @@ test_serve ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_serve description mustTimeout =
-  mkConformanceTest description desiredPasses testMaxSize
+  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let lbpRate = borderlineRate (AF.length (btTrunk gtBlockTree))
@@ -244,7 +248,7 @@ test_delayAttack ::
   ) =>
   String -> Bool -> ConformanceTest blk
 test_delayAttack description lopEnabled =
-  mkConformanceTest description desiredPasses testMaxSize
+  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}

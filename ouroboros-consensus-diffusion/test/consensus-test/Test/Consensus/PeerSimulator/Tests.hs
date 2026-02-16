@@ -5,7 +5,8 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Test.Consensus.PeerSimulator.Tests (
-    testSuite
+    SmokeTestKey
+  , testSuite
   , tests
   ) where
 
@@ -23,11 +24,12 @@ import           Test.Util.TestBlock (TestBlock)
 tests :: TestTree
 tests = testGroup "PeerSimulator" $ toTestTree @TestBlock testSuite
 
-data Test = LinkedThreads LinkedThreads.Test
-          | Rollback Rollback.Test
-          | Timeouts Timeouts.Test
+-- | Each value of this type uniquely corresponds to a basic functionality test.
+data SmokeTestKey = LinkedThreads LinkedThreads.TestKey
+                  | Rollback Rollback.TestKey
+                  | Timeouts Timeouts.TestKey
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse SmokeTestKey
 
 testSuite ::
   ( IssueTestBlock blk
@@ -36,7 +38,7 @@ testSuite ::
   , Condense (HeaderHash blk)
   , Condense (Header blk)
   , Eq blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk SmokeTestKey
 testSuite = mkTestSuite $ \case
   LinkedThreads t -> at LinkedThreads.testSuite t
   Rollback t -> at Rollback.testSuite t

@@ -8,7 +8,7 @@
 
 -- | Long range attack tests.
 module Test.Consensus.Genesis.Tests.LongRangeAttack (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -28,19 +28,20 @@ import           Test.Util.Orphans.IOLike ()
 
 -- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (`div` 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (`div` 10)
 
-data Test = LongRangeAttack
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = LongRangeAttack
   deriving stock (Eq,Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
    (HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
   -- attack but Genesis is not. This requires to first fix it as mentioned
@@ -61,7 +62,7 @@ test_longRangeAttack ::
   , Ord blk
   ) => ConformanceTest blk
 test_longRangeAttack =
-  mkConformanceTest "one adversary" desiredPasses id
+  mkConformanceTest "one adversary" adjustDesiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)

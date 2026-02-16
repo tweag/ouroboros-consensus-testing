@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.PeerSimulator.Tests.Rollback (
-    Test
+    TestKey
   , testSuite
   ) where
 
@@ -39,19 +39,19 @@ import           Test.Util.Orphans.IOLike ()
 desiredPasses :: Int -> Int
 desiredPasses = (`div` 2)
 
-data Test = CanRollback | WontRollback
+data TestKey = CanRollback | CannotRollback
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse Test
+  deriving (Universe, Finite) via GenericUniverse TestKey
 
 testSuite ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Eq blk
-  ) => TestSuite blk Test
+  ) => TestSuite blk TestKey
 testSuite = group "rollback" . newTestSuite $ \case
   CanRollback -> test_rollback
-  WontRollback -> test_cannotRollback
+  CannotRollback -> test_cannotRollback
 
 -- | @test_rollback@ tests that the selection of the node under test
 -- changes branches when sent a rollback to a block no older than 'k' blocks
