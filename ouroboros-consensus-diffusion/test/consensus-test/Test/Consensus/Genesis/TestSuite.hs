@@ -193,3 +193,51 @@ toTestTree p (TestSuite m) =
   let tests = fmap snd $ Map.toList m
       prefixedTests = fmap compileSingleTest tests
    in testGroup p . render . buildTrie $ prefixedTests
+
+-- | Applies a function to all conformance tests in a @TestSuite@.
+adjustTestSuite
+  :: (ConformanceTest blk -> ConformanceTest blk)
+  -> TestSuite blk key -> TestSuite blk key
+adjustTestSuite = adjustTestSuiteWithKey (const True)
+
+-- | Similar to @adjustTestSuite@, but the adjustment has access to the @key@.
+adjustTestSuiteWithKey
+  :: (key -> ConformanceTest blk -> ConformanceTest blk)
+  -> TestSuite blk key -> TestSuite blk key
+adjustTestSuiteWithKey adjust (TestSuite m) = TestSuite $
+  Map.mapWithKey (\k testData -> testData {tsTest = adjust k (tsTest testData)}) m
+
+-- | Apply an adjustment to the maximum test case size of a conformance test.
+-- Analogous to @Test.QuickCheck.withMaxSize@. Unless the previous size is less
+-- than or equal to zero, the new maximum size will be at least 1.
+adjustMaxSize :: (Int -> Int) -> TestSuite blk key -> TestSuite blk key
+adjustMaxSize = adjustMaxSizeWithKey (const True)
+
+-- | Similar to @adjustMaxSize@, but the adjustment has access
+-- to the @key@.
+adjustMaxSizeWithKey
+  :: (key -> Int -> Int) -> TestSuite blk key -> TestSuite blk key
+adjustMaxSizeWithKey f = adjustTestSuiteWithKey
+  (\k ct -> ct {ctMaxSize = atLeastOneIfNotZero (f k (ctMaxSize ct))})
+  where
+    atLeastOneIfNotZero :: Int -> Int
+    atLeastOneIfNotZero n
+      | n <= 0    = 0
+      | otherwise = max 1 n
+
+-- | Apply an adjustment to the desired number of passing test cases for
+-- a conformance test.
+adjustDesiredPasses :: (Int -> Int) -> TestSuite blk key -> TestSuite blk key
+adjustDesiredPasses = adjustDesiredPassesWithKey (const True)
+
+-- | Similar to @adjustDesiredPasses@, but the adjustment has access
+-- to the @key@.
+adjustDesiredPassesWithKey
+  :: (key -> Int -> Int) -> TestSuite blk key -> TestSuite blk key
+adjustDesiredPassesWithKey keyPred f = adjustTestSuiteWithKey
+  (\k ct -> ct {ctDesiredPasses = atLeastOneIfNotZero (keyPred k (ctDesiredPasses ct))})
+  where
+    atLeastOneIfNotZero :: Int -> Int
+    atLeastOneIfNotZero n
+      | n <= 0    = 0
+      | otherwise = max 1 n
