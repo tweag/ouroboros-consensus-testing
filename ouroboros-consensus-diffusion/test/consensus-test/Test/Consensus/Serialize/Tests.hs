@@ -24,7 +24,12 @@ tests =
     [ testGroup "serialize . deserialize . serialize == serialize"
       [ testProperty "ReifiedTestCase () BlockRep" $
         QC.forAll (genReifiedTestCase (pure 1))
-          (prop_roundtrip_serialize (Proxy @(ReifiedTestCase () BlockRep)))
+          (prop_serialize_weak_inverse (Proxy @(ReifiedTestCase () BlockRep)))
+      ]
+    , testGroup "deserialize . serialize == id"
+      [ testProperty "ReifiedTestCase () BlockRep" $
+        QC.forAll (genReifiedTestCase (pure 1))
+          (prop_serialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
       ]
     ]
 
@@ -48,23 +53,46 @@ genTestBlockTreeAndPointSchedule branchFactor = do
   blockTree <- genTestBlockTree (pure 1)
   -- Create a 'longRangeAttack' schedule based on the generated chains.
   ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
-  reifiedBlockTree <- buildReifiedBlockTree <$> genTestBlockTree branchFactor
+  reifiedBlockTree <- toReifiedBlockTree <$> genTestBlockTree branchFactor
   (,) <$> pure reifiedBlockTree <*> pure (fmap getBlockRep ps)
 
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
 genTestBlockTree = fmap gtBlockTree . genChains
 
-
-
--- | serialize . deserialize . serialize == serialize
+-- | deserialize . serialize == id
 --
 -- This property tests that after deserializing and then serializing again,
 -- the JSON is the same as the original. We test this by comparing JSON values
 -- rather than the Haskell values because the data types don't have Eq instances.
-prop_roundtrip_serialize
+prop_serialize_inverse
+  :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a, Show a, Eq a)
+  => Proxy a -> a -> QC.Property
+prop_serialize_inverse _ value =
+  case runRoundtrip of
+    Left err -> QC.counterexample err False
+    Right () -> QC.property True
+  where
+    runRoundtrip :: Either String ()
+    runRoundtrip = do
+      let json1 = Aeson.toJSON value
+      value' <- Aeson.parseEither Aeson.parseJSON json1
+      if value == value'
+        then Right ()
+        else Left $
+          "Value not stable after round-trip:\n" ++
+          "Original: " ++ show value ++ "\n" ++
+          "After:    " ++ show value'
+
+-- | serialize . deserialize . serialize == serialize
+--
+-- This property tests that if a JSON value was produced by serializing a reified
+-- test case, then deserializing and serializing again gives the same JSON value.
+-- This is weaker than saying that deserialize . serialize == id, but if that
+-- test fails, whether or not this one passes can help with debugging.
+prop_serialize_weak_inverse
   :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a)
   => Proxy a -> a -> QC.Property
-prop_roundtrip_serialize _ value =
+prop_serialize_weak_inverse _ value =
   case runRoundtrip of
     Left err -> QC.counterexample err False
     Right () -> QC.property True

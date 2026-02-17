@@ -67,7 +67,8 @@ data BlockTreeBranch blk = BlockTreeBranch {
   }
   deriving (Show)
 
-
+instance Foldable BlockTreeBranch where
+  foldMap f BlockTreeBranch{..} = foldMap f $ AF.toOldestFirst btbSuffix
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -102,6 +103,10 @@ data BlockTree blk = RawBlockTree {
 
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _
+
+instance Foldable BlockTree where
+  foldMap f BlockTree{..} = foldMap f $ AF.toOldestFirst btTrunk
+    <> concatMap (AF.toOldestFirst . btbSuffix) btBranches
 
 {-# COMPLETE BlockTree #-}
 

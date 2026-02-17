@@ -285,6 +285,7 @@ library unstable-consensus-conformance-testlib
     QuickCheck,
     aeson,
     base,
+    base64-bytestring,
     binary,
     bytestring,
     cardano-crypto-class ^>=2.2,

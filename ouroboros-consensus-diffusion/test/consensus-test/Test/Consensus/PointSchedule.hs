@@ -196,7 +196,7 @@ data PointSchedule blk = PointSchedule {
     -- If no point in the schedule is larger than 'psMinEndTime',
     -- the simulation will still run until this time is reached.
     psMinEndTime :: Time
-  } deriving (Show, Generic, Functor, Foldable, Traversable)
+  } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]

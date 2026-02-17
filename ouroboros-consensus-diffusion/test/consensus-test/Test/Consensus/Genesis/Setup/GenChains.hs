@@ -20,6 +20,7 @@ import           Control.Monad (replicateM)
 import qualified Control.Monad.Except as Exn
 import           Data.List as List (foldl')
 import           Data.Proxy (Proxy (..))
+import qualified Data.Text as T
 import           Data.Time.Clock (DiffTime)
 import qualified Data.Vector.Unboxed as Vector
 import           Data.Word (Word8)
@@ -28,6 +29,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
                      (SecurityParam (SecurityParam))
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (HeaderFields(..))
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
@@ -208,9 +210,14 @@ class IssueTestBlock blk where
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
     -> blk
-  getForkNumber
-    :: blk
-    -> Int
+  encodeHeaderHash
+    :: Proxy blk -- HeaderHash is a noninjective type family.
+    -> HeaderHash blk
+    -> T.Text
+  decodeHeaderHash
+    :: Proxy blk
+    -> T.Text
+    -> Either String (HeaderHash blk)
 
 instance IssueTestBlock TestBlock where
   issueFirstBlock fork slot =
@@ -219,7 +226,11 @@ instance IssueTestBlock TestBlock where
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk
-  getForkNumber = fromIntegral . TB.getTestBlockForkNo
+  encodeHeaderHash _ = T.pack . show
+  decodeHeaderHash _ t =
+    case reads (T.unpack t) of
+      [(h, "")] -> Right (h :: HeaderHash TestBlock)
+      _         -> Left $ "Failed to decode header hash: " ++ T.unpack t
 
 -- | Increment the slot number on a 'TestBlock'.
 incSlot :: SlotNo -> TestBlock -> TestBlock

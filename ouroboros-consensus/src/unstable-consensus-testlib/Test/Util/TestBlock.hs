@@ -211,6 +211,14 @@ testHashFromList = TestHash . NE.fromList . reverse
 instance Show TestHash where
   show (TestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
 
+instance Read TestHash where
+  readsPrec _ s =
+    [ (testHashFromList path, rest)
+    | ("(testHashFromList ", rest1) <- lex s
+    , (listStr, rest) <- lex rest1
+    , [(path, "")] <- [reads listStr]
+    ]
+
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
