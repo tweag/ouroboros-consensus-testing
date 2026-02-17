@@ -146,7 +146,7 @@ instance (Aeson.ToJSON blk) => Aeson.ToJSON (SchedulePoint blk) where
   toJSON schedulePoint =
     let
       woToJSON :: WithOrigin blk -> Aeson.Value
-      woToJSON Origin = Aeson.object ["origin" .= True]
+      woToJSON Origin = Aeson.String "origin"
       woToJSON (At x) = Aeson.object ["at" .= Aeson.toJSON x]
     in
       Aeson.object
@@ -161,11 +161,9 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (SchedulePoint blk) where
   parseJSON = Aeson.withObject "SchedulePoint" $ \v -> do
     let
       woParseJSON :: Aeson.Value -> Aeson.Parser (WithOrigin blk)
-      woParseJSON = Aeson.withObject "WithOrigin" $ \wo -> do
-        mOrigin <- wo Aeson..:? "origin"
-        case mOrigin of
-          Just True -> return Origin
-          _ -> At <$> wo Aeson..: "at"
+      woParseJSON (Aeson.String "origin") = pure Origin
+      woParseJSON (Aeson.Object o) = At <$> o Aeson..: "at"
+      woParseJSON _ = fail "Invalid WithOrigin value"
     pointType <- v Aeson..: "pointType"
     pointValue <- v Aeson..: "point"
     let value = woParseJSON pointValue
