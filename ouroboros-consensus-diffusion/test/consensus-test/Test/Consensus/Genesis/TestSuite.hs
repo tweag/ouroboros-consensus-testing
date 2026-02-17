@@ -213,8 +213,7 @@ adjustTestSuiteWithKey adjust (TestSuite m) = TestSuite $
 adjustMaxSize :: (Int -> Int) -> TestSuite blk key -> TestSuite blk key
 adjustMaxSize = adjustMaxSizeWithKey (const True)
 
--- | Similar to @adjustMaxSize@, but the adjustment has access
--- to the @key@.
+-- | Similar to @adjustMaxSize@, but the adjustment has access to the @key@.
 adjustMaxSizeWithKey
   :: (key -> Int -> Int) -> TestSuite blk key -> TestSuite blk key
 adjustMaxSizeWithKey f = adjustTestSuiteWithKey
@@ -226,12 +225,12 @@ adjustMaxSizeWithKey f = adjustTestSuiteWithKey
       | otherwise = max 1 n
 
 -- | Apply an adjustment to the desired number of passing test cases for
--- a conformance test.
+-- a conformance test. Unless the previous number is less than or equal to zero,
+-- the new desired number will be at least 1.
 adjustDesiredPasses :: (Int -> Int) -> TestSuite blk key -> TestSuite blk key
 adjustDesiredPasses = adjustDesiredPassesWithKey (const True)
 
--- | Similar to @adjustDesiredPasses@, but the adjustment has access
--- to the @key@.
+-- | Similar to @adjustDesiredPasses@, but the adjustment has access to the @key@.
 adjustDesiredPassesWithKey
   :: (key -> Int -> Int) -> TestSuite blk key -> TestSuite blk key
 adjustDesiredPassesWithKey keyPred f = adjustTestSuiteWithKey
