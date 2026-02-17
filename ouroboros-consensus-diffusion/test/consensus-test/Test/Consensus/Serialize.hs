@@ -77,6 +77,7 @@ data ReifiedTestCase key u = ReifiedTestCase
 
   , rtcPointSchedule :: PointSchedule u
 
+  -- TODO: When this module moves to cardano-node, use ShrinkIndex here.
   , rtcShrinkIndex :: [Int]
   -- ^ Used for specifying a shrink of the generated test case.
 
