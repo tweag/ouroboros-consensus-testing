@@ -39,7 +39,6 @@ module Test.Util.TestBlock (
   , firstBlockWithPayload
   , forkBlock
   , modifyFork
-  , getTestBlockForkNo
   , successorBlockWithPayload
   , testHashFromList
   , unTestHash
@@ -796,10 +795,6 @@ modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
 modifyFork g tb@TestBlockWith{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
     { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
-
-getTestBlockForkNo :: TestBlock -> Word64
-getTestBlockForkNo TestBlockWith{tbHash = UnsafeTestHash (forkNum NE.:| _)} =
-  fromIntegral forkNum
 
 -- Increase the fork number of the given block:
 -- @[.., f]@ -> @[.., f+1]@
