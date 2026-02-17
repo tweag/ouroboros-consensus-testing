@@ -29,12 +29,10 @@ import           Cardano.Slotting.Slot (SlotNo(..))
 import qualified Data.Aeson as Aeson
 import           Data.Aeson ((.=), (.:))
 import qualified Data.Aeson.Types as Aeson
-import qualified Data.ByteString.Base64 as Base64
 import           Data.Foldable (toList)
 import qualified Data.Map as M
 import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
-import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.Block as AF
 import           Test.Consensus.BlockTree
@@ -192,7 +190,7 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
     -- | Represent an 'AnchoredFragment' as a list of 'BlockRep's, from oldest to
     -- newest, plus the anchor.
     anchoredFragmentToAnchoredForkOldestFirst
-      :: (AF.HasHeader blk) => Int -> AF.AnchoredFragment blk -> AnchoredFork BlockRep
+      :: Int -> AF.AnchoredFragment blk -> AnchoredFork BlockRep
     anchoredFragmentToAnchoredForkOldestFirst forkNo fragment = AnchoredFork
       (getAnchorRep fragment) (fmap getBlockRep (AF.toOldestFirst fragment)) forkNo
 
@@ -243,7 +241,7 @@ getBlockRep blk =
 
 -- | Get the summary of an anchored fragment's anchor.
 getAnchorRep
-  :: forall blk. (Show (AF.HeaderHash blk), IssueTestBlock blk)
+  :: forall blk. (IssueTestBlock blk)
   => AF.AnchoredFragment blk -> Maybe BlockRep
 getAnchorRep fragment = case AF.anchor fragment of
   AF.AnchorGenesis -> Nothing
