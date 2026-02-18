@@ -36,7 +36,6 @@ import           Test.Consensus.PointSchedule.Peers (peers', peersOnlyAdversary,
 import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
                      scheduleHeaderPoint, scheduleTipPoint)
-import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
@@ -106,7 +105,9 @@ test_wait description mustTimeout =
     )
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
+    
     shrinkPeerSchedules
+    
     ( \_ stateView ->
         case exceptionsByComponent ChainSyncClient stateView of
           []                                           -> not mustTimeout
@@ -239,12 +240,12 @@ test_serve description mustTimeout =
         psMinEndTime = Time 0
       }
 
--- NOTE: Same as 'LoE.test_adversaryHitsTimeouts' with LoP instead of timeouts.
+-- | Same as 'Test.Consensus.Genesis.LoE.test_adversaryHitsTimeouts'
+-- with LoP instead of timeouts.
 test_delayAttack ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
-  , Ord blk
   ) =>
   String -> Bool -> ConformanceTest blk
 test_delayAttack description lopEnabled =
@@ -255,6 +256,7 @@ test_delayAttack description lopEnabled =
             ps = delaySchedule gtBlockTree
         pure $ gt' $> ps
     )
+    
     -- NOTE: Crucially, there must not be timeouts for this test.
     ( defaultSchedulerConfig
         { scEnableChainSyncTimeouts = False,
@@ -262,7 +264,14 @@ test_delayAttack description lopEnabled =
           scEnableLoP = lopEnabled
         }
     )
-    shrinkPeerSchedules
+    
+    -- Here we can't shrink because we exploit the properties of the point
+    -- schedule to wait at the end of the test for the adversaries to get
+    -- disconnected, by adding an extra point.
+    -- If this point gets removed by the shrinker, we lose that property and
+    -- the test becomes useless.
+    (\_ _ -> mempty)
+    
     ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
         let -- The tip of the blocktree trunk.
             treeTipPoint = AF.headPoint $ btTrunk gtBlockTree
@@ -278,11 +287,7 @@ test_delayAttack description lopEnabled =
               [fromException -> Just CSClient.EmptyBucket] -> lopEnabled
               _                                            -> False
 
-            -- Here we can't shrink because we exploit the properties of the point schedule to wait
-            -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
-            -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-            -- REVIEW: Does this /inner/ call to noShrinking behaves as the outer call from before?
-         in noShrinking $ selectedCorrect && exceptionsCorrect
+         in selectedCorrect && exceptionsCorrect
     )
   where
     delaySchedule :: (HasHeader blk) => BlockTree blk -> PointSchedule blk

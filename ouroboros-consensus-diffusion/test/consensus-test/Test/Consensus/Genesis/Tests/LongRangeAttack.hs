@@ -22,7 +22,6 @@ import           Test.Consensus.Genesis.Setup.Classifiers
 import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run (defaultSchedulerConfig)
 import qualified Test.Consensus.PointSchedule as Schedule
-import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 
@@ -45,7 +44,7 @@ testSuite ::
 testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
   -- attack but Genesis is not. This requires to first fix it as mentioned
-  -- above.
+  -- below.
   LongRangeAttack -> test_longRangeAttack
 
 -- | This test case features a long-range attack with one adversary. The honest
@@ -75,9 +74,11 @@ test_longRangeAttack =
 
     defaultSchedulerConfig
 
-    shrinkPeerSchedules
+    -- NOTE: Use `shrinkPeerSchedules` when testing Genesis.
+    (\_ _ -> mempty)
 
-    -- NOTE: This is the expected behaviour of Praos to be reversed with
-    -- Genesis. But we are testing Praos for the moment. Do not forget to remove
-    -- 'noShrinking' above when removing this negation.
+    -- FIXME: This is the expected behaviour of Praos to be reversed with
+    -- Genesis. But we are testing Praos for the moment. Do not forget to
+    -- use `Test.Consensus.PointSchedule.Shrinking.shrinkPeerSchedules`
+    -- above when removing this negation.
     (\genesisTest -> not . selectedHonestChain genesisTest)

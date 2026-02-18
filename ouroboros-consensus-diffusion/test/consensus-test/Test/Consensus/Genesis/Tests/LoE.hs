@@ -28,10 +28,8 @@ import           Test.Consensus.PeerSimulator.Run (SchedulerConfig (..),
 import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Peers (peers')
-import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
                      scheduleHeaderPoint, scheduleTipPoint)
-import           Test.QuickCheck (noShrinking)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
@@ -55,7 +53,6 @@ testSuite ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
-  , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "LoE" $ newTestSuite $ \case
   AdversaryDoesNotHitTimeouts ->
@@ -77,7 +74,6 @@ test_adversaryHitsTimeouts ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
-  , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_adversaryHitsTimeouts description timeoutsEnabled =
     mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
@@ -93,7 +89,14 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
             scEnableLoP = False
           }
       )
-      shrinkPeerSchedules
+      
+      -- Here we can't shrink because we exploit the properties of the
+      -- point schedule to wait at the end of the test for the
+      -- adversaries to get disconnected, by adding an extra point.
+      -- If this point gets removed by the shrinker, we lose that
+      -- property and the test becomes useless.
+      (\_ _ -> mempty)
+      
       ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
           let -- The tip of the blocktree trunk.
               treeTipPoint = AF.headPoint $ btTrunk gtBlockTree
@@ -108,12 +111,7 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
                 [] -> not timeoutsEnabled
                 [fromException -> Just (ExceededTimeLimit _)] -> timeoutsEnabled
                 _ -> False
-              -- Here we can't shrink because we exploit the properties of the
-              -- point schedule to wait at the end of the test for the
-              -- adversaries to get disconnected, by adding an extra point.
-              -- If this point gets removed by the shrinker, we lose that
-              -- property and the test becomes useless.
-           in noShrinking $ selectedCorrect && exceptionsCorrect
+           in selectedCorrect && exceptionsCorrect
       )
   where
     delaySchedule :: HasHeader blk => BlockTree blk -> PointSchedule blk
