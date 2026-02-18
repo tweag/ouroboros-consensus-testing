@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module Test.Consensus.Serialize.Tests (tests) where
@@ -37,14 +38,12 @@ genReifiedTestCase
   :: (QC.Arbitrary key)
   => QC.Gen Word -> QC.Gen (ReifiedTestCase key BlockRep)
 genReifiedTestCase branchFactor = do
-  (blockTree, pointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
-  ReifiedTestCase
-    <$> QC.arbitrary
-    <*> QC.arbitrary
-    <*> pure blockTree
-    <*> pure pointSchedule
-    <*> QC.arbitrary
-    <*> QC.arbitrary
+  (rtcBlockTree, rtcPointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
+  rtcTestKey <- QC.arbitrary
+  rtcTestVersion <- QC.arbitrary
+  rtcShrinkIndex <- fmap (fmap QC.getNonNegative) QC.arbitrary
+  rtcSeed <- QC.arbitrary
+  pure ReifiedTestCase{..}
 
 genTestBlockTreeAndPointSchedule
   :: QC.Gen Word -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule BlockRep)
@@ -79,9 +78,9 @@ prop_serialize_inverse _ value =
       if value == value'
         then Right ()
         else Left $
-          "Value not stable after round-trip:\n" ++
-          "Original: " ++ show value ++ "\n" ++
-          "After:    " ++ show value'
+          "Value not stable after round-trip:\n" <>
+          "Original: " <> show value <> "\n" <>
+          "After:    " <> show value'
 
 -- | serialize . deserialize . serialize == serialize
 --
