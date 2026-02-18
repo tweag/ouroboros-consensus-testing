@@ -20,7 +20,7 @@ module Test.Consensus.Genesis.TestSuite (
   , TestSuite
   , Universe
   , at
-  , get
+  , getTest
   , group
   , mkTestSuite
   , newTestSuite
@@ -113,8 +113,8 @@ at (TestSuite m) k = case Map.lookup k m of
   Just t  -> t
   Nothing -> error "TestSuite.get: Impossible! A TestSuite is a total map."
 
-get :: Ord key => TestSuite blk key -> key ->  ConformanceTest blk
-get suite = tsTest . at suite
+getTest :: TestSuiteData blk ->  ConformanceTest blk
+getTest = tsTest
 
 -- | Appends the given string to the prefix of all tests.
 group :: String -> TestSuite blk key -> TestSuite blk key
