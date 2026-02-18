@@ -89,14 +89,14 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
             scEnableLoP = False
           }
       )
-      
+
       -- Here we can't shrink because we exploit the properties of the
       -- point schedule to wait at the end of the test for the
       -- adversaries to get disconnected, by adding an extra point.
       -- If this point gets removed by the shrinker, we lose that
       -- property and the test becomes useless.
       (\_ _ -> mempty)
-      
+
       ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
           let -- The tip of the blocktree trunk.
               treeTipPoint = AF.headPoint $ btTrunk gtBlockTree

@@ -105,9 +105,9 @@ test_wait description mustTimeout =
     )
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
-    
+
     shrinkPeerSchedules
-    
+
     ( \_ stateView ->
         case exceptionsByComponent ChainSyncClient stateView of
           []                                           -> not mustTimeout
@@ -256,7 +256,7 @@ test_delayAttack description lopEnabled =
             ps = delaySchedule gtBlockTree
         pure $ gt' $> ps
     )
-    
+
     -- NOTE: Crucially, there must not be timeouts for this test.
     ( defaultSchedulerConfig
         { scEnableChainSyncTimeouts = False,
@@ -264,14 +264,14 @@ test_delayAttack description lopEnabled =
           scEnableLoP = lopEnabled
         }
     )
-    
+
     -- Here we can't shrink because we exploit the properties of the point
     -- schedule to wait at the end of the test for the adversaries to get
     -- disconnected, by adding an extra point.
     -- If this point gets removed by the shrinker, we lose that property and
     -- the test becomes useless.
     (\_ _ -> mempty)
-    
+
     ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
         let -- The tip of the blocktree trunk.
             treeTipPoint = AF.headPoint $ btTrunk gtBlockTree
