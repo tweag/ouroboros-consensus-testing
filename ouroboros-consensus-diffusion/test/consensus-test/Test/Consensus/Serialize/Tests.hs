@@ -60,9 +60,8 @@ genTestBlockTree = fmap gtBlockTree . genChains
 
 -- | deserialize . serialize == id
 --
--- This property tests that after deserializing and then serializing again,
--- the JSON is the same as the original. We test this by comparing JSON values
--- rather than the Haskell values because the data types don't have Eq instances.
+-- This property asserts that values survive after being serialized
+-- and then deserialized.
 prop_serialize_inverse
   :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a, Show a, Eq a)
   => Proxy a -> a -> QC.Property
@@ -75,9 +74,9 @@ prop_serialize_inverse _ value =
     runRoundtrip = do
       let json1 = Aeson.toJSON value
       value' <- Aeson.parseEither Aeson.parseJSON json1
-      if value == value'
-        then Right ()
-        else Left $
+      case value == value' of
+        True -> Right ()
+        False -> Left $
           "Value not stable after round-trip:\n" <>
           "Original: " <> show value <> "\n" <>
           "After:    " <> show value'
@@ -101,9 +100,9 @@ prop_serialize_weak_inverse _ value =
       let json1 = Aeson.toJSON value
       value' <- Aeson.parseEither Aeson.parseJSON json1
       let json2 = Aeson.toJSON (value' :: a)
-      if json1 == json2
-        then Right ()
-        else Left $
+      case json1 == json2 of
+        True -> Right ()
+        False -> Left $
           "JSON not stable after round-trip:\n" ++
           "Original: " ++ show json1 ++ "\n" ++
           "After:    " ++ show json2

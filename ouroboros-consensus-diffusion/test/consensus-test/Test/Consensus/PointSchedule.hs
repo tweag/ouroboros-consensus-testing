@@ -67,7 +67,8 @@ import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import           Data.Time (DiffTime)
+import qualified Data.Text as T
+import           Data.Time (DiffTime, picosecondsToDiffTime, diffTimeToPicoseconds)
 import           Data.Word (Word64)
 import           GHC.Generics
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
@@ -107,6 +108,7 @@ import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
+import           Text.Read (readMaybe)
 
 
 prettyPointSchedule ::
@@ -201,16 +203,27 @@ peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]
 peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
 
 instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
-  toJSON schedule = Aeson.object
-    [ "schedule" .= psSchedule schedule
-    , "startOrder" .= psStartOrder schedule
-    , "minEndTime" .= psMinEndTime schedule
-    ]
+  toJSON schedule =
+    let
+      -- JSON's native number type uses a floating point representation,
+      -- but @Time@ is essentially an integer. To avoid tricky precision
+      -- issues we store it as a string.
+      timeToJSON (Time diff) =
+          Aeson.String $ T.pack $ show $ diffTimeToPicoseconds diff
+    in Aeson.object
+      [ "schedule" .= psSchedule schedule
+      , "startOrder" .= psStartOrder schedule
+      , "minEndTime" .= timeToJSON (psMinEndTime schedule)
+      ]
 instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
   parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
     psSchedule <- v .: "schedule"
     psStartOrder <- v .: "startOrder"
-    psMinEndTime <- v .: "minEndTime"
+    psMinEndTime <- do
+      mPicos <- v .: "minEndTime"
+      case readMaybe mPicos of
+        Just picos -> pure $ Time (picosecondsToDiffTime picos)
+        Nothing -> fail $ "Invalid minEndTime: " ++ mPicos
     pure $ PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------
@@ -516,24 +529,15 @@ uniformPointsWithExtraHonestPeersAndDowntime
 newtype ForecastRange = ForecastRange { unForecastRange :: Word64 }
   deriving (Show, Generic)
 
-instance Aeson.ToJSON ForecastRange
-instance Aeson.FromJSON ForecastRange
-
 data LoPBucketParams = LoPBucketParams {
   lbpCapacity :: Integer,
   lbpRate     :: Rational
   } deriving (Show, Generic)
 
-instance Aeson.ToJSON LoPBucketParams
-instance Aeson.FromJSON LoPBucketParams
-
 data CSJParams = CSJParams {
     csjpJumpSize :: SlotNo
   }
   deriving (Show, Generic)
-
-instance Aeson.ToJSON CSJParams
-instance Aeson.FromJSON CSJParams
 
 -- | Similar to 'ChainSyncTimeout' for BlockFetch. Only the states in which the
 -- server has agency are specified. REVIEW: Should it be upstreamed to
@@ -542,9 +546,6 @@ data BlockFetchTimeout = BlockFetchTimeout
   { busyTimeout      :: Maybe DiffTime,
     streamingTimeout :: Maybe DiffTime
   } deriving (Show, Generic)
-
-instance Aeson.ToJSON BlockFetchTimeout
-instance Aeson.FromJSON BlockFetchTimeout
 
 -- | All the data used by point schedule tests.
 data GenesisTest blk schedule = GenesisTest
