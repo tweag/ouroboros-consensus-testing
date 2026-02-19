@@ -6,16 +6,16 @@ module Test.Consensus.Serialize.Tests (tests) where
 
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
-import           Data.Proxy (Proxy(..))
-import qualified Test.QuickCheck as QC
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-
+import           Data.Proxy (Proxy (..))
 import           Test.Consensus.BlockTree
-import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest(..), genChains)
+import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest (..),
+                     genChains)
 import           Test.Consensus.Genesis.ShrinkIndex
 import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Consensus.Serialize
+import qualified Test.QuickCheck as QC
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Util.TestBlock (TestBlock)
 
 
@@ -105,7 +105,8 @@ prop_serialize_weak_inverse _ value =
       let json2 = Aeson.toJSON (value' :: a)
       case json1 == json2 of
         True -> Right ()
-        False -> Left $
-          "JSON not stable after round-trip:\n" ++
-          "Original: " ++ show json1 ++ "\n" ++
-          "After:    " ++ show json2
+        False -> Left $ mconcat
+          [ "JSON not stable after round-trip:\n"
+          , "Original: " , show json1 , "\n"
+          , "After:    " , show json2
+          ]

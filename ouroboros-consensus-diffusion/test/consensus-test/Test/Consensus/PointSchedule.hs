@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -6,11 +8,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE RecordWildCards #-}
 
 -- | Data types and generators for point schedules.
 --
@@ -60,8 +60,8 @@ import           Control.Monad (replicateM)
 import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
                      diffTime)
 import           Control.Monad.ST (ST)
+import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
-import           Data.Aeson ((.=), (.:))
 import qualified Data.Aeson.Types as Aeson
 import           Data.Bifunctor (first)
 import           Data.Foldable (toList)
@@ -70,7 +70,8 @@ import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import qualified Data.Text as T
-import           Data.Time (DiffTime, picosecondsToDiffTime, diffTimeToPicoseconds)
+import           Data.Time (DiffTime, diffTimeToPicoseconds,
+                     picosecondsToDiffTime)
 import           Data.Word (Word64)
 import           GHC.Generics
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
@@ -98,7 +99,8 @@ import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
-                     Peers (..), getPeerIds, peers', peersList, peersToJSON, peersFromJSON)
+                     Peers (..), getPeerIds, peers', peersFromJSON, peersList,
+                     peersToJSON)
 import           Test.Consensus.PointSchedule.SinglePeer
                      (IsTrunk (IsBranch, IsTrunk), PeerScheduleParams (..),
                      SchedulePoint (..), defaultPeerScheduleParams, mergeOn,
@@ -239,7 +241,7 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
         Aeson.String t ->
           case readMaybe (T.unpack t) of
             Just picos -> pure $ Time (picosecondsToDiffTime picos)
-            Nothing -> fail $ "Invalid time: " ++ T.unpack t
+            Nothing    -> fail $ "Invalid time: " ++ T.unpack t
         _ -> fail "Time should be a string"
     psSchedule <- v .: "schedule" >>= peersFromJSON peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
@@ -247,7 +249,7 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
       mPicos <- v .: "minEndTime"
       case readMaybe mPicos of
         Just picos -> pure $ Time (picosecondsToDiffTime picos)
-        Nothing -> fail $ "Invalid minEndTime: " ++ mPicos
+        Nothing    -> fail $ "Invalid minEndTime: " ++ mPicos
     pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------

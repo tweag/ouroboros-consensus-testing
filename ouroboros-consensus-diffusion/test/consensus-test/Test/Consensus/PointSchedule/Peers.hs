@@ -7,8 +7,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module contains the definition of point schedule _peers_ as well as
 -- all kind of utilities to manipulate them.
@@ -30,22 +30,22 @@ module Test.Consensus.PointSchedule.Peers (
   , isAdversarialPeerId
   , isHonestPeerId
   , peers'
+  , peersFromJSON
   , peersFromPeerIdList
   , peersFromPeerIdList'
   , peersFromPeerList
   , peersList
   , peersOnlyAdversary
   , peersOnlyHonest
+  , peersToJSON
   , toMap
   , toMap'
   , unionWithKey
   , updatePeer
-  , peersToJSON
-  , peersFromJSON
   ) where
 
+import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
-import           Data.Aeson ((.=), (.:))
 import qualified Data.Aeson.Types as Aeson
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
@@ -88,10 +88,10 @@ instance Hashable PeerId
 instance Aeson.ToJSON PeerId where
   toJSON peerId = Aeson.object
     [ "peerType" .= case peerId of
-        HonestPeer _ -> "honest" :: String
+        HonestPeer _      -> "honest" :: String
         AdversarialPeer _ -> "adversarial" :: String
     , "peerIndex" .= case peerId of
-        HonestPeer n -> n
+        HonestPeer n      -> n
         AdversarialPeer n -> n
     ]
 
@@ -100,7 +100,7 @@ instance Aeson.FromJSON PeerId where
     peerType <- v Aeson..: "peerType"
     peerIndex <- v Aeson..: "peerIndex"
     case peerType of
-      "honest" -> pure $ HonestPeer peerIndex
+      "honest"      -> pure $ HonestPeer peerIndex
       "adversarial" -> pure $ AdversarialPeer peerIndex
       (_ :: String) -> fail $ "Unknown peerType: " ++ peerType
 
@@ -191,7 +191,7 @@ peersFromJSON valueFromJSON = Aeson.withObject "Peers" $ \v -> do
         peerIdStr <- obj .: "peerId"
         case readMaybe (T.unpack peerIdStr) of
           Just pid -> pure pid
-          Nothing -> fail $ "Invalid PeerId: " ++ T.unpack peerIdStr
+          Nothing  -> fail $ "Invalid PeerId: " ++ T.unpack peerIdStr
       value <- obj .: "value" >>= valueFromJSON
       pure (peerId, value)
   honestPeersList <- v .: "honestPeers"

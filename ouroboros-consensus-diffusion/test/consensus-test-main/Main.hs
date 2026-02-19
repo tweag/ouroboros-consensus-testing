@@ -1,19 +1,17 @@
 module Main (main) where
 
-import qualified Test.Consensus.GSM (tests)
+import qualified Test.Consensus.BlockTree.Tests (tests)
 import qualified Test.Consensus.Genesis.Tests (tests)
+import qualified Test.Consensus.GSM (tests)
 import qualified Test.Consensus.HardFork.Combinator (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.PeerSimulator.Tests (tests)
 import qualified Test.Consensus.PointSchedule.Shrinking.Tests (tests)
 import qualified Test.Consensus.PointSchedule.Tests (tests)
-import qualified Test.Consensus.BlockTree.Tests (tests)
 import qualified Test.Consensus.Serialize.Tests (tests)
-import Test.Tasty
-import Test.Util.TestEnv
-  ( defaultMainWithTestEnv
-  , defaultTestEnvConfig
-  )
+import           Test.Tasty
+import           Test.Util.TestEnv (defaultMainWithTestEnv,
+                     defaultTestEnvConfig)
 
 main :: IO ()
 main = defaultMainWithTestEnv defaultTestEnvConfig tests

@@ -1,12 +1,12 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -22,11 +22,11 @@ module Test.Consensus.BlockTree (
   , PathAnchoredAtSource (..)
   , addBranch
   , addBranch'
-  , fromTrunkAndBranches
   , allFragments
   , deforestBlockTree
   , findFragment
   , findPath
+  , fromTrunkAndBranches
   , isAncestorOf
   , isStrictAncestorOf
   , mkTrunk
@@ -92,8 +92,8 @@ instance Foldable BlockTreeBranch where
 -- REVIEW: Find another name so as not to clash with 'BlockTree' from
 -- `unstable-consensus-testlib/Test/Util/TestBlock.hs`.
 data BlockTree blk = RawBlockTree {
-    btTrunk'    :: AF.AnchoredFragment blk,
-    btBranches' :: [BlockTreeBranch blk],
+    btTrunk'     :: AF.AnchoredFragment blk,
+    btBranches'  :: [BlockTreeBranch blk],
 
     -- Cached deforestation of the block tree. This gets queried
     -- many times and there's no reason to rebuild the tree every time.

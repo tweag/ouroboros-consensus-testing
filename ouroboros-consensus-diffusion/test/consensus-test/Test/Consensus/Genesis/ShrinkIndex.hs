@@ -4,38 +4,35 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | Indexing the shrinking tree
-module Test.Consensus.Genesis.ShrinkIndex
-  ( ShrinkTree,
-    ShrinkIndex,
-    makeShrinkTree,
-    arbitraryShrinkTree,
-    arbitraryShrinkIndexWithin,
-    lookup,
-    stretch,
-    succ,
-    next,
-    child,
-    narrowShrinkTree,
-    path,
-    parent,
-  )
-where
+module Test.Consensus.Genesis.ShrinkIndex (
+    ShrinkIndex
+  , ShrinkTree
+  , arbitraryShrinkIndexWithin
+  , arbitraryShrinkTree
+  , child
+  , lookup
+  , makeShrinkTree
+  , narrowShrinkTree
+  , next
+  , parent
+  , path
+  , stretch
+  , succ
+  ) where
 
-import           Prelude hiding (lookup, succ)
-
-import qualified Data.Aeson as Aeson
 import           Control.Comonad (Comonad (..))
 import           Control.Monad ((>=>))
+import qualified Data.Aeson as Aeson
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Sequence (Seq (..), fromList)
 import qualified Data.Text as T
-import           Text.Read (readMaybe)
-
-import           Test.QuickCheck (Arbitrary (..), Gen, Testable (property), frequency, listOf,
-                   suchThat)
+import           Prelude hiding (lookup, succ)
+import           Test.QuickCheck (Arbitrary (..), Gen, Testable (property),
+                     frequency, listOf, suchThat)
 import           Test.QuickCheck.Checkers (EqProp (..), eq)
+import           Text.Read (readMaybe)
 
 -- | Each 'ShrinkIndex' represents a unique path along a 'ShrinkTree'. Its monoidal
 -- operation corresponds to concatenating one path onto the other, and its
@@ -59,7 +56,7 @@ instance Aeson.FromJSON ShrinkIndex where
   parseJSON = Aeson.withArray "ShrinkIndex" $ \arr -> do
     let parseElement = Aeson.withText "ShrinkIndex element" $ \txt ->
           case readMaybe (T.unpack txt) of
-            Just v -> pure v
+            Just v  -> pure v
             Nothing -> fail $ "Invalid ShrinkIndex element: " ++ T.unpack txt
     Ix . fromList <$> mapM parseElement (toList arr)
 
@@ -149,10 +146,10 @@ child n = Ix $ fromList [n]
 
 -- | The index of the next sibling node, or 'mempty' if the index contains no calls to 'child'.
 next :: ShrinkIndex -> ShrinkIndex
-next (Ix Empty) = mempty
+next (Ix Empty)      = mempty
 next (Ix (xs :|> x)) = Ix (xs :|> (x + 1))
 
 -- | The index of the parent node.
 parent :: ShrinkIndex -> Maybe ShrinkIndex
-parent (Ix Empty) = Nothing
+parent (Ix Empty)      = Nothing
 parent (Ix (xs :|> _)) = Just $ Ix xs

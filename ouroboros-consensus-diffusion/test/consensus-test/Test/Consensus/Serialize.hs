@@ -1,43 +1,43 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Test.Consensus.Serialize (
-    ReifiedTestCase(..)
-  , toReifiedTestCase
-  , fromReifiedTestCase
-  , serializeReifiedTestCase
+    BlockRep (..)
+  , FormatVersion (..)
+  , ReifiedBlockTree (..)
+  , ReifiedTestCase (..)
+  , TestVersion (..)
   , deserializeReifiedTestCase
-  , ReifiedBlockTree(..)
-  , toReifiedBlockTree
   , fromReifiedBlockTree
-  , BlockRep(..)
+  , fromReifiedTestCase
   , getBlockRep
-  , TestVersion(..)
-  , FormatVersion(..)
-) where
+  , serializeReifiedTestCase
+  , toReifiedBlockTree
+  , toReifiedTestCase
+  ) where
 
-import           Cardano.Slotting.Slot (SlotNo(..))
+import           Cardano.Slotting.Slot (SlotNo (..))
+import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
-import           Data.Aeson ((.=), (.:))
 import qualified Data.Aeson.Types as Aeson
 import           Data.Foldable (toList)
 import qualified Data.Map as M
-import           Data.Proxy (Proxy(..))
+import           Data.Proxy (Proxy (..))
 import qualified Data.Text as T
 import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.Block as AF
 import           Test.Consensus.BlockTree
-import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock(..))
+import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock (..))
 import           Test.Consensus.Genesis.ShrinkIndex
 import           Test.Consensus.PointSchedule
 import qualified Test.QuickCheck as QC
@@ -65,25 +65,25 @@ import           Text.Read
 -- serialize block summaries ('BlockRep') since that is all the consensus
 -- tests need.
 data ReifiedTestCase key u = ReifiedTestCase
-  { rtcTestKey :: key
+  { rtcTestKey       :: key
   -- ^ A key used by the test runner to identify a test or group of tests.
 
-  , rtcTestVersion :: TestVersion
+  , rtcTestVersion   :: TestVersion
   -- ^ Since serialized tests can exist beyond a single run, and tests can
   -- change over time, we need a way for the test case to specify which version
   -- of the test it was generated for.
 
-  , rtcBlockTree :: ReifiedBlockTree u
+  , rtcBlockTree     :: ReifiedBlockTree u
   -- ^ The block tree is represented as a trunk and a list of branches,
   -- oldest nodes first.
 
   , rtcPointSchedule :: PointSchedule u
 
   -- TODO: When this module moves to cardano-node, use ShrinkIndex here.
-  , rtcShrinkIndex :: ShrinkIndex
+  , rtcShrinkIndex   :: ShrinkIndex
   -- ^ Used for specifying a shrink of the generated test case.
 
-  , rtcSeed :: QCGen
+  , rtcSeed          :: QCGen
   -- ^ Used for replaying tests.
   } deriving (Show, Functor, Foldable, Traversable)
 
@@ -112,7 +112,7 @@ instance Aeson.ToJSON FormatVersion where
 instance Aeson.FromJSON FormatVersion where
   parseJSON = Aeson.withText "FormatVersion" $ \txt -> case txt of
     "0.0" -> pure FormatVersion_0_0
-    _ -> fail $ "Unknown format version: " ++ T.unpack txt
+    _     -> fail $ "Unknown format version: " ++ T.unpack txt
 
 -- | A version number for the property test itself (as represented by 'key').
 -- This is included to allow for backward compatibility in case the property
@@ -126,7 +126,7 @@ instance Aeson.ToJSON TestVersion where
 instance Aeson.FromJSON TestVersion where
   parseJSON = Aeson.withText "TestVersion" $ \txt ->
     case readMaybe (T.unpack txt) of
-      Just v -> pure (TestVersion v)
+      Just v  -> pure (TestVersion v)
       Nothing -> fail $ "Invalid TestVersion: " ++ T.unpack txt
 
 instance QC.Arbitrary TestVersion where
@@ -169,7 +169,7 @@ fromReifiedTestCase f ReifiedTestCase{..} = do
 -- the anchor is a trunk node; this is enough to reconstruct the tree without
 -- redundant information.
 data ReifiedBlockTree blk = ReifiedBlockTree
-  { rbtTrunk :: AnchoredFork blk
+  { rbtTrunk    :: AnchoredFork blk
   , rbtBranches :: [AnchoredFork blk]
   } deriving (Eq, Show, Functor, Foldable, Traversable)
 
@@ -240,7 +240,7 @@ instance (Aeson.FromJSON BlockRep) where
     let
       readWord64 :: String -> Aeson.Parser Word64
       readWord64 str = case readMaybe str of
-        Just n -> pure n
+        Just n  -> pure n
         Nothing -> fail $ "Invalid integer: " ++ str
     brSlotNo <- do
       slotStr <- v .: "slotNo"
@@ -285,7 +285,7 @@ data AnchoredFork u = AnchoredFork
 instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
   toJSON AnchoredFork{alAnchor, alBlocks, alForkNo} = Aeson.object
     [ "anchor" .= case alAnchor of
-        Nothing -> Aeson.String "genesis"
+        Nothing  -> Aeson.String "genesis"
         Just rep -> Aeson.toJSON rep
     , "blocks" .= alBlocks
     , "forkNo" .= (show alForkNo)
@@ -297,12 +297,12 @@ instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
       val <- v .: "anchor"
       case val of
         Aeson.String "genesis" -> pure Nothing
-        _ -> Just <$> Aeson.parseJSON val
+        _                      -> Just <$> Aeson.parseJSON val
     alBlocks <- v .: "blocks"
     alForkNo <- do
       forkNoStr <- v .: "forkNo"
       case readMaybe forkNoStr of
-        Just n -> pure n
+        Just n  -> pure n
         Nothing -> fail $ "Invalid integer: " ++ forkNoStr
     pure AnchoredFork {..}
 
@@ -317,7 +317,7 @@ anchoredForkToAnchoredFragment fragment =
       Nothing -> AF.AnchorGenesis
       Just rep -> case decodeHeaderHash (Proxy :: Proxy blk) (brHash rep) of
         Right hash -> AF.Anchor (brSlotNo rep) hash (brBlockNo rep)
-        Left err -> error err
+        Left err   -> error err
     -- Issue blocks for the headers:
     convertBlockReps :: [BlockRep] -> [blk]
     convertBlockReps reps =
@@ -341,7 +341,7 @@ fromReifiedPointSchedule blockTree schedule =
     lookupBlockRep rep =
       case M.lookup rep blockRepMap of
         Just blk -> Right blk
-        Nothing -> Left $ "Failed to find block for BlockRep: " ++ show rep
+        Nothing  -> Left $ "Failed to find block for BlockRep: " ++ show rep
   in traverse lookupBlockRep schedule
 
 serializeReifiedTestCase
@@ -379,7 +379,7 @@ deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
 deserializeQCGen :: Aeson.Value -> Aeson.Parser QCGen
 deserializeQCGen = Aeson.withText "seed" $ \txt ->
   case readMaybe $ T.unpack txt of
-    Nothing -> fail "unable to parse seed"
+    Nothing  -> fail "unable to parse seed"
     Just gen -> pure gen
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where

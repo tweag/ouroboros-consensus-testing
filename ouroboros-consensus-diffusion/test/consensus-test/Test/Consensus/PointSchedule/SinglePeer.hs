@@ -80,10 +80,10 @@
 -- > |   3.1s | E              | E              | E              |
 -- > +--------+----------------+----------------+----------------+
 --
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.PointSchedule.SinglePeer (
     IsTrunk (..)
   , PeerScheduleParams (..)
@@ -103,8 +103,8 @@ module Test.Consensus.PointSchedule.SinglePeer (
 import           Cardano.Slotting.Slot (WithOrigin (At, Origin), withOrigin)
 import           Control.Arrow (second)
 import           Control.Monad.Class.MonadTime.SI (Time)
-import qualified Data.Aeson as Aeson
 import           Data.Aeson ((.=))
+import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import           Data.List (mapAccumL)
 import           Data.Time.Clock (DiffTime)
@@ -148,9 +148,9 @@ instance (Aeson.ToJSON blk) => Aeson.ToJSON (SchedulePoint blk) where
     in
       Aeson.object
         [ "pointType" .= case schedulePoint of
-            ScheduleTipPoint _ -> "tip" :: String
+            ScheduleTipPoint _    -> "tip" :: String
             ScheduleHeaderPoint _ -> "header"
-            ScheduleBlockPoint _ -> "block"
+            ScheduleBlockPoint _  -> "block"
         , "point" .= woToJSON (schedulePointToBlock schedulePoint)
         ]
 
@@ -159,16 +159,16 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (SchedulePoint blk) where
     let
       woParseJSON :: Aeson.Value -> Aeson.Parser (WithOrigin blk)
       woParseJSON (Aeson.String "origin") = pure Origin
-      woParseJSON (Aeson.Object o) = At <$> o Aeson..: "at"
-      woParseJSON _ = fail "Invalid WithOrigin value"
+      woParseJSON (Aeson.Object o)        = At <$> o Aeson..: "at"
+      woParseJSON _                       = fail "Invalid WithOrigin value"
     pointType <- v Aeson..: "pointType"
     pointValue <- v Aeson..: "point"
     let value = woParseJSON pointValue
     case pointType :: String of
-      "tip" -> fmap ScheduleTipPoint value
+      "tip"    -> fmap ScheduleTipPoint value
       "header" -> fmap ScheduleHeaderPoint value
-      "block" -> fmap ScheduleBlockPoint value
-      _ -> fail $ "Unknown pointType: " <> pointType
+      "block"  -> fmap ScheduleBlockPoint value
+      _        -> fail $ "Unknown pointType: " <> pointType
 
 -- | Parameters for generating a schedule for a single peer.
 --
