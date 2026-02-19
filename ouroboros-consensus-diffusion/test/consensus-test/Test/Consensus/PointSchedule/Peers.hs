@@ -40,19 +40,24 @@ module Test.Consensus.PointSchedule.Peers (
   , toMap'
   , unionWithKey
   , updatePeer
+  , peersToJSON
+  , peersFromJSON
   ) where
 
 import qualified Data.Aeson as Aeson
 import           Data.Aeson ((.=), (.:))
+import qualified Data.Aeson.Types as Aeson
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.String (IsString (fromString))
+import qualified Data.Text as T
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Util.Condense (Condense (..),
                      CondenseList (..), PaddingDirection (..),
                      condenseListWithPadding)
+import           Text.Read (readMaybe)
 
 -- | Identifier used to index maps and specify which peer is active during a tick.
 data PeerId
@@ -163,16 +168,42 @@ instance Foldable Peers where
   foldMap f Peers {honestPeers, adversarialPeers} =
     foldMap f honestPeers <> foldMap f adversarialPeers
 
-instance Aeson.ToJSON a => Aeson.ToJSON (Peers a) where
-  toJSON Peers {honestPeers, adversarialPeers} = Aeson.object
-    [ "honestPeers" .= honestPeers
-    , "adversarialPeers" .= adversarialPeers
+peersToJSON
+  :: (a -> Aeson.Value) -> Peers a -> Aeson.Value
+peersToJSON valueToJSON Peers {honestPeers, adversarialPeers} =
+  let
+    pairToJSON (n, v) =
+      Aeson.object
+        [ "peerId" .= (T.pack $ show n)
+        , "value" .= valueToJSON v
+        ]
+  in Aeson.object
+    [ "honestPeers" .= Aeson.listValue pairToJSON (Map.toList honestPeers)
+    , "adversarialPeers" .= Aeson.listValue pairToJSON (Map.toList adversarialPeers)
     ]
+
+peersFromJSON
+  :: (Aeson.Value -> Aeson.Parser a) -> Aeson.Value -> Aeson.Parser (Peers a)
+peersFromJSON valueFromJSON = Aeson.withObject "Peers" $ \v -> do
+  let
+    pairFromJSON = Aeson.withObject "Peer" $ \obj -> do
+      peerId <- do
+        peerIdStr <- obj .: "peerId"
+        case readMaybe (T.unpack peerIdStr) of
+          Just pid -> pure pid
+          Nothing -> fail $ "Invalid PeerId: " ++ T.unpack peerIdStr
+      value <- obj .: "value" >>= valueFromJSON
+      pure (peerId, value)
+  honestPeersList <- v .: "honestPeers"
+  adversarialPeersList <- v .: "adversarialPeers"
+  honestPeers <- Map.fromList <$> Aeson.listParser pairFromJSON honestPeersList
+  adversarialPeers <- Map.fromList <$> Aeson.listParser pairFromJSON adversarialPeersList
+  pure Peers {..}
+
+instance Aeson.ToJSON a => Aeson.ToJSON (Peers a) where
+  toJSON = peersToJSON Aeson.toJSON
 instance Aeson.FromJSON a => Aeson.FromJSON (Peers a) where
-  parseJSON = Aeson.withObject "Peers" $ \v -> do
-    honestPeers <- v .: "honestPeers"
-    adversarialPeers <- v .: "adversarialPeers"
-    pure $ Peers {..}
+  parseJSON = peersFromJSON Aeson.parseJSON
 
 -- | A set of peers with only one honest peer carrying the given value.
 peersOnlyHonest :: a -> Peers a

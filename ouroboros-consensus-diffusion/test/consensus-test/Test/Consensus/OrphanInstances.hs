@@ -19,7 +19,6 @@
 module Test.Consensus.OrphanInstances () where
 
 import Cardano.Slotting.Time (SlotLength)
-import Control.Monad.Class.MonadTime.SI (Time)
 import Data.Aeson
   ( FromJSON (parseJSON)
   , KeyValue ((.=))
@@ -80,8 +79,3 @@ instance (Anchorable v a b, FromJSON a, FromJSON b) => FromJSON (AnchoredSeq v a
 
 instance ToJSON (HeaderHash blk) => ToJSON (Anchor blk)
 instance FromJSON (HeaderHash blk) => FromJSON (Anchor blk)
-
--- *** 'PointSchedule' field related instances
-
-instance ToJSON Time
-instance FromJSON Time

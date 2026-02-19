@@ -33,6 +33,7 @@ import           Data.Foldable (toList)
 import qualified Data.Map as M
 import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
+import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.Block as AF
 import           Test.Consensus.BlockTree
@@ -116,7 +117,16 @@ instance Aeson.FromJSON FormatVersion where
 -- This is included to allow for backward compatibility in case the property
 -- needs to change.
 newtype TestVersion = TestVersion Int
-  deriving (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON)
+  deriving (Eq, Ord, Show)
+
+instance Aeson.ToJSON TestVersion where
+  toJSON (TestVersion v) = Aeson.String (T.pack $ show v)
+
+instance Aeson.FromJSON TestVersion where
+  parseJSON = Aeson.withText "TestVersion" $ \txt ->
+    case readMaybe (T.unpack txt) of
+      Just v -> pure (TestVersion v)
+      Nothing -> fail $ "Invalid TestVersion: " ++ T.unpack txt
 
 instance QC.Arbitrary TestVersion where
   arbitrary = TestVersion <$> QC.choose (0,5)
@@ -217,16 +227,27 @@ data BlockRep = BlockRep
 
 instance (Aeson.ToJSON BlockRep) where
   toJSON BlockRep{ brSlotNo, brHash, brBlockNo } = Aeson.object
-    [ "slotNo" .= brSlotNo
+    -- JSON uses floats to represent numbers, so we use a string
+    -- for the slot number.
+    [ "slotNo" .= show (unSlotNo brSlotNo)
     , "hash" .= brHash
-    , "blockNo" .= brBlockNo
+    , "blockNo" .= show (AF.unBlockNo brBlockNo)
     ]
 
 instance (Aeson.FromJSON BlockRep) where
   parseJSON = Aeson.withObject "BlockRep" $ \v -> do
-    brSlotNo <- v .: "slotNo"
+    let
+      readWord64 :: String -> Aeson.Parser Word64
+      readWord64 str = case readMaybe str of
+        Just n -> pure n
+        Nothing -> fail $ "Invalid integer: " ++ str
+    brSlotNo <- do
+      slotStr <- v .: "slotNo"
+      SlotNo <$> readWord64 slotStr
     brHash <- v .: "hash"
-    brBlockNo <- v .: "blockNo"
+    brBlockNo <- do
+      blockNoStr <- v .: "blockNo"
+      AF.BlockNo <$> readWord64 blockNoStr
     pure BlockRep {..}
 
 -- | Summarize a block as a 'BlockRep'. Summarizable block types must
@@ -266,7 +287,7 @@ instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
         Nothing -> Aeson.String "genesis"
         Just rep -> Aeson.toJSON rep
     , "blocks" .= alBlocks
-    , "forkNo" .= alForkNo
+    , "forkNo" .= (show alForkNo)
     ]
 
 instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
@@ -277,7 +298,11 @@ instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
         Aeson.String "genesis" -> pure Nothing
         _ -> Just <$> Aeson.parseJSON val
     alBlocks <- v .: "blocks"
-    alForkNo <- v .: "forkNo"
+    alForkNo <- do
+      forkNoStr <- v .: "forkNo"
+      case readMaybe forkNoStr of
+        Just n -> pure n
+        Nothing -> fail $ "Invalid integer: " ++ forkNoStr
     pure AnchoredFork {..}
 
 anchoredForkToAnchoredFragment

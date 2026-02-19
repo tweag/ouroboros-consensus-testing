@@ -62,7 +62,9 @@ import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
 import           Control.Monad.ST (ST)
 import qualified Data.Aeson as Aeson
 import           Data.Aeson ((.=), (.:))
+import qualified Data.Aeson.Types as Aeson
 import           Data.Bifunctor (first)
+import           Data.Foldable (toList)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
@@ -96,7 +98,7 @@ import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
-                     Peers (..), getPeerIds, peers', peersList)
+                     Peers (..), getPeerIds, peers', peersList, peersToJSON, peersFromJSON)
 import           Test.Consensus.PointSchedule.SinglePeer
                      (IsTrunk (IsBranch, IsTrunk), PeerScheduleParams (..),
                      SchedulePoint (..), defaultPeerScheduleParams, mergeOn,
@@ -205,26 +207,48 @@ peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
 instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
   toJSON schedule =
     let
+      peerScheduleToJSON :: PeerSchedule blk -> Aeson.Value
+      peerScheduleToJSON = Aeson.listValue $
+        \(time, pt) -> Aeson.object
+          [ "time" .= timeToJSON time
+          , "schedulePoint" .= Aeson.toJSON pt
+          ]
+
       -- JSON's native number type uses a floating point representation,
       -- but @Time@ is essentially an integer. To avoid tricky precision
       -- issues we store it as a string.
       timeToJSON (Time diff) =
           Aeson.String $ T.pack $ show $ diffTimeToPicoseconds diff
     in Aeson.object
-      [ "schedule" .= psSchedule schedule
+      [ "schedule" .= peersToJSON peerScheduleToJSON (psSchedule schedule)
       , "startOrder" .= psStartOrder schedule
       , "minEndTime" .= timeToJSON (psMinEndTime schedule)
       ]
 instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
   parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
-    psSchedule <- v .: "schedule"
+    let
+      peerScheduleFromJSON
+        :: Aeson.Value -> Aeson.Parser (PeerSchedule blk)
+      peerScheduleFromJSON = Aeson.withArray "PeerSchedule" $ flip (.) toList $
+        traverse (Aeson.withObject "PeerScheduleEntry" $ \obj -> do
+          time <- obj .: "time" >>= timeFromJSON
+          point <- obj .: "schedulePoint"
+          pure (time, point))
+
+      timeFromJSON = \case
+        Aeson.String t ->
+          case readMaybe (T.unpack t) of
+            Just picos -> pure $ Time (picosecondsToDiffTime picos)
+            Nothing -> fail $ "Invalid time: " ++ T.unpack t
+        _ -> fail "Time should be a string"
+    psSchedule <- v .: "schedule" >>= peersFromJSON peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
     psMinEndTime <- do
       mPicos <- v .: "minEndTime"
       case readMaybe mPicos of
         Just picos -> pure $ Time (picosecondsToDiffTime picos)
         Nothing -> fail $ "Invalid minEndTime: " ++ mPicos
-    pure $ PointSchedule {..}
+    pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------
 -- Schedule generators

@@ -19,6 +19,8 @@ import           Test.Util.TestBlock (TestBlock)
 
 
 
+-- TODO: Currently using `()` as a dummy key type; this should be replaced
+-- with a proper key type.
 tests :: TestTree
 tests =
   testGroup "JSON Serialization"
