@@ -23,12 +23,15 @@ where
 
 import           Prelude hiding (lookup, succ)
 
+import qualified Data.Aeson as Aeson
 import           Control.Comonad (Comonad (..))
 import           Control.Monad ((>=>))
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Sequence (Seq (..), fromList)
+import qualified Data.Text as T
+import           Text.Read (readMaybe)
 
 import           Test.QuickCheck (Arbitrary (..), Gen, Testable (property), frequency, listOf,
                    suchThat)
@@ -48,6 +51,17 @@ instance Arbitrary ShrinkIndex where
     frequency [(4, child <$> arbitrary), (1, pure mempty)]
 
   shrink (Ix s) = Ix <$> shrink s
+
+instance Aeson.ToJSON ShrinkIndex where
+  toJSON (Ix s) = Aeson.toJSON $ fmap show (toList s)
+
+instance Aeson.FromJSON ShrinkIndex where
+  parseJSON = Aeson.withArray "ShrinkIndex" $ \arr -> do
+    let parseElement = Aeson.withText "ShrinkIndex element" $ \txt ->
+          case readMaybe (T.unpack txt) of
+            Just v -> pure v
+            Nothing -> fail $ "Invalid ShrinkIndex element: " ++ T.unpack txt
+    Ix . fromList <$> mapM parseElement (toList arr)
 
 data ShrinkTree a = Node a [ShrinkTree a] deriving stock (Functor, Foldable, Traversable)
 

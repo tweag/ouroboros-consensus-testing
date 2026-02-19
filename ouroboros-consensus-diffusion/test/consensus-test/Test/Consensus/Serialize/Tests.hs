@@ -13,6 +13,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.Consensus.BlockTree
 import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest(..), genChains)
+import           Test.Consensus.Genesis.ShrinkIndex
 import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Consensus.Serialize
 import           Test.Util.TestBlock (TestBlock)
@@ -43,9 +44,9 @@ genReifiedTestCase branchFactor = do
   (rtcBlockTree, rtcPointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
   rtcTestKey <- QC.arbitrary
   rtcTestVersion <- QC.arbitrary
-  rtcShrinkIndex <- fmap (fmap QC.getNonNegative) QC.arbitrary
+  rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
   rtcSeed <- QC.arbitrary
-  pure ReifiedTestCase{..}
+  pure ReifiedTestCase {..}
 
 genTestBlockTreeAndPointSchedule
   :: QC.Gen Word -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule BlockRep)

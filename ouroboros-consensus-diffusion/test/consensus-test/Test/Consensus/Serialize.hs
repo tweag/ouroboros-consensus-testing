@@ -141,7 +141,7 @@ instance QC.Arbitrary TestVersion where
 -- | Construct a 'ReifiedTestCase' from a concrete test case.
 toReifiedTestCase
   :: (AF.HasHeader blk, IssueTestBlock blk)
-  => key -> TestVersion -> BlockTree blk -> PointSchedule blk -> [Int] -> QCGen
+  => key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> QCGen
   -> ReifiedTestCase key BlockRep
 toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
   ReifiedTestCase
@@ -156,7 +156,7 @@ toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
 -- | Deconstruct a 'ReifiedTestCase' into a type of your choice using a continuation.
 fromReifiedTestCase
   :: forall blk key u. (AF.HasHeader blk, IssueTestBlock blk)
-  => (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> [Int] -> QCGen -> u)
+  => (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> QCGen -> u)
   -> ReifiedTestCase key BlockRep -> Either String u
 fromReifiedTestCase f ReifiedTestCase{..} = do
   blockTree <- fromReifiedBlockTree (Proxy :: Proxy blk) rtcBlockTree
