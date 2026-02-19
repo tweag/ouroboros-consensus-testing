@@ -38,6 +38,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.Block as AF
 import           Test.Consensus.BlockTree
 import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock(..))
+import           Test.Consensus.Genesis.ShrinkIndex
 import           Test.Consensus.PointSchedule
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random
@@ -79,7 +80,7 @@ data ReifiedTestCase key u = ReifiedTestCase
   , rtcPointSchedule :: PointSchedule u
 
   -- TODO: When this module moves to cardano-node, use ShrinkIndex here.
-  , rtcShrinkIndex :: [Int]
+  , rtcShrinkIndex :: ShrinkIndex
   -- ^ Used for specifying a shrink of the generated test case.
 
   , rtcSeed :: QCGen
