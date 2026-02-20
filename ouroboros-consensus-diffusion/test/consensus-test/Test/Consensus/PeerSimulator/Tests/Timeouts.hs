@@ -73,7 +73,7 @@ test_timeouts description mustTimeout =
     -- Here we can't shrink because we exploit the properties of the point schedule to wait
     -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
     -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-    (\_ _ -> [])
+    mempty
 
     (\_ stateView ->
       case exceptionsByComponent ChainSyncClient stateView of

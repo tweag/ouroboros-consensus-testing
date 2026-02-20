@@ -32,7 +32,7 @@ tests = testGroup "Genesis tests" $
 data GenesisTestKey = Uniform !Uniform.TestKey
              | CSJ !CSJ.TestKey
              | GDD !GDD.TestKey
-             | LRA !LongRangeAttack.TestKey
+             | LongRangeAttack !LongRangeAttack.TestKey
              | LoE !LoE.TestKey
              | LoP !LoP.TestKey
   deriving stock (Eq, Ord, Generic)
@@ -50,6 +50,6 @@ testSuite = mkTestSuite $ \case
   Uniform t -> at Uniform.testSuite t
   CSJ t -> at CSJ.testSuite t
   GDD t -> at GDD.testSuite t
-  LRA t -> at LongRangeAttack.testSuite t
+  LongRangeAttack t -> at LongRangeAttack.testSuite t
   LoE t -> at LoE.testSuite t
   LoP t -> at LoP.testSuite t

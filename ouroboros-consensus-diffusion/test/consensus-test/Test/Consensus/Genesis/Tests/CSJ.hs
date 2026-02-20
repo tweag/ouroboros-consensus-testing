@@ -124,6 +124,7 @@ test_csj description adversariesFlag numHonestSchedules = do
           genChainsWithExtraHonestPeers (choose (2, 4)) genForks
           `enrichedWith` genUniformSchedulePoints
     )
+
     ( defaultSchedulerConfig
       { scEnableCSJ = True
       , scEnableLoE = True
@@ -137,7 +138,9 @@ test_csj description adversariesFlag numHonestSchedules = do
       -- downloaded.
       }
     )
+
     shrinkPeerSchedules
+
     ( \gt StateView{svTrace} ->
         let
           -- The list of 'TraceDownloadedHeader' events that are not newer than

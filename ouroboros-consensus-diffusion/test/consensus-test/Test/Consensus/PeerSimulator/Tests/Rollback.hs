@@ -53,7 +53,7 @@ testSuite = group "rollback" . newTestSuite $ \case
   CanRollback -> test_rollback
   CannotRollback -> test_cannotRollback
 
--- | @test_rollback@ tests that the selection of the node under test
+-- | Tests that the selection of the node under test
 -- changes branches when sent a rollback to a block no older than 'k' blocks
 -- before the current selection.
 test_rollback ::
@@ -77,11 +77,11 @@ test_rollback =
     defaultSchedulerConfig
 
     -- No shrinking because the schedule is tiny and hand-crafted
-    (\_ _ -> [])
+    mempty
 
     (\test -> not . hashOnTrunk (gtBlockTree test) . AF.headHash . svSelectedChain)
 
--- @test_cannotRollback@ tests that the selection of the node under test *does
+-- | Tests that the selection of the node under test *does
 -- not* change branches when sent a rollback to a block strictly older than 'k'
 -- blocks before the current selection.
 test_cannotRollback ::
@@ -98,7 +98,7 @@ test_cannotRollback =
     defaultSchedulerConfig
 
     -- No shrinking because the schedule is tiny and hand-crafted
-    (\_ _ -> [])
+    mempty
 
     (\test -> hashOnTrunk (gtBlockTree test) . AF.headHash . svSelectedChain)
 

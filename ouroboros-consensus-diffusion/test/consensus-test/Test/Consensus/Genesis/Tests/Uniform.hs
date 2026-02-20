@@ -247,7 +247,6 @@ test_leashingAttackStalling =
     shrinkPeerSchedules
 
     theProperty
-
   where
     -- | Produces schedules that might cause the node under test to stall.
     --
@@ -301,7 +300,6 @@ test_leashingAttackTimeLimited =
     shrinkPeerSchedules
 
     theProperty
-
   where
     -- | A schedule which doesn't run past the last event of the honest peer
     genTimeLimitedSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
@@ -443,7 +441,6 @@ test_downtime =
         ]) $
         theProperty genesisTest stateView
     )
-
   where
     pointsGeneratorParams gt = PointsGeneratorParams
       { pgpExtraHonestPeers = fromIntegral (gtExtraHonestPeers gt)

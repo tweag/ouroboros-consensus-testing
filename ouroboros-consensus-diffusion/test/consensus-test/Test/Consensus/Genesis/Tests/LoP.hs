@@ -147,9 +147,12 @@ test_waitBehindForecastHorizon =
             gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}
         pure $ gt' $> ps
     )
+
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
+
     shrinkPeerSchedules
+
     ( \_ stateView ->
         case exceptionsByComponent ChainSyncClient stateView of
           [] -> True
@@ -199,9 +202,12 @@ test_serve description mustTimeout =
             gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity, lbpRate}}
         pure $ gt' $> ps
     )
+
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
+
     shrinkPeerSchedules
+
     ( \_ stateView ->
         case exceptionsByComponent ChainSyncClient stateView of
           []                                           -> not mustTimeout
@@ -270,7 +276,7 @@ test_delayAttack description lopEnabled =
     -- disconnected, by adding an extra point.
     -- If this point gets removed by the shrinker, we lose that property and
     -- the test becomes useless.
-    (\_ _ -> mempty)
+    mempty
 
     ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
         let -- The tip of the blocktree trunk.

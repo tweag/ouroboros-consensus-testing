@@ -42,7 +42,7 @@ testSuite ::
   , AF.HasHeader blk
   , Eq blk
   ) => TestSuite blk TestKey
-testSuite = group "ChainSync kill BlockFetch" . newTestSuite $ \case
+testSuite = group "ChainSync kills BlockFetch" . newTestSuite $ \case
   ChainSyncKillsBlockFetch -> test_chainSyncKillsBlockFetch
 
 -- | Check that when the scheduled ChainSync server gets killed, it takes the
@@ -64,7 +64,7 @@ test_chainSyncKillsBlockFetch =
     defaultSchedulerConfig {scEnableChainSyncTimeouts = True}
 
     -- No shrinking because the schedule is tiny and hand-crafted
-    (\_ _ -> [])
+    mempty
 
     ( \_ stateView@StateView {svTipBlock} ->
         svTipBlock == Nothing

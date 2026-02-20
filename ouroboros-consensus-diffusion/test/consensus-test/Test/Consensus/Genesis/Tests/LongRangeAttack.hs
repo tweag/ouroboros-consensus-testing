@@ -74,8 +74,7 @@ test_longRangeAttack =
 
     defaultSchedulerConfig
 
-    -- NOTE: Use `shrinkPeerSchedules` when testing Genesis.
-    (\_ _ -> mempty)
+    mempty
 
     -- FIXME: This is the expected behaviour of Praos to be reversed with
     -- Genesis. But we are testing Praos for the moment. Do not forget to

@@ -95,7 +95,7 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
       -- adversaries to get disconnected, by adding an extra point.
       -- If this point gets removed by the shrinker, we lose that
       -- property and the test becomes useless.
-      (\_ _ -> mempty)
+      mempty
 
       ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
           let -- The tip of the blocktree trunk.
