@@ -216,13 +216,6 @@ data Validity = Valid | Invalid
   deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
-
-instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
-  supportedNodeToNodeVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
-  supportedNodeToClientVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
-
-  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
-
 -- | Test block parametrized on the payload type
 --
 -- For blocks without payload see the 'TestBlock' type alias.
@@ -922,10 +915,10 @@ instance Serialise (RealPoint (TestBlockWith ptype)) where
 -- 'ConvertRawHash' expects a constant-size hash. As a compromise, we allow to
 -- encode hashes with a block length of up to 100.
 instance ConvertRawHash (TestBlockWith ptype) where
-  -- 8 + 1000 * 8: size of the list, and its elements, one Word64 each
+  -- 8 + 100 * 8: size of the list, and its elements, one Word64 each
   hashSize _ = 808
   toRawHash _ (TestHash h)
-      | len > 100 = error $ "SMASH too long: " <> show (len, h)
+      | len > 100 = error $ "hash too long"
       | otherwise      = BL.toStrict . Put.runPut $ do
           Put.putWord64le (fromIntegral len)
           for_ h Put.putWord64le
