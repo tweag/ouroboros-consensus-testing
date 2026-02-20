@@ -222,10 +222,11 @@ instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
       timeToJSON (Time diff) =
           Aeson.String $ T.pack $ show $ diffTimeToPicoseconds diff
     in Aeson.object
-      [ "schedule" .= peersToJSON peerScheduleToJSON (psSchedule schedule)
+      [ "schedule" .= (peersToJSON $ fmap peerScheduleToJSON (psSchedule schedule))
       , "startOrder" .= psStartOrder schedule
       , "minEndTime" .= timeToJSON (psMinEndTime schedule)
       ]
+
 instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
   parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
     let
@@ -243,7 +244,7 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
             Just picos -> pure $ Time (picosecondsToDiffTime picos)
             Nothing    -> fail $ "Invalid time: " ++ T.unpack t
         _ -> fail "Time should be a string"
-    psSchedule <- v .: "schedule" >>= peersFromJSON peerScheduleFromJSON
+    psSchedule <- v .: "schedule" >>= peersFromJSON >>= traverse peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
     psMinEndTime <- do
       mPicos <- v .: "minEndTime"

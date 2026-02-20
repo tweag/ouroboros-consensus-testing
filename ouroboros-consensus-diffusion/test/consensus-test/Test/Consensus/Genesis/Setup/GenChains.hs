@@ -209,14 +209,6 @@ class IssueTestBlock blk where
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
     -> blk
-  encodeHeaderHash
-    :: Proxy blk -- HeaderHash is a noninjective type family.
-    -> HeaderHash blk
-    -> T.Text
-  decodeHeaderHash
-    :: Proxy blk
-    -> T.Text
-    -> Either String (HeaderHash blk)
 
 instance IssueTestBlock TestBlock where
   issueFirstBlock fork slot =
@@ -225,11 +217,6 @@ instance IssueTestBlock TestBlock where
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk
-  encodeHeaderHash _ = T.pack . show
-  decodeHeaderHash _ t =
-    case reads (T.unpack t) of
-      [(h, "")] -> Right (h :: HeaderHash TestBlock)
-      _         -> Left $ "Failed to decode header hash: " ++ T.unpack t
 
 -- | Increment the slot number on a 'TestBlock'.
 incSlot :: SlotNo -> TestBlock -> TestBlock

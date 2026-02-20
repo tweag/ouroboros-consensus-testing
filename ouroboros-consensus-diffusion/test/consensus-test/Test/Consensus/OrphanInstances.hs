@@ -18,29 +18,19 @@
 -- by the abstraction of the block type parameter.
 module Test.Consensus.OrphanInstances () where
 
-import Cardano.Slotting.Time (SlotLength)
-import Data.Aeson
-  ( FromJSON (parseJSON)
-  , KeyValue ((.=))
-  , ToJSON (toJSON)
-  , object
-  , withObject
-  , (.:)
-  )
-import GHC.Generics (Generic)
-import Ouroboros.Consensus.Block.Abstract (GenesisWindow (..))
-import Ouroboros.Consensus.Config (SecurityParam (..))
-import Ouroboros.Network.AnchoredFragment (Anchor)
-import Ouroboros.Network.AnchoredSeq
-  ( Anchorable (..)
-  , AnchoredSeq (..)
-  , fromOldestFirst
-  , toOldestFirst
-  )
-import Ouroboros.Network.Block (HeaderHash)
-
-import           Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
-import Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (..))
+import           Cardano.Slotting.Time (SlotLength)
+import           Data.Aeson (FromJSON (parseJSON), KeyValue ((.=)),
+                     ToJSON (toJSON), object, withObject, (.:))
+import           GHC.Generics (Generic)
+import           Ouroboros.Consensus.Block.Abstract (GenesisWindow (..))
+import           Ouroboros.Consensus.Config (SecurityParam (..))
+import           Ouroboros.Network.AnchoredFragment (Anchor)
+import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
+                     AnchoredSeq (..), fromOldestFirst, toOldestFirst)
+import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Network.Protocol.ChainSync.Codec
+                     (ChainSyncTimeout (..))
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (..))
 
 
 
