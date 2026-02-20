@@ -1,14 +1,16 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | Limit on Eagerness tests.
 module Test.Consensus.Genesis.Tests.LoE (
-    test_adversaryHitsTimeouts
-  , tests
+    TestKey
+  , testSuite
   ) where
 
 import           Data.Functor (($>))
@@ -20,37 +22,43 @@ import           Ouroboros.Network.Driver.Limits
                      (ProtocolLimitFailure (ExceededTimeLimit))
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..))
 import           Test.Consensus.Genesis.Setup
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run (SchedulerConfig (..),
                      defaultSchedulerConfig)
 import           Test.Consensus.PeerSimulator.StateView
 import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.Peers (peers')
-import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
 import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
                      scheduleHeaderPoint, scheduleTipPoint)
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
-import           Test.Util.TestBlock (TestBlock)
 
--- | General adjustment of required property test passes.
+-- | Default adjustment of required property test passes.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
--- | General adjustment of max test case size.
+-- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
 
-tests :: TestTree
-tests =
-  testGroup
-    "LoE"
-    [ testProperty "adversary does not hit timeouts" (prop_adversaryHitsTimeouts "adversary does not hit timeouts" False)
-    , testProperty "adversary hits timeouts" (prop_adversaryHitsTimeouts "adversary hits timeouts" True)
-    ]
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = AdversaryDoesNotHitTimeouts
+             | AdversaryHitsTimeouts
+  deriving stock (Eq, Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
+
+testSuite ::
+  ( HasHeader blk
+  , HasHeader (Header blk)
+  , IssueTestBlock blk
+  ) => TestSuite blk TestKey
+testSuite = group "LoE" $ newTestSuite $ \case
+  AdversaryDoesNotHitTimeouts ->
+    test_adversaryHitsTimeouts "adversary does not hit timeouts" False
+  AdversaryHitsTimeouts ->
+    test_adversaryHitsTimeouts "adversary hits timeouts" True
 
 -- | Tests that the selection advances in presence of the LoE when a peer is
 -- killed by something that is not LoE-aware, eg. the timeouts. This test
@@ -62,22 +70,13 @@ tests =
 -- stuck at the intersection between trunk and other chain.
 --
 -- NOTE: Same as 'LoP.prop_delayAttack' with timeouts instead of LoP.
-prop_adversaryHitsTimeouts :: String -> Bool -> Property
-prop_adversaryHitsTimeouts description =
-  -- Here we can't shrink because we exploit the properties of the point schedule to wait
-  -- at the end of the test for the adversaries to get disconnected, by adding an extra point.
-  -- If this point gets removed by the shrinker, we lose that property and the test becomes useless.
-  noShrinking . runConformanceTest @TestBlock . test_adversaryHitsTimeouts description
-
-
 test_adversaryHitsTimeouts ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
-  , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_adversaryHitsTimeouts description timeoutsEnabled =
-    mkConformanceTest description desiredPasses testMaxSize
+    mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree
@@ -90,7 +89,14 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
             scEnableLoP = False
           }
       )
-      shrinkPeerSchedules
+
+      -- Here we can't shrink because we exploit the properties of the
+      -- point schedule to wait at the end of the test for the
+      -- adversaries to get disconnected, by adding an extra point.
+      -- If this point gets removed by the shrinker, we lose that
+      -- property and the test becomes useless.
+      mempty
+
       ( \GenesisTest {gtBlockTree} stateView@StateView {svSelectedChain} ->
           let -- The tip of the blocktree trunk.
               treeTipPoint = AF.headPoint $ btTrunk gtBlockTree

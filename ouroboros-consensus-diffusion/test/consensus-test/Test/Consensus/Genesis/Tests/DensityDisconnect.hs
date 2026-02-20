@@ -1,12 +1,15 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | Genesis density disconnect tests.
 module Test.Consensus.Genesis.Tests.DensityDisconnect (
-    test_densityDisconnectTriggersChainSel
+    TestKey
+  , testSuite
   , tests
   ) where
 
@@ -47,6 +50,7 @@ import           Test.Consensus.BlockTree
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers (classifiers,
                      genesisWindowAfterIntersection)
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run
                      (SchedulerConfig (scEnableLoE), defaultSchedulerConfig)
 import           Test.Consensus.PeerSimulator.StateView
@@ -71,21 +75,35 @@ import           Test.Util.TersePrinting (terseHFragment, terseHWTFragment,
                      terseHeader)
 import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
 
-desiredPasses :: Int -> Int
-desiredPasses = (* 10)
+-- | Default adjustment of required property test passes.
+-- Can be set individually on each test definition.
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (* 10)
 
-testMaxSize :: Int -> Int
-testMaxSize = (`div` 5)
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustTestMaxSize :: Int -> Int
+adjustTestMaxSize = (`div` 5)
+
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = TriggersChainSelection
+  deriving stock (Eq,Ord,Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
+
+testSuite ::
+  ( HasHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => TestSuite blk TestKey
+testSuite = group "density disconnect" $ newTestSuite $ \case
+  TriggersChainSelection -> test_densityDisconnectTriggersChainSel
 
 tests :: TestTree
 tests =
-  testGroup "gdd" [
-    -- TODO: Migrate this two non-genesis-test properties?
-    -- NOTE: They are applied the same adjustments.
-    testProperty "basic" prop_densityDisconnectStatic,
-    testProperty "monotonicity" prop_densityDisconnectMonotonic,
-    testProperty "re-triggers chain selection on disconnection" prop_densityDisconnectTriggersChainSel
-  ]
+  testGroup "density disconnect"
+    [ testProperty "basic" prop_densityDisconnectStatic
+    , testProperty "monotonicity" prop_densityDisconnectMonotonic
+    ]
 
 branchTip :: AnchoredFragment TestBlock -> Tip TestBlock
 branchTip =
@@ -483,16 +501,13 @@ prop_densityDisconnectMonotonic =
 -- | Tests that a GDD disconnection re-triggers chain selection, i.e. when the current
 -- selection is blocked by LoE, and the leashing adversary reveals it is not dense enough,
 -- it gets disconnected and then the selection progresses.
-prop_densityDisconnectTriggersChainSel :: Property
-prop_densityDisconnectTriggersChainSel = runConformanceTest @TestBlock test_densityDisconnectTriggersChainSel
-
 test_densityDisconnectTriggersChainSel ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
 test_densityDisconnectTriggersChainSel =
-  mkConformanceTest "re-triggers chain selection on disconnection" desiredPasses testMaxSize
+  mkConformanceTest "re-triggers chain selection on disconnection" adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree

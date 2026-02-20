@@ -1,41 +1,51 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
+-- | Long range attack tests.
 module Test.Consensus.Genesis.Tests.LongRangeAttack (
-    test_longRangeAttack
-  , tests
+    TestKey
+  , testSuite
   ) where
 
 import           Data.Functor (($>))
-import           Ouroboros.Consensus.Block.Abstract (GetHeader)
+import           Ouroboros.Consensus.Block.Abstract (GetHeader, HasHeader)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Setup.Classifiers
                      (allAdversariesForecastable, allAdversariesSelectable,
                      classifiers)
+import           Test.Consensus.Genesis.TestSuite
 import           Test.Consensus.PeerSimulator.Run (defaultSchedulerConfig)
 import qualified Test.Consensus.PointSchedule as Schedule
-import           Test.Consensus.PointSchedule.Shrinking (shrinkPeerSchedules)
-import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (TestBlock)
 
-desiredPasses :: Int -> Int
-desiredPasses = (`div` 10)
+-- | Default adjustment of required property test passes.
+-- Can be set individually on each test definition.
+adjustDesiredPasses :: Int -> Int
+adjustDesiredPasses = (`div` 10)
 
-tests :: TestTree
-tests =
-  testGroup "long range attack"
-    [ -- NOTE: We want to keep this test to show that Praos is vulnerable to this
-      -- attack but Genesis is not. This requires to first fix it as mentioned
-      -- above.
-      testProperty "one adversary" prop_longRangeAttack
-    ]
+-- | Each value of this type uniquely corresponds to a test defined in this module.
+data TestKey = LongRangeAttack
+  deriving stock (Eq,Ord, Generic)
+  deriving (Universe, Finite) via GenericUniverse TestKey
+
+testSuite ::
+   (HasHeader blk
+  , GetHeader blk
+  , IssueTestBlock blk
+  , Ord blk
+  ) => TestSuite blk TestKey
+testSuite = group "long range attack" $ newTestSuite $ \case
+  -- NOTE: We want to keep this test to show that Praos is vulnerable to this
+  -- attack but Genesis is not. This requires to first fix it as mentioned
+  -- below.
+  LongRangeAttack -> test_longRangeAttack
 
 -- | This test case features a long-range attack with one adversary. The honest
 -- peer serves the block tree trunk, while the adversary serves its own chain,
@@ -43,12 +53,6 @@ tests =
 -- The adversary serves the chain more rapidly than the honest peer. We check at
 -- the end that the selection is honest. This property does not hold with Praos,
 -- but should hold with Genesis.
-prop_longRangeAttack :: Property
-prop_longRangeAttack =
-  -- NOTE: `shrinkPeerSchedules` only makes sense for tests that expect the
-  -- honest node to win. Hence the `noShrinking`.
-  noShrinking $ runConformanceTest @TestBlock test_longRangeAttack
-
 test_longRangeAttack ::
    forall blk.
   ( AF.HasHeader blk
@@ -57,7 +61,7 @@ test_longRangeAttack ::
   , Ord blk
   ) => ConformanceTest blk
 test_longRangeAttack =
-  mkConformanceTest "one adversary" desiredPasses id
+  mkConformanceTest "one adversary" adjustDesiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)
@@ -70,9 +74,10 @@ test_longRangeAttack =
 
     defaultSchedulerConfig
 
-    shrinkPeerSchedules
+    mempty
 
-    -- NOTE: This is the expected behaviour of Praos to be reversed with
-    -- Genesis. But we are testing Praos for the moment. Do not forget to remove
-    -- 'noShrinking' above when removing this negation.
+    -- FIXME: This is the expected behaviour of Praos to be reversed with
+    -- Genesis. But we are testing Praos for the moment. Do not forget to
+    -- use `Test.Consensus.PointSchedule.Shrinking.shrinkPeerSchedules`
+    -- above when removing this negation.
     (\genesisTest -> not . selectedHonestChain genesisTest)
