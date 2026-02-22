@@ -64,14 +64,27 @@ genReifiedTestCase branchFactor = do
   pure ReifiedTestCase {..}
 
 genTestBlockTreeAndPointSchedule
-  :: QC.Gen Word -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule (SlotNo, BlockNo))
-genTestBlockTreeAndPointSchedule branchFactor = do
-  -- Create a block tree with @1@ alternative chain.
-  blockTree <- genTestBlockTree (pure 1)
-  -- Create a 'longRangeAttack' schedule based on the generated chains.
-  ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
-  reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
-  pure (reifiedBlockTree, toReifiedPointSchedule ps)
+  :: QC.Gen Word
+  -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule (SlotNo, BlockNo))
+genTestBlockTreeAndPointSchedule branchFactor = QC.oneof
+  [ do
+      -- Create a block tree with @1@ alternative chain.
+      blockTree <- genTestBlockTree (pure 1)
+      -- Create a 'longRangeAttack' schedule based on the generated chains.
+      ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
+      reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
+      pure (reifiedBlockTree, toReifiedPointSchedule ps)
+  , do
+      -- Create a block tree with @branchFactor@ alternative chains.
+      blockTree <- genTestBlockTree branchFactor
+      -- Create a 'uniform' schedule based on the generated chains.
+      ps <- Schedule.stToGen $ Schedule.uniformPoints
+        (Schedule.PointsGeneratorParams
+          {pgpExtraHonestPeers = 1, pgpDowntime = Schedule.NoDowntime})
+        blockTree
+      reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
+      pure (reifiedBlockTree, toReifiedPointSchedule ps)
+  ]
 
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
 genTestBlockTree = fmap gtBlockTree . genChains
