@@ -42,7 +42,7 @@ tests = testGroup "JSON Serialization"
   , testGroup "fromReifiedBlockTree . toReifiedBlockTree == id"
     [ testProperty "BlockTree TestBlock  <===>  ReifiedBlockTree BlockRep" $
       QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
-        (prop_reified_block_tree_conversion (Proxy @TestBlock))
+        (prop_reified_block_tree_conversion)
     ]
   , test_fromReifiedBlockTree_cases
   ]
@@ -185,8 +185,8 @@ prop_serialize_weak_inverse _ value =
 -- | fromReifiedBlockTree . toReifiedBlockTree == id
 prop_reified_block_tree_conversion
   :: forall blk. (Show blk, Eq blk, HasHeader blk, IssueTestBlock blk)
-  => Proxy blk -> BlockTree blk -> QC.Property
-prop_reified_block_tree_conversion proxy blockTree =
+  => BlockTree blk -> QC.Property
+prop_reified_block_tree_conversion blockTree =
   let
     reified = toReifiedBlockTree blockTree
     cannotConvertMsg err = mconcat
@@ -195,7 +195,7 @@ prop_reified_block_tree_conversion proxy blockTree =
       , "ReifiedBlockTree: ", show reified, "\n"
       , "Error: ", err
       ]
-  in case fromReifiedBlockTree proxy reified of
+  in case fromReifiedBlockTree reified of
       Left err              -> QC.counterexample (cannotConvertMsg err) False
       Right (blockTree', _) -> eqBlockTree blockTree blockTree'
 
@@ -367,7 +367,7 @@ test_fromReifiedBlockTree_case title parts =
   testProperty title $
     let
       (rTrunk, rBranches, bTrunk, bBranches) = parts
-      actual = fmap fst $ fromReifiedBlockTree (Proxy @TestBlock) $ ReifiedBlockTree rTrunk rBranches
+      actual = fmap fst $ fromReifiedBlockTree $ ReifiedBlockTree rTrunk rBranches
       expect = fromTrunkAndBranches bTrunk bBranches
       cannotConvertMsg err = mconcat
         [ "Failed to convert from ReifiedBlockTree to BlockTree:\n"

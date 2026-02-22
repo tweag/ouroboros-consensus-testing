@@ -148,7 +148,7 @@ fromReifiedTestCase
   => (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed -> u)
   -> ReifiedTestCase key BlockRep -> Either String u
 fromReifiedTestCase f ReifiedTestCase{..} = do
-  (blockTree, knownBlocks) <- fromReifiedBlockTree (Proxy :: Proxy blk) rtcBlockTree
+  (blockTree, knownBlocks) <- fromReifiedBlockTree rtcBlockTree
   pointSchedule <- fromReifiedPointSchedule knownBlocks rtcPointSchedule
   pure $ f rtcTestKey rtcTestVersion blockTree pointSchedule rtcShrinkIndex rtcSeed
 
@@ -349,9 +349,9 @@ type KnownBlocks blk = M.Map (SlotNo, AF.BlockNo) blk
 -- to keep it simple.
 fromReifiedBlockTree
   :: forall blk. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
-  => Proxy blk -> ReifiedBlockTree BlockRep
+  => ReifiedBlockTree BlockRep
   -> Either String (BlockTree blk, KnownBlocks blk)
-fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
+fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   let
     -- Convert the anchor. If it is not genesis, we look up the
     -- block in a map of previously issued blocks.
