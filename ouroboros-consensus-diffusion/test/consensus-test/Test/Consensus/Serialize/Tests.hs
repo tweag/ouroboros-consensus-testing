@@ -47,25 +47,185 @@ tests = testGroup "JSON Serialization"
   , test_fromReifiedBlockTree_cases
   ]
 
+
+
+-- Generators and Shrinkers --
+------------------------------
+
+genReifiedTestCase
+  :: (QC.Arbitrary key)
+  => QC.Gen Word -> QC.Gen (ReifiedTestCase key BlockRep)
+genReifiedTestCase branchFactor = do
+  (rtcBlockTree, rtcPointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
+  rtcTestKey <- QC.arbitrary
+  rtcTestVersion <- QC.arbitrary
+  rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
+  rtcSeed <- fmap Seed QC.arbitrary
+  pure ReifiedTestCase {..}
+
+genTestBlockTreeAndPointSchedule
+  :: QC.Gen Word -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule (SlotNo, BlockNo))
+genTestBlockTreeAndPointSchedule branchFactor = do
+  -- Create a block tree with @1@ alternative chain.
+  blockTree <- genTestBlockTree (pure 1)
+  -- Create a 'longRangeAttack' schedule based on the generated chains.
+  ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
+  reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
+  pure (reifiedBlockTree, toReifiedPointSchedule ps)
+
+genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
+genTestBlockTree = fmap gtBlockTree . genChains
+
+shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
+shrinkBlockTree (BlockTree trunk branches) = mconcat
+  [ -- Shrink the branches first, if any. This avoids
+    -- removing trunk nodes to which branches are attached.
+    case branches of
+      [] -> []
+      _:_ -> do
+        -- Shrink the branch suffixes, and filter out any that become empty.
+        -- If all branches were shorter than the trunk before, then they still are.
+        branches' <- fmap (filter (shareAnchorButNoBlocksWith trunk) . filter (not . AF.null)) $
+          QC.shrinkList shrinkAnchoredFragment $ fmap btbSuffix branches
+        case fromTrunkAndBranches trunk branches' of
+          Nothing -> []
+          Just bt -> pure bt
+
+  , -- Shrink the trunk, removing any branches whose anchors are removed.
+    do
+      trunk' <- shrinkAnchoredFragment trunk
+      case fromTrunkAndBranches trunk' $ fmap btbSuffix branches of
+        Nothing -> []
+        Just bt ->
+          let
+              -- Filter out shrinks where the trunk is shorter than the longest branch.
+              BlockTree shrunkTrunk shrunkBranches = bt
+              trunkLength = AF.length shrunkTrunk
+              maxBranchLength = maximum (0 : fmap (AF.length . btbFull) shrunkBranches)
+            in case compare trunkLength maxBranchLength of
+              GT -> pure bt
+              _  -> []
+  ]
+
+shareAnchorButNoBlocksWith
+  :: (HasHeader blk) => AF.AnchoredFragment blk -> AF.AnchoredFragment blk -> Bool
+shareAnchorButNoBlocksWith fragment1 fragment2 =
+  case AF.intersect fragment1 fragment2 of
+    Nothing -> False
+    Just (prefix1, prefix2, _, _) -> min (AF.length prefix1) (AF.length prefix2) > 0
+
+-- | If the fragment is not empty, drop the most recent block.
+shrinkAnchoredFragment
+  :: (HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
+shrinkAnchoredFragment fragment = case AF.toNewestFirst fragment of
+  []     -> []
+  _:rest -> pure $ AF.fromNewestFirst (AF.anchor fragment) rest
+
+
+
+-- Properties --
+----------------
+
+-- | deserialize . serialize == id
+--
+-- This property asserts that values survive after being serialized
+-- and then deserialized.
+prop_serialize_inverse
+  :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a, Show a, Eq a)
+  => Proxy a -> a -> QC.Property
+prop_serialize_inverse _ value =
+  let
+    json1 = Aeson.toJSON value
+    cannotParseMsg err = mconcat
+      [ "Unable to parse JSON:\n"
+      , "JSON: " , show json1 , "\n"
+      , "Error: " , err
+      ]
+    valueNotStableMsg deserializedValue = mconcat
+      [ "Value not stable after round-trip:\n"
+      , "Original: " , show value , "\n"
+      , "After:    " , show deserializedValue
+      ]
+  in case Aeson.parseEither Aeson.parseJSON json1 of
+    Left err -> QC.counterexample (cannotParseMsg err) False
+    Right value' -> case value == value' of
+      False -> QC.counterexample (valueNotStableMsg value') False
+      True  -> QC.property True
+
+-- | serialize . deserialize . serialize == serialize
+--
+-- This property tests that if a JSON value was produced by serializing a reified
+-- test case, then deserializing and serializing again gives the same JSON value.
+-- This is weaker than saying that deserialize . serialize == id, but if that
+-- test fails, whether or not this one passes can help with debugging.
+prop_serialize_weak_inverse
+  :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a)
+  => Proxy a -> a -> QC.Property
+prop_serialize_weak_inverse _ value =
+  let
+    json1 = Aeson.toJSON value
+    cannotParseMsg err = mconcat
+      [ "Unable to parse JSON:\n"
+      , "JSON: " , show json1 , "\n"
+      , "Error: " , err
+      ]
+    jsonNotStableMsg reserializedValue = mconcat
+      [ "JSON not stable after round-trip:\n"
+      , "Original: " , show json1 , "\n"
+      , "After:    " , show reserializedValue
+      ]
+  in case Aeson.parseEither Aeson.parseJSON json1 of
+    Left err -> QC.counterexample (cannotParseMsg err) False
+    Right value' ->
+      let json2 = Aeson.toJSON (value' :: a)
+      in case json1 == json2 of
+        False -> QC.counterexample (jsonNotStableMsg json2) False
+        True  -> QC.property True
+
+-- | fromReifiedBlockTree . toReifiedBlockTree == id
+prop_reified_block_tree_conversion
+  :: forall blk. (Show blk, Eq blk, HasHeader blk, IssueTestBlock blk)
+  => Proxy blk -> BlockTree blk -> QC.Property
+prop_reified_block_tree_conversion proxy blockTree =
+  let
+    reified = toReifiedBlockTree blockTree
+    cannotConvertMsg err = mconcat
+      [ "Unable to convert from ReifiedBlockTree to BlockTree:\n"
+      , "BlockTree: ", show blockTree, "\n"
+      , "ReifiedBlockTree: ", show reified, "\n"
+      , "Error: ", err
+      ]
+  in case fromReifiedBlockTree proxy reified of
+      Left err              -> QC.counterexample (cannotConvertMsg err) False
+      Right (blockTree', _) -> eqBlockTree blockTree blockTree'
+
+
+
+-- Test Cases for fromReifiedBlockTree --
+-----------------------------------------
+
 -- | Specific input output pairs for testing 'fromReifiedBlockTree'. These are
 -- intended to demonstrate the expected semantics of slot number assignments.
 test_fromReifiedBlockTree_cases :: TestTree
 test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
   testGroup "fromReifiedBlockTree cases"
-  [ test_fromReifiedBlockTree_case "Empty trunk, no branches"
+  [ test_fromReifiedBlockTree_case
+    "Empty trunk, no branches"
     ( AnchoredFork Nothing mempty 0
     , []
     , AF.fromOldestFirst AF.AnchorGenesis mempty
     , []
     )
-  , test_fromReifiedBlockTree_case "Trunk with 1 block, no branches"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 1 block, no branches"
     ( AnchoredFork Nothing [BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}] 0
     , [] :: [AnchoredFork BlockRep]
     , AF.fromOldestFirst AF.AnchorGenesis
       [makeTestBlock [0] 0 Valid]
     , []
     )
-  , test_fromReifiedBlockTree_case "Trunk with 2 blocks, no branches"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 2 blocks, no branches"
     ( AnchoredFork Nothing
       [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
       , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
@@ -77,7 +237,8 @@ test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
       ]
     , []
     )
-  , test_fromReifiedBlockTree_case "Trunk with 3 blocks, no branches"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 3 blocks, no branches"
     ( AnchoredFork Nothing
       [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
       , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
@@ -91,7 +252,8 @@ test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
       ]
     , []
     )
-  , test_fromReifiedBlockTree_case "Trunk with 2 blocks, 1 branch at genesis"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 2 blocks, 1 branch at genesis"
     ( AnchoredFork Nothing
       [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
       , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
@@ -108,7 +270,8 @@ test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
         [makeTestBlock [1] 0 Valid]
       ]
     )
-  , test_fromReifiedBlockTree_case "Trunk with 3 blocks, 1 branch from block"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 3 blocks, 1 branch from block"
     ( AnchoredFork Nothing
       [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
       , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
@@ -128,7 +291,8 @@ test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
         ]
       ]
     )
-  , test_fromReifiedBlockTree_case "Trunk with 3 blocks, 2 branches from genesis and block"
+  , test_fromReifiedBlockTree_case
+    "Trunk with 3 blocks, 2 branches from genesis and block"
     ( AnchoredFork Nothing
       [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
       , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
@@ -203,7 +367,7 @@ test_fromReifiedBlockTree_case title parts =
   testProperty title $
     let
       (rTrunk, rBranches, bTrunk, bBranches) = parts
-      actual = fromReifiedBlockTree (Proxy @TestBlock) $ ReifiedBlockTree rTrunk rBranches
+      actual = fmap fst $ fromReifiedBlockTree (Proxy @TestBlock) $ ReifiedBlockTree rTrunk rBranches
       expect = fromTrunkAndBranches bTrunk bBranches
       cannotConvertMsg err = mconcat
         [ "Failed to convert from ReifiedBlockTree to BlockTree:\n"
@@ -218,6 +382,7 @@ test_fromReifiedBlockTree_case title parts =
         (Nothing, _) -> QC.counterexample "Expected block tree is invalid" False
         (_, Left err) -> QC.counterexample (cannotConvertMsg err) False
 
+-- Are two block trees equal?
 eqBlockTree
   :: (StandardHash blk, Show blk, Eq blk)
   => BlockTree blk -- ^ Actual value
@@ -240,146 +405,3 @@ eqBlockTree (BlockTree trunk1 branches1) (BlockTree trunk2 branches2) =
           ]
       in QC.counterexample msg $ QC.property (branches1 == branches2)
     ]
-
-genReifiedTestCase
-  :: (QC.Arbitrary key)
-  => QC.Gen Word -> QC.Gen (ReifiedTestCase key BlockRep)
-genReifiedTestCase branchFactor = do
-  (rtcBlockTree, rtcPointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
-  rtcTestKey <- QC.arbitrary
-  rtcTestVersion <- QC.arbitrary
-  rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
-  rtcSeed <- fmap Seed QC.arbitrary
-  pure ReifiedTestCase {..}
-
-genTestBlockTreeAndPointSchedule
-  :: QC.Gen Word -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule BlockRep)
-genTestBlockTreeAndPointSchedule branchFactor = do
-  -- Create a block tree with @1@ alternative chain.
-  blockTree <- genTestBlockTree (pure 1)
-  -- Create a 'longRangeAttack' schedule based on the generated chains.
-  ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
-  reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
-  pure (reifiedBlockTree, fmap fst $ fst $ runWithSlotNo (getBlockReps ps) 0)
-
-genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
-genTestBlockTree = fmap gtBlockTree . genChains
-
-shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
-shrinkBlockTree (BlockTree trunk branches) = mconcat
-  [ -- Shrink the branches first, if any. This avoids
-    -- removing trunk nodes to which branches are attached.
-    case branches of
-      [] -> []
-      _:_ -> do
-        -- Shrink the branch suffixes, and filter out any that become empty.
-        -- If all branches were shorter than the trunk before, then they still are.
-        branches' <- fmap (filter (shareAnchorButNoBlocksWith trunk) . filter (not . AF.null)) $
-          QC.shrinkList shrinkAnchoredFragment $ fmap btbSuffix branches
-        case fromTrunkAndBranches trunk branches' of
-          Nothing -> []
-          Just bt -> pure bt
-
-  , -- Shrink the trunk, removing any branches whose anchors are removed.
-    do
-      trunk' <- shrinkAnchoredFragment trunk
-      case fromTrunkAndBranches trunk' $ fmap btbSuffix branches of
-        Nothing -> []
-        Just bt ->
-          let
-              -- Filter out shrinks where the trunk is shorter than the longest branch.
-              BlockTree shrunkTrunk shrunkBranches = bt
-              trunkLength = AF.length shrunkTrunk
-              maxBranchLength = maximum (0 : fmap (AF.length . btbFull) shrunkBranches)
-            in case compare trunkLength maxBranchLength of
-              GT -> pure bt
-              _  -> []
-  ]
-
-shareAnchorButNoBlocksWith
-  :: (HasHeader blk) => AF.AnchoredFragment blk -> AF.AnchoredFragment blk -> Bool
-shareAnchorButNoBlocksWith fragment1 fragment2 =
-  case AF.intersect fragment1 fragment2 of
-    Nothing -> False
-    Just (prefix1, prefix2, _, _) -> min (AF.length prefix1) (AF.length prefix2) > 0
-
--- | If the fragment is not empty, drop the most recent block.
-shrinkAnchoredFragment
-  :: (HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk]
-shrinkAnchoredFragment fragment = case AF.toNewestFirst fragment of
-    []     -> []
-    _:rest -> pure $ AF.fromNewestFirst (AF.anchor fragment) rest
-
-
--- | deserialize . serialize == id
---
--- This property asserts that values survive after being serialized
--- and then deserialized.
-prop_serialize_inverse
-  :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a, Show a, Eq a)
-  => Proxy a -> a -> QC.Property
-prop_serialize_inverse _ value =
-  let
-    json1 = Aeson.toJSON value
-    cannotParseMsg err = mconcat
-      [ "Unable to parse JSON:\n"
-      , "JSON: " , show json1 , "\n"
-      , "Error: " , err
-      ]
-    valueNotStableMsg deserializedValue = mconcat
-      [ "Value not stable after round-trip:\n"
-      , "Original: " , show value , "\n"
-      , "After:    " , show deserializedValue
-      ]
-  in case Aeson.parseEither Aeson.parseJSON json1 of
-    Left err -> QC.counterexample (cannotParseMsg err) False
-    Right value' -> case value == value' of
-      False -> QC.counterexample (valueNotStableMsg value') False
-      True  -> QC.property True
-
--- | serialize . deserialize . serialize == serialize
---
--- This property tests that if a JSON value was produced by serializing a reified
--- test case, then deserializing and serializing again gives the same JSON value.
--- This is weaker than saying that deserialize . serialize == id, but if that
--- test fails, whether or not this one passes can help with debugging.
-prop_serialize_weak_inverse
-  :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a)
-  => Proxy a -> a -> QC.Property
-prop_serialize_weak_inverse _ value =
-  let
-    json1 = Aeson.toJSON value
-    cannotParseMsg err = mconcat
-      [ "Unable to parse JSON:\n"
-      , "JSON: " , show json1 , "\n"
-      , "Error: " , err
-      ]
-    jsonNotStableMsg reserializedValue = mconcat
-      [ "JSON not stable after round-trip:\n"
-      , "Original: " , show json1 , "\n"
-      , "After:    " , show reserializedValue
-      ]
-  in case Aeson.parseEither Aeson.parseJSON json1 of
-    Left err -> QC.counterexample (cannotParseMsg err) False
-    Right value' ->
-      let json2 = Aeson.toJSON (value' :: a)
-      in case json1 == json2 of
-        False -> QC.counterexample (jsonNotStableMsg json2) False
-        True  -> QC.property True
-
--- | fromReifiedBlockTree . toReifiedBlockTree == id
-prop_reified_block_tree_conversion
-  :: forall blk. (Show blk, Eq blk, HasHeader blk, IssueTestBlock blk)
-  => Proxy blk -> BlockTree blk -> QC.Property
-prop_reified_block_tree_conversion proxy blockTree =
-  let
-    reified = toReifiedBlockTree blockTree
-    cannotConvertMsg err = mconcat
-      [ "Unable to convert from ReifiedBlockTree to BlockTree:\n"
-      , "BlockTree: ", show blockTree, "\n"
-      , "ReifiedBlockTree: ", show reified, "\n"
-      , "Error: ", err
-      ]
-  in case fromReifiedBlockTree proxy reified of
-      Left err         -> QC.counterexample (cannotConvertMsg err) False
-      Right blockTree' -> eqBlockTree blockTree blockTree'

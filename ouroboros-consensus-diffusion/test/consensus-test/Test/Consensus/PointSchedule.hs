@@ -71,6 +71,7 @@ import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import qualified Data.Text as T
 import           Data.Time (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime)
+import           Data.Traversable (for)
 import           Data.Word (Word64)
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
                      withOriginToMaybe)
@@ -225,27 +226,24 @@ instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
 instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
   parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
     let
-      peerScheduleFromJSON
-        :: Aeson.Value -> Aeson.Parser (PeerSchedule blk)
-      peerScheduleFromJSON = Aeson.withArray "PeerSchedule" $ flip (.) toList $
-        traverse (Aeson.withObject "PeerScheduleEntry" $ \obj -> do
-          time <- obj .: "time" >>= timeFromJSON
+      peerScheduleFromJSON :: Aeson.Value -> Aeson.Parser (PeerSchedule blk)
+      peerScheduleFromJSON = Aeson.withArray "PeerSchedule" $ \arr ->
+        for (toList arr) $ Aeson.withObject "PeerScheduleEntry" $ \obj -> do
+          time  <- obj .: "time" >>= timeFromJSON
           point <- obj .: "schedulePoint"
-          pure (time, point))
+          pure (time, point)
 
+      timeFromJSON :: Aeson.Value -> Aeson.Parser Time
       timeFromJSON = \case
         Aeson.String t ->
           case readMaybe (T.unpack t) of
             Just picos -> pure $ Time (picosecondsToDiffTime picos)
             Nothing    -> fail $ "Invalid time: " ++ T.unpack t
         _ -> fail "Time should be a string"
+
     psSchedule <- v .: "schedule" >>= Aeson.parseJSON >>= traverse peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
-    psMinEndTime <- do
-      mPicos <- v .: "minEndTime"
-      case readMaybe mPicos of
-        Just picos -> pure $ Time (picosecondsToDiffTime picos)
-        Nothing    -> fail $ "Invalid minEndTime: " ++ mPicos
+    psMinEndTime <- v .: "minEndTime" >>= timeFromJSON
     pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------

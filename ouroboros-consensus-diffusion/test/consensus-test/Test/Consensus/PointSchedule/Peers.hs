@@ -42,7 +42,7 @@ module Test.Consensus.PointSchedule.Peers (
   , updatePeer
   ) where
 
-import           Control.Monad (join)
+import           Control.Monad ((>=>))
 import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -195,7 +195,7 @@ peersFromJSON = Aeson.withObject "Peers" $ \v -> do
 instance Aeson.ToJSON a => Aeson.ToJSON (Peers a) where
   toJSON = peersToJSON . fmap Aeson.toJSON
 instance Aeson.FromJSON a => Aeson.FromJSON (Peers a) where
-  parseJSON = join . fmap (traverse Aeson.parseJSON) . peersFromJSON
+  parseJSON = peersFromJSON >=> traverse Aeson.parseJSON
 
 -- | A set of peers with only one honest peer carrying the given value.
 peersOnlyHonest :: a -> Peers a

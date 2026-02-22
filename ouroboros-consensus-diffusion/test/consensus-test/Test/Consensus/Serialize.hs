@@ -1,15 +1,10 @@
 {-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
 module Test.Consensus.Serialize (
     AnchoredFork (..)
   , BlockRep (..)
@@ -21,11 +16,13 @@ module Test.Consensus.Serialize (
   , WithSlotNo (..)
   , deserializeReifiedTestCase
   , fromReifiedBlockTree
+  , fromReifiedPointSchedule
   , fromReifiedTestCase
   , getBlockRep
   , getBlockReps
   , serializeReifiedTestCase
   , toReifiedBlockTree
+  , toReifiedPointSchedule
   , toReifiedTestCase
   ) where
 
@@ -34,7 +31,7 @@ import           Control.Monad (foldM)
 import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
-import           Data.Foldable (toList)
+import           Data.Functor ((<&>))
 import qualified Data.Map as M
 import           Data.Proxy (Proxy (..))
 import qualified Data.Text as T
@@ -50,14 +47,14 @@ import           Test.QuickCheck.Random
 import           Text.Read
 
 -- This module implements JSON serialization for consensus test cases. The
--- main interface comprises:
+-- interface comprises:
 --
 --   - 'ReifiedTestCase': a parameterized representation of a single
 --     test case.
 --   - 'serializeReifiedTestCase' and 'deserializeReifiedTestCase': functions
---      for converting between 'ReifiedTestCase' and 'Aeson.Value'.
+--     for converting between 'ReifiedTestCase' and 'Aeson.Value'.
 --   - 'fromReifiedTestCase' and 'toReifiedTestCase': functions for converting
---      between a 'ReifiedTestCase' and a concrete test case type of your choice.
+--     between a 'ReifiedTestCase' and a concrete test case type of your choice.
 --
 -- The JSON format is meant to be as stable as possible under changes to
 -- test case generation. This is achieved via a test version number and
@@ -82,7 +79,7 @@ data ReifiedTestCase key u = ReifiedTestCase
   -- ^ The block tree is represented as a trunk and a list of branches,
   -- oldest nodes first.
 
-  , rtcPointSchedule :: PointSchedule u
+  , rtcPointSchedule :: PointSchedule (SlotNo, AF.BlockNo)
 
   , rtcShrinkIndex   :: ShrinkIndex
   -- ^ Used for specifying a shrink of the generated test case.
@@ -91,61 +88,42 @@ data ReifiedTestCase key u = ReifiedTestCase
   -- ^ Used for replaying tests.
   } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-newtype Seed = Seed QCGen
-  deriving (Show)
+serializeReifiedTestCase
+  :: (Aeson.ToJSON key)
+  => FormatVersion
+  -> ReifiedTestCase key BlockRep
+  -> Aeson.Value
+serializeReifiedTestCase fmtVersion testCase = Aeson.object
+  [ "formatVersion" .= fmtVersion
+  , "key" .= Aeson.toJSON (rtcTestKey testCase)
+  , "testVersion" .= rtcTestVersion testCase
+  , "blockTree" .= rtcBlockTree testCase
+  , "pointSchedule" .= rtcPointSchedule testCase
+  , "shrinkIndex" .= rtcShrinkIndex testCase
+  , "seed" .= rtcSeed testCase
+  ]
 
--- QCGen does not have an Eq instance, but
--- Read/Show is a canonical serialization.
-instance Eq Seed where
-  Seed a == Seed b = show a == show b
+deserializeReifiedTestCase
+  :: (Aeson.FromJSON key)
+  => Aeson.Value -> Aeson.Parser (ReifiedTestCase key BlockRep)
+deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
+  fmtVersion <- obj .: "formatVersion"
+  case fmtVersion of
+    FormatVersion _ -> do
+      -- Currently we only have one format version.
+      rtcTestKey <- obj .: "key"
+      rtcTestVersion <- obj .: "testVersion"
+      rtcBlockTree <- obj .: "blockTree"
+      rtcPointSchedule <- obj .: "pointSchedule"
+      rtcShrinkIndex <- obj .: "shrinkIndex"
+      rtcSeed <- obj .: "seed"
+      pure ReifiedTestCase {..}
 
-instance Aeson.ToJSON Seed where
-  toJSON (Seed gen) = Aeson.String (T.pack $ show gen)
+instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where
+  toJSON = serializeReifiedTestCase (FormatVersion 0)
 
-instance Aeson.FromJSON Seed where
-  parseJSON = Aeson.withText "Seed" $ \txt ->
-    case readMaybe (T.unpack txt) of
-      Just gen -> pure $ Seed gen
-      Nothing  -> fail "unable to parse seed"
-
--- | A version number for the serialization format. This is included to
--- allow for backward compatibility in case the JSON format needs to change.
--- This only exists in the JSON, and consumers of this library should not
--- use or rely on it.
-data FormatVersion = FormatVersion Int
-  deriving (Eq, Ord, Show)
-
-instance Aeson.ToJSON FormatVersion where
-  toJSON (FormatVersion v) = Aeson.String (T.pack $ show v)
-
-instance Aeson.FromJSON FormatVersion where
-  parseJSON = Aeson.withText "FormatVersion" $ \txt ->
-    case readMaybe (T.unpack txt) of
-      Just v  -> pure (FormatVersion v)
-      Nothing -> fail $ "Invalid FormatVersion: " <> T.unpack txt
-
--- | A version number for the property test itself (as represented by 'key').
--- This is included to allow for backward compatibility in case the property
--- needs to change.
-newtype TestVersion = TestVersion Int
-  deriving (Eq, Ord, Show)
-
-instance Aeson.ToJSON TestVersion where
-  toJSON (TestVersion v) = Aeson.String (T.pack $ show v)
-
-instance Aeson.FromJSON TestVersion where
-  parseJSON = Aeson.withText "TestVersion" $ \txt ->
-    case readMaybe (T.unpack txt) of
-      Just v  -> pure (TestVersion v)
-      Nothing -> fail $ "Invalid TestVersion: " <> T.unpack txt
-
-instance QC.Arbitrary TestVersion where
-  arbitrary = do
-    QC.NonNegative m <- QC.arbitrary
-    pure $ TestVersion m
-  shrink (TestVersion x) = do
-    QC.NonNegative m <- QC.shrink (QC.NonNegative x)
-    pure $ TestVersion m
+instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) where
+  parseJSON = deserializeReifiedTestCase
 
 -- | Construct a 'ReifiedTestCase' from a concrete test case.
 toReifiedTestCase
@@ -157,63 +135,107 @@ toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
     { rtcTestKey = key
     , rtcTestVersion = testVersion
     , rtcBlockTree = toReifiedBlockTree blockTree
-    , rtcPointSchedule = fmap fst $ fst $ runWithSlotNo (getBlockReps pointSchedule) 0
+    , rtcPointSchedule = toReifiedPointSchedule pointSchedule
     , rtcShrinkIndex = shrinkIndex
     , rtcSeed = seed
     }
 
--- | Deconstruct a 'ReifiedTestCase' into a type of your choice using a continuation.
+-- | Deconstruct a @ReifiedTestCase@ into a type of your choice using a continuation.
+-- This decouples serialization from the specific test case type. If it helps you can
+-- think of this as a fold.
 fromReifiedTestCase
-  :: forall blk key u. (AF.HasHeader blk, IssueTestBlock blk)
+  :: forall blk key u. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
   => (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed -> u)
   -> ReifiedTestCase key BlockRep -> Either String u
 fromReifiedTestCase f ReifiedTestCase{..} = do
-  blockTree <- fromReifiedBlockTree (Proxy :: Proxy blk) rtcBlockTree
-  pointSchedule <- fromReifiedPointSchedule blockTree rtcPointSchedule
+  (blockTree, knownBlocks) <- fromReifiedBlockTree (Proxy :: Proxy blk) rtcBlockTree
+  pointSchedule <- fromReifiedPointSchedule knownBlocks rtcPointSchedule
   pure $ f rtcTestKey rtcTestVersion blockTree pointSchedule rtcShrinkIndex rtcSeed
 
--- | @AnchoredFork@ is a simplified representation of an @AnchoredFragment@
--- as a list that also remembers its fork number. An anchor of 'Nothing'
--- represents the genesis.
---
--- INVARIANT: the blocks in 'alBlocks' must be in order from oldest to newest,
--- and each block must be a valid successor of the previous block.
-data AnchoredFork u = AnchoredFork
-  { alAnchor :: Maybe (SlotNo, u)
-  , alBlocks :: [u] -- Oldest first!
-  , alForkNo :: Int
-  } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
-  toJSON AnchoredFork{alAnchor, alBlocks, alForkNo} = Aeson.object
-    [ "anchor" .= case alAnchor of
-        Nothing -> Aeson.String "genesis"
-        Just (slotNo, rep) -> Aeson.object
-          [ "slotNo" .= slotNo
-          , "blockRep" .= rep
-          ]
-    , "blocks" .= alBlocks
-    , "forkNo" .= show alForkNo
+
+-- How It Works --
+------------------
+
+-- We could have added Generic instances to everything and derived ToJSON/FromJSON.
+-- That is not ideal however; first because generated test cases contain a lot of
+-- redundant information (a LOT). Second, because this would tie the serialization
+-- format to the internal representation, making it difficult to change both. We
+-- expect serialized test cases to persist beyond a single run, so the format needs
+-- to be stable under refactorings.
+--
+-- This implementation instead uses custom JSON instances, a simplified model of the
+-- block tree that only includes the trunk and branch suffixes, and a representation
+-- of blocks that only includes the data necessary to issue them in order.
+
+
+
+-- Representation of Blocks --
+------------------------------
+
+-- | Representation of a block within a block tree. Since consensus tests do
+-- not care about the contents of blocks, we only need enough information to
+-- reconstruct the block tree using the methods in `IssueTestBlock` (and thus
+-- do not otherwise care about the specific block type).
+data BlockRep = BlockRep
+  { brSlotGap :: SlotGap -- ^ Number of slots lapsed since the previous issued block.
+  , brBlockNo :: AF.BlockNo
+  } deriving (Eq, Ord, Show)
+
+-- | There are two numbers relevant to slots running around. @SlotNo@ is an
+-- ordinal number that identifies a slot. @SlotGap@ is a cardinal number that
+-- counts how many slots have expired since the last issued block; this is
+-- what IssueTestBlock needs to issue the next block.
+type SlotGap = Word64
+
+instance (Aeson.ToJSON BlockRep) where
+  toJSON BlockRep{ brSlotGap, brBlockNo } = Aeson.object
+    [ "slotGap" .= brSlotGap
+    , "blockNo" .= brBlockNo
     ]
 
-instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
-  parseJSON = Aeson.withObject "AnchoredFork" $ \v -> do
-    alAnchor <- do
-      val <- v .: "anchor"
-      case val of
-        Aeson.String s | s == "genesis" -> pure Nothing
-        Aeson.Object obj' -> do
-          slotNo <- obj' .: "slotNo"
-          blockRep <- obj' .: "blockRep"
-          pure $ Just (slotNo, blockRep)
-        _ -> fail "Invalid anchor format"
-    alBlocks <- v .: "blocks"
-    alForkNo <- do
-      forkNoStr <- v .: "forkNo"
-      case readMaybe forkNoStr of
-        Just n  -> pure n
-        Nothing -> fail $ "Invalid integer: " <> forkNoStr
-    pure AnchoredFork {..}
+instance (Aeson.FromJSON BlockRep) where
+  parseJSON = Aeson.withObject "BlockRep" $ \v -> do
+    brSlotGap <- v .: "slotGap"
+    brBlockNo <- fmap AF.BlockNo $ v .: "blockNo"
+    pure BlockRep {..}
+
+-- | Blocks in the block tree carry their slot number, but to issue
+-- new blocks we need to know the slot /gap/ compared to the most
+-- recently issued block. @WithSlotNo@ is a state monad that stores
+-- the most recently used slot number so we can compute gaps.
+newtype WithSlotNo a = WithSlotNo
+  { runWithSlotNo :: SlotNo -> (a, SlotNo)
+  } deriving (Functor)
+
+instance Applicative WithSlotNo where
+  pure x = WithSlotNo $ \slotNo -> (x, slotNo)
+  WithSlotNo f <*> WithSlotNo g = WithSlotNo $ \slotNo0 -> do
+    let (h, slotNo1) = f slotNo0
+    let (x, slotNo2) = g slotNo1
+    (h x, slotNo2)
+
+-- | Summarize a block as a @BlockRep@. @WithSlotNo@ is keeping track
+-- of the most recently used slot number so we can compute the slot gap.
+getBlockRep
+  :: forall blk. (AF.HasHeader blk)
+  => blk -> WithSlotNo (BlockRep, blk)
+getBlockRep blk = WithSlotNo $ \(SlotNo lastSlotNo) ->
+  let headers = AF.getHeaderFields blk
+      SlotNo currentSlotNo = AF.headerFieldSlot headers
+      slotGap = currentSlotNo - lastSlotNo :: SlotGap
+      blockNo = AF.headerFieldBlockNo headers
+  in ((BlockRep slotGap blockNo, blk), SlotNo currentSlotNo)
+
+getBlockReps
+  :: forall blk t. (AF.HasHeader blk, Traversable t)
+  => t blk -> WithSlotNo (t (BlockRep, blk))
+getBlockReps = traverse getBlockRep
+
+
+
+-- Representation of Block Trees --
+-----------------------------------
 
 -- | Representation of the trunk and branches of a block tree as lists, oldest
 -- nodes first. Meant to be as normalized as possible and efficient to convert
@@ -238,8 +260,52 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (ReifiedBlockTree blk) where
     rbtBranches <- v .: "branches"
     pure ReifiedBlockTree {..}
 
--- | Summarize a block tree as a @ReifiedBlockTree@. This is the representation
--- we will serialize.
+-- | @AnchoredFork@ is a simplified representation of an @AnchoredFragment@
+-- as a list that also remembers its fork number. An anchor of 'Nothing'
+-- represents the genesis.
+--
+-- INVARIANT: the blocks in 'alBlocks' must be in order from oldest to newest,
+-- and each block must be a valid successor of the previous block.
+data AnchoredFork u = AnchoredFork
+  { forkAnchor :: Maybe (SlotNo, u)
+  , forkBlocks :: [u] -- Oldest first!
+  , forkNumber :: Int
+  } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
+  toJSON AnchoredFork{forkAnchor, forkBlocks, forkNumber} = Aeson.object
+    [ "anchor" .= case forkAnchor of
+        Nothing -> Aeson.String "genesis"
+        Just (slotNo, rep) -> Aeson.object
+          [ "slotNo" .= slotNo
+          , "blockRep" .= rep
+          ]
+    , "blocks" .= forkBlocks
+    , "forkNo" .= forkNumber
+    ]
+
+instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
+  parseJSON = Aeson.withObject "AnchoredFork" $ \v -> do
+    forkAnchor <- do
+      val <- v .: "anchor"
+      case val of
+        Aeson.String s | s == "genesis" -> pure Nothing
+        Aeson.Object obj' -> do
+          slotNo <- obj' .: "slotNo"
+          blockRep <- obj' .: "blockRep"
+          pure $ Just (slotNo, blockRep)
+        _ -> fail "Invalid anchor format"
+    forkBlocks <- v .: "blocks"
+    forkNumber <- v .: "forkNo"
+    pure AnchoredFork {..}
+
+
+
+-- Conversion between ReifiedBlockTree and BlockTree --
+-------------------------------------------------------
+
+-- | Convert a @BlockTree@ to a @ReifiedBlockTree@. This direction
+-- turns slot numbers into slot gaps.
 toReifiedBlockTree
   :: forall blk. (AF.HasHeader blk)
   => BlockTree blk -> ReifiedBlockTree BlockRep
@@ -247,7 +313,7 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
   (anchoredFragmentToAnchoredForkOldestFirst (trunk, 0))
   (fmap anchoredFragmentToAnchoredForkOldestFirst $ zip (fmap btbSuffix branches) [1..])
   where
-    -- | Represent an @AnchoredFragment@ as a list of @BlockRep@s, from oldest to
+    -- Represent an @AnchoredFragment@ as a list of @BlockRep@s, from oldest to
     -- newest, plus the anchor. @BlockTreeBranch@es include a lot of redundant information;
     -- all we need is the suffix of the branch (the part that is not shared with the trunk).
     anchoredFragmentToAnchoredForkOldestFirst
@@ -258,17 +324,22 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
         slotNo = case anchor of
           Nothing           -> SlotNo 0
           Just (slotNum, _) -> slotNum
+        -- The anchor's slot number is the one most recently used;
+        -- we use that to compute slot gaps for the fragment.
         (fragment', _) = runWithSlotNo
           (getBlockReps (AF.toOldestFirst fragment)) slotNo
       in AnchoredFork anchor (fmap fst fragment') forkNo
 
-    -- | Summarize an anchored fragment's anchor.
+    -- Summarize an anchored fragment's anchor.
     getAnchorRep
       :: AF.AnchoredFragment blk -> Maybe (SlotNo, BlockRep)
     getAnchorRep fragment = case AF.anchor fragment of
       AF.AnchorGenesis         -> Nothing
       AF.Anchor slot _ blockNo -> Just (slot, BlockRep (unSlotNo slot) blockNo)
 
+-- | Blocks in a block tree are uniquely identified by thier
+-- slot and block numbers. @KnownBlocks@ maps these identifiers
+-- to actual blocks.
 type KnownBlocks blk = M.Map (SlotNo, AF.BlockNo) blk
 
 -- | Given a @ReifiedBlockTree@, attempt to reconstruct the original @BlockTree@
@@ -277,8 +348,9 @@ type KnownBlocks blk = M.Map (SlotNo, AF.BlockNo) blk
 -- is a little state monad going on here, but we're just passing the state manually
 -- to keep it simple.
 fromReifiedBlockTree
-  :: forall blk. (AF.HasHeader blk, IssueTestBlock blk)
-  => Proxy blk -> ReifiedBlockTree BlockRep -> Either String (BlockTree blk)
+  :: forall blk. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
+  => Proxy blk -> ReifiedBlockTree BlockRep
+  -> Either String (BlockTree blk, KnownBlocks blk)
 fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   let
     -- Convert the anchor. If it is not genesis, we look up the
@@ -339,9 +411,9 @@ fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       -- | The fork to process and the known blocks so far.
       :: (AnchoredFork BlockRep, KnownBlocks blk)
       -> Either String (AF.AnchoredFragment blk, KnownBlocks blk)
-    issueFork (AnchoredFork {alAnchor, alBlocks, alForkNo}, knownBlocks) = do
-      anchor <- makeAnchor alAnchor knownBlocks
-      anchorBlock <- case alAnchor of
+    issueFork (AnchoredFork {forkAnchor, forkBlocks, forkNumber}, knownBlocks) = do
+      anchor <- makeAnchor forkAnchor knownBlocks
+      anchorBlock <- case forkAnchor of
         Nothing -> Right Nothing
         Just (slotNo, rep) ->
           case M.lookup (slotNo, brBlockNo rep) knownBlocks of
@@ -350,11 +422,11 @@ fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
               "Failed to find anchor block payload for slot/blockNo: "
               <> show (slotNo, brBlockNo rep)
               <> " (from BlockRep " <> show rep <> ")"
-      let lastSlotNo = case alAnchor of
+      let lastSlotNo = case forkAnchor of
             Nothing          -> SlotNo 0
             Just (slotNo, _) -> slotNo
       (issuedBlocks, knownBlocks') <-
-        issueBlocks lastSlotNo alForkNo anchorBlock (alBlocks, knownBlocks)
+        issueBlocks lastSlotNo forkNumber anchorBlock (forkBlocks, knownBlocks)
       let fragment = AF.fromOldestFirst anchor issuedBlocks
       pure (fragment, knownBlocks')
 
@@ -373,128 +445,99 @@ fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   -- @fromTrunkAndBranches@ is a smart constructor for @BlockTree@ that ensures
   -- all the invariants are satisfied.
   case fromTrunkAndBranches trunk branches of
-    Nothing -> Left $
-      "Failed to decode block tree. Known block ids:\n"
-      <> show (M.keys allBlocks)
-    Just bt -> Right bt
+    Nothing -> Left $ mconcat
+      [ "Failed to decode block tree! Some branches do not intersect the trunk.\n"
+      , "Known block ids:\n", show (M.keys allBlocks)
+      , "Trunk:\n", show trunk
+      , "Branches:\n", show branches
+      ]
+    Just bt -> Right (bt, allBlocks)
 
--- | Representation of a block within a block tree. Since consensus tests do
--- not care about the contents of blocks, we only need enough information to
--- reconstruct the block tree using the methods in `IssueTestBlock` (and thus
--- do not otherwise care about the specific block type).
-data BlockRep = BlockRep
-  { brSlotGap :: SlotGap -- ^ Number of slots lapsed since the previous block.
-  , brBlockNo :: AF.BlockNo
-  } deriving (Eq, Ord, Show)
 
-type SlotGap = Word64
 
-instance (Aeson.ToJSON BlockRep) where
-  toJSON BlockRep{ brSlotGap, brBlockNo } = Aeson.object
-    [ "slotGap" .= brSlotGap
-    , "blockNo" .= brBlockNo
-    ]
+-- Point Schedule Conversion --
+-------------------------------
 
-instance (Aeson.FromJSON BlockRep) where
-  parseJSON = Aeson.withObject "BlockRep" $ \v -> do
-    brSlotGap <- v .: "slotGap"
-    brBlockNo <- fmap AF.BlockNo $ v .: "blockNo"
-    pure BlockRep {..}
-
-newtype WithSlotNo a
-  = WithSlotNo { runWithSlotNo :: SlotNo -> (a, SlotNo) }
-  deriving (Functor)
-
-instance Applicative WithSlotNo where
-  pure x = WithSlotNo $ \slotNo -> (x, slotNo)
-  WithSlotNo f <*> WithSlotNo g = WithSlotNo $ \slotNo -> do
-    let (h, slotNo') = f slotNo
-    let (x, slotNo'') = g slotNo'
-    (h x, slotNo'')
-
--- | Summarize a block as a 'BlockRep'. Summarizable block types must
--- implement 'encodeHeaderHash' from 'IssueTestBlock'.
-getBlockRep
+-- | Replace the blocks in a point schedule with corresponding
+-- @SlotNo@s and @BlockNo@s.
+toReifiedPointSchedule
   :: forall blk. (AF.HasHeader blk)
-  => blk -> WithSlotNo (BlockRep, blk)
-getBlockRep blk = WithSlotNo $ \lastSlotNo ->
+  => PointSchedule blk -> PointSchedule (SlotNo, AF.BlockNo)
+toReifiedPointSchedule pointSchedule = pointSchedule <&> \blk ->
   let headers = AF.getHeaderFields blk
-      currentSlotNo = AF.headerFieldSlot headers
-      slotGap = slotGapSince lastSlotNo currentSlotNo
-      blockNo = AF.headerFieldBlockNo headers
-  in ((BlockRep slotGap blockNo, blk), currentSlotNo)
+  in (AF.headerFieldSlot headers, AF.headerFieldBlockNo headers)
 
-getBlockReps
-  :: forall blk t. (AF.HasHeader blk, Traversable t)
-  => t blk -> WithSlotNo (t (BlockRep, blk))
-getBlockReps = traverse getBlockRep
-
-slotGapSince :: SlotNo -> SlotNo -> SlotGap
-slotGapSince (SlotNo previous) (SlotNo current) = current - previous
-
-blockRepMap
-  :: forall blk. (AF.HasHeader blk) => BlockTree blk -> M.Map BlockRep blk
-blockRepMap (BlockTree trunk branches) =
-  let
-    fragments :: [AF.AnchoredFragment blk]
-    fragments = trunk : fmap btbSuffix branches
-
-    folder
-      :: AF.AnchoredFragment blk -> M.Map BlockRep blk -> M.Map BlockRep blk
-    folder fragment acc =
-      let
-        slotNo = case AF.anchor fragment of
-          AF.AnchorGenesis   -> SlotNo 0
-          AF.Anchor slot _ _ -> slot
-        (fragment', _) = runWithSlotNo (getBlockReps (AF.toOldestFirst fragment)) slotNo
-      in acc <> M.fromList (fmap (\(rep, blk) -> (rep, blk)) (toList fragment'))
-  in foldr folder M.empty fragments
-
+-- | During reconstruction of the block tree, we generated a map from block
+-- identifiers (slot and block number) to actual blocks. We can use this with
+-- @traverse@ to repopulate the point schedule.
 fromReifiedPointSchedule
-  :: forall blk. (AF.HasHeader blk)
-  => BlockTree blk -> PointSchedule BlockRep -> Either String (PointSchedule blk)
+  :: M.Map (SlotNo, AF.BlockNo) blk -> PointSchedule (SlotNo, AF.BlockNo)
+  -> Either String (PointSchedule blk)
 fromReifiedPointSchedule blockTree schedule =
   let
-    lookupBlockRep :: BlockRep -> Either String blk
     lookupBlockRep rep =
-      case M.lookup rep $ blockRepMap blockTree of
+      case M.lookup rep blockTree of
         Just blk -> Right blk
-        Nothing  -> Left $ "Failed to find block for BlockRep: " <> show rep
+        Nothing  -> Left $ "Failed to find block and slot number: " <> show rep
   in traverse lookupBlockRep schedule
 
-serializeReifiedTestCase
-  :: (Aeson.ToJSON key)
-  => FormatVersion
-  -> ReifiedTestCase key BlockRep
-  -> Aeson.Value
-serializeReifiedTestCase fmtVersion testCase = Aeson.object
-  [ "formatVersion" .= fmtVersion
-  , "key" .= Aeson.toJSON (rtcTestKey testCase)
-  , "testVersion" .= rtcTestVersion testCase
-  , "blockTree" .= rtcBlockTree testCase
-  , "pointSchedule" .= rtcPointSchedule testCase
-  , "shrinkIndex" .= rtcShrinkIndex testCase
-  , "seed" .= rtcSeed testCase
-  ]
 
-deserializeReifiedTestCase
-  :: (Aeson.FromJSON key)
-  => Aeson.Value -> Aeson.Parser (ReifiedTestCase key BlockRep)
-deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
-  fmtVersion <- obj .: "formatVersion"
-  case fmtVersion of
-    FormatVersion _ -> do
-      -- Currently we only have one format version.
-      rtcTestKey <- obj .: "key"
-      rtcTestVersion <- obj .: "testVersion"
-      rtcBlockTree <- obj .: "blockTree"
-      rtcPointSchedule <- obj .: "pointSchedule"
-      rtcShrinkIndex <- obj .: "shrinkIndex"
-      rtcSeed <- obj .: "seed"
-      pure ReifiedTestCase {..}
 
-instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where
-  toJSON = serializeReifiedTestCase (FormatVersion 0)
+-- Helper Types --
+------------------
 
-instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) where
-  parseJSON = deserializeReifiedTestCase
+newtype Seed = Seed QCGen
+  deriving (Show)
+
+-- QCGen does not have an Eq instance, but
+-- Read/Show is a canonical serialization.
+instance Eq Seed where
+  Seed a == Seed b = show a == show b
+
+instance Aeson.ToJSON Seed where
+  toJSON (Seed gen) = Aeson.String (T.pack $ show gen)
+
+instance Aeson.FromJSON Seed where
+  parseJSON = Aeson.withText "Seed" $ \txt ->
+    case readMaybe (T.unpack txt) of
+      Just gen -> pure $ Seed gen
+      Nothing  -> fail "unable to parse seed"
+
+-- | A version number for the serialization format. This is included to
+-- allow for backward compatibility in case the JSON format needs to change.
+-- This only exists in the JSON, and consumers of this library should not
+-- use or rely on it.
+data FormatVersion = FormatVersion Int
+  deriving (Eq, Ord, Show)
+
+instance Aeson.ToJSON FormatVersion where
+  toJSON (FormatVersion v) = Aeson.String (T.pack $ show v)
+
+instance Aeson.FromJSON FormatVersion where
+  parseJSON = Aeson.withText "FormatVersion" $ \txt ->
+    case readMaybe (T.unpack txt) of
+      Just v  -> pure (FormatVersion v)
+      Nothing -> fail $ "Invalid FormatVersion: " <> T.unpack txt
+
+-- | A version number for the property test itself (as represented by 'key').
+-- This is included to allow for backward compatibility in case the property
+-- needs to change.
+newtype TestVersion = TestVersion Int
+  deriving (Eq, Ord, Show)
+
+instance Aeson.ToJSON TestVersion where
+  toJSON (TestVersion v) = Aeson.String (T.pack $ show v)
+
+instance Aeson.FromJSON TestVersion where
+  parseJSON = Aeson.withText "TestVersion" $ \txt ->
+    case readMaybe (T.unpack txt) of
+      Just v  -> pure (TestVersion v)
+      Nothing -> fail $ "Invalid TestVersion: " <> T.unpack txt
+
+instance QC.Arbitrary TestVersion where
+  arbitrary = do
+    QC.NonNegative m <- QC.arbitrary
+    pure $ TestVersion m
+  shrink (TestVersion x) = do
+    QC.NonNegative m <- QC.shrink (QC.NonNegative x)
+    pure $ TestVersion m
