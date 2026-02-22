@@ -33,7 +33,6 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import           Data.Functor ((<&>))
 import qualified Data.Map as M
-import           Data.Proxy (Proxy (..))
 import qualified Data.Text as T
 import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF

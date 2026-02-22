@@ -110,7 +110,6 @@ import           Data.List (mapAccumL)
 import           Data.Time.Clock (DiffTime)
 import           Data.Vector (Vector)
 import qualified Data.Vector as Vector
-import           GHC.Generics
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (unBlockNo), blockSlot)
 import qualified System.Random.Stateful as R (StatefulGen)
@@ -123,7 +122,7 @@ data SchedulePoint blk
   = ScheduleTipPoint (WithOrigin blk)
   | ScheduleHeaderPoint (WithOrigin blk)
   | ScheduleBlockPoint (WithOrigin blk)
-  deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 scheduleTipPoint :: blk -> SchedulePoint blk
 scheduleTipPoint = ScheduleTipPoint . At
