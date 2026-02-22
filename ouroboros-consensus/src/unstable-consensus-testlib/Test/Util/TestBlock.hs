@@ -91,7 +91,6 @@ import           Codec.Serialise (Serialise (..), serialise)
 import           Control.DeepSeq (force)
 import           Control.Monad (guard, replicateM, replicateM_)
 import           Control.Monad.Except (throwError)
-import qualified Data.Aeson as Aeson
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as BL
@@ -210,14 +209,6 @@ testHashFromList = TestHash . NE.fromList . reverse
 instance Show TestHash where
   show (TestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
 
-instance Read TestHash where
-  readsPrec _ s =
-    [ (testHashFromList path, rest)
-    | ("(testHashFromList ", rest1) <- lex s
-    , (listStr, rest) <- lex rest1
-    , [(path, "")] <- [reads listStr]
-    ]
-
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
@@ -225,8 +216,6 @@ data Validity = Valid | Invalid
   deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
-instance Aeson.ToJSON Validity
-instance Aeson.FromJSON Validity
 
 
 instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
