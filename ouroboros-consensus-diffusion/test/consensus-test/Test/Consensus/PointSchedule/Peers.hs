@@ -30,14 +30,12 @@ module Test.Consensus.PointSchedule.Peers (
   , isAdversarialPeerId
   , isHonestPeerId
   , peers'
-  , peersFromJSON
   , peersFromPeerIdList
   , peersFromPeerIdList'
   , peersFromPeerList
   , peersList
   , peersOnlyAdversary
   , peersOnlyHonest
-  , peersToJSON
   , toMap
   , toMap'
   , unionWithKey
@@ -136,7 +134,7 @@ data Peers a = Peers
   { honestPeers      :: Map Int a,
     adversarialPeers :: Map Int a
   }
-  deriving (Eq, Show, Generic, Traversable)
+  deriving (Eq, Show, Traversable)
 
 -- | Variant of 'honestPeers' that returns a map with 'PeerId's as keys.
 honestPeers' :: Peers a -> Map PeerId a
@@ -197,8 +195,7 @@ peersFromJSON = Aeson.withObject "Peers" $ \v -> do
 instance Aeson.ToJSON a => Aeson.ToJSON (Peers a) where
   toJSON = peersToJSON . fmap Aeson.toJSON
 instance Aeson.FromJSON a => Aeson.FromJSON (Peers a) where
-  parseJSON = error "floop"
---  parseJSON = join . fmap (traverse Aeson.parseJSON) . peersFromJSON
+  parseJSON = join . fmap (traverse Aeson.parseJSON) . peersFromJSON
 
 -- | A set of peers with only one honest peer carrying the given value.
 peersOnlyHonest :: a -> Peers a

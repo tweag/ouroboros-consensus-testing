@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -73,7 +72,6 @@ import qualified Data.Text as T
 import           Data.Time (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime)
 import           Data.Word (Word64)
-import           GHC.Generics
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
                      withOriginToMaybe)
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
@@ -99,8 +97,7 @@ import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
 import           Test.Consensus.PointSchedule.Peers (Peer (..), PeerId,
-                     Peers (..), getPeerIds, peers', peersFromJSON, peersList,
-                     peersToJSON)
+                     Peers (..), getPeerIds, peers', peersList)
 import           Test.Consensus.PointSchedule.SinglePeer
                      (IsTrunk (IsBranch, IsTrunk), PeerScheduleParams (..),
                      SchedulePoint (..), defaultPeerScheduleParams, mergeOn,
@@ -200,7 +197,7 @@ data PointSchedule blk = PointSchedule {
     -- If no point in the schedule is larger than 'psMinEndTime',
     -- the simulation will still run until this time is reached.
     psMinEndTime :: Time
-  } deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
+  } deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]
@@ -209,6 +206,9 @@ peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
 instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
   toJSON schedule =
     let
+      timeToJSON :: Time -> Aeson.Value
+      timeToJSON (Time t) = Aeson.String (T.pack (show (diffTimeToPicoseconds t)))
+
       peerScheduleToJSON :: PeerSchedule blk -> Aeson.Value
       peerScheduleToJSON = Aeson.listValue $
         \(time, pt) -> Aeson.object
@@ -216,13 +216,8 @@ instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
           , "schedulePoint" .= Aeson.toJSON pt
           ]
 
-      -- JSON's native number type uses a floating point representation,
-      -- but @Time@ is essentially an integer. To avoid tricky precision
-      -- issues we store it as a string.
-      timeToJSON (Time diff) =
-          Aeson.String $ T.pack $ show $ diffTimeToPicoseconds diff
     in Aeson.object
-      [ "schedule" .= (peersToJSON $ fmap peerScheduleToJSON (psSchedule schedule))
+      [ "schedule" .= fmap peerScheduleToJSON (psSchedule schedule)
       , "startOrder" .= psStartOrder schedule
       , "minEndTime" .= timeToJSON (psMinEndTime schedule)
       ]
@@ -244,7 +239,7 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
             Just picos -> pure $ Time (picosecondsToDiffTime picos)
             Nothing    -> fail $ "Invalid time: " ++ T.unpack t
         _ -> fail "Time should be a string"
-    psSchedule <- v .: "schedule" >>= peersFromJSON >>= traverse peerScheduleFromJSON
+    psSchedule <- v .: "schedule" >>= Aeson.parseJSON >>= traverse peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
     psMinEndTime <- do
       mPicos <- v .: "minEndTime"
@@ -554,17 +549,17 @@ uniformPointsWithExtraHonestPeersAndDowntime
       (x :) <$> shuffle xs'
 
 newtype ForecastRange = ForecastRange { unForecastRange :: Word64 }
-  deriving (Show, Generic)
+  deriving (Show)
 
 data LoPBucketParams = LoPBucketParams {
   lbpCapacity :: Integer,
   lbpRate     :: Rational
-  } deriving (Show, Generic)
+  } deriving (Show)
 
 data CSJParams = CSJParams {
     csjpJumpSize :: SlotNo
   }
-  deriving (Show, Generic)
+  deriving (Show)
 
 -- | Similar to 'ChainSyncTimeout' for BlockFetch. Only the states in which the
 -- server has agency are specified. REVIEW: Should it be upstreamed to
@@ -572,7 +567,7 @@ data CSJParams = CSJParams {
 data BlockFetchTimeout = BlockFetchTimeout
   { busyTimeout      :: Maybe DiffTime,
     streamingTimeout :: Maybe DiffTime
-  } deriving (Show, Generic)
+  } deriving (Show)
 
 -- | All the data used by point schedule tests.
 data GenesisTest blk schedule = GenesisTest

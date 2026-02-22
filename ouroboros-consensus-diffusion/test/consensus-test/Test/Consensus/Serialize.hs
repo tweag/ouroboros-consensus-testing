@@ -11,16 +11,19 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Test.Consensus.Serialize (
-    BlockRep (..)
+    AnchoredFork (..)
+  , BlockRep (..)
   , FormatVersion (..)
   , ReifiedBlockTree (..)
   , ReifiedTestCase (..)
   , Seed (..)
   , TestVersion (..)
+  , WithSlotNo (..)
   , deserializeReifiedTestCase
   , fromReifiedBlockTree
   , fromReifiedTestCase
   , getBlockRep
+  , getBlockReps
   , serializeReifiedTestCase
   , toReifiedBlockTree
   , toReifiedTestCase
@@ -81,7 +84,6 @@ data ReifiedTestCase key u = ReifiedTestCase
 
   , rtcPointSchedule :: PointSchedule u
 
-  -- TODO: When this module moves to cardano-node, use ShrinkIndex here.
   , rtcShrinkIndex   :: ShrinkIndex
   -- ^ Used for specifying a shrink of the generated test case.
 
@@ -110,17 +112,17 @@ instance Aeson.FromJSON Seed where
 -- allow for backward compatibility in case the JSON format needs to change.
 -- This only exists in the JSON, and consumers of this library should not
 -- use or rely on it.
-data FormatVersion
-  = FormatVersion_0_0
+data FormatVersion = FormatVersion Int
   deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON FormatVersion where
-  toJSON FormatVersion_0_0 = Aeson.String "0.0"
+  toJSON (FormatVersion v) = Aeson.String (T.pack $ show v)
 
 instance Aeson.FromJSON FormatVersion where
-  parseJSON = Aeson.withText "FormatVersion" $ \txt -> case txt of
-    "0.0" -> pure FormatVersion_0_0
-    _     -> fail $ "Unknown format version: " <> T.unpack txt
+  parseJSON = Aeson.withText "FormatVersion" $ \txt ->
+    case readMaybe (T.unpack txt) of
+      Just v  -> pure (FormatVersion v)
+      Nothing -> fail $ "Invalid FormatVersion: " <> T.unpack txt
 
 -- | A version number for the property test itself (as represented by 'key').
 -- This is included to allow for backward compatibility in case the property
@@ -147,7 +149,7 @@ instance QC.Arbitrary TestVersion where
 
 -- | Construct a 'ReifiedTestCase' from a concrete test case.
 toReifiedTestCase
-  :: (AF.HasHeader blk, IssueTestBlock blk)
+  :: (AF.HasHeader blk)
   => key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed
   -> ReifiedTestCase key BlockRep
 toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
@@ -155,7 +157,7 @@ toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
     { rtcTestKey = key
     , rtcTestVersion = testVersion
     , rtcBlockTree = toReifiedBlockTree blockTree
-    , rtcPointSchedule = fmap getBlockRep pointSchedule
+    , rtcPointSchedule = fmap fst $ fst $ runWithSlotNo (getBlockReps pointSchedule) 0
     , rtcShrinkIndex = shrinkIndex
     , rtcSeed = seed
     }
@@ -169,6 +171,49 @@ fromReifiedTestCase f ReifiedTestCase{..} = do
   blockTree <- fromReifiedBlockTree (Proxy :: Proxy blk) rtcBlockTree
   pointSchedule <- fromReifiedPointSchedule blockTree rtcPointSchedule
   pure $ f rtcTestKey rtcTestVersion blockTree pointSchedule rtcShrinkIndex rtcSeed
+
+-- | @AnchoredFork@ is a simplified representation of an @AnchoredFragment@
+-- as a list that also remembers its fork number. An anchor of 'Nothing'
+-- represents the genesis.
+--
+-- INVARIANT: the blocks in 'alBlocks' must be in order from oldest to newest,
+-- and each block must be a valid successor of the previous block.
+data AnchoredFork u = AnchoredFork
+  { alAnchor :: Maybe (SlotNo, u)
+  , alBlocks :: [u] -- Oldest first!
+  , alForkNo :: Int
+  } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
+  toJSON AnchoredFork{alAnchor, alBlocks, alForkNo} = Aeson.object
+    [ "anchor" .= case alAnchor of
+        Nothing -> Aeson.String "genesis"
+        Just (slotNo, rep) -> Aeson.object
+          [ "slotNo" .= slotNo
+          , "blockRep" .= rep
+          ]
+    , "blocks" .= alBlocks
+    , "forkNo" .= show alForkNo
+    ]
+
+instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
+  parseJSON = Aeson.withObject "AnchoredFork" $ \v -> do
+    alAnchor <- do
+      val <- v .: "anchor"
+      case val of
+        Aeson.String s | s == "genesis" -> pure Nothing
+        Aeson.Object obj' -> do
+          slotNo <- obj' .: "slotNo"
+          blockRep <- obj' .: "blockRep"
+          pure $ Just (slotNo, blockRep)
+        _ -> fail "Invalid anchor format"
+    alBlocks <- v .: "blocks"
+    alForkNo <- do
+      forkNoStr <- v .: "forkNo"
+      case readMaybe forkNoStr of
+        Just n  -> pure n
+        Nothing -> fail $ "Invalid integer: " <> forkNoStr
+    pure AnchoredFork {..}
 
 -- | Representation of the trunk and branches of a block tree as lists, oldest
 -- nodes first. Meant to be as normalized as possible and efficient to convert
@@ -193,179 +238,231 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (ReifiedBlockTree blk) where
     rbtBranches <- v .: "branches"
     pure ReifiedBlockTree {..}
 
--- | Summarize a block tree as a 'ReifiedBlockTree'. This is the representation
+-- | Summarize a block tree as a @ReifiedBlockTree@. This is the representation
 -- we will serialize.
 toReifiedBlockTree
-  :: forall blk. (AF.HasHeader blk, IssueTestBlock blk)
+  :: forall blk. (AF.HasHeader blk)
   => BlockTree blk -> ReifiedBlockTree BlockRep
 toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
-  (anchoredFragmentToAnchoredForkOldestFirst 0 trunk)
-  (fmap (uncurry buildReifiedBranch) (zip branches [1..]))
+  (anchoredFragmentToAnchoredForkOldestFirst (trunk, 0))
+  (fmap anchoredFragmentToAnchoredForkOldestFirst $ zip (fmap btbSuffix branches) [1..])
   where
-    buildReifiedBranch :: BlockTreeBranch blk -> Int -> AnchoredFork BlockRep
-    buildReifiedBranch branch forkNo =
-      anchoredFragmentToAnchoredForkOldestFirst forkNo (btbSuffix branch)
-
-    -- | Represent an 'AnchoredFragment' as a list of 'BlockRep's, from oldest to
-    -- newest, plus the anchor.
+    -- | Represent an @AnchoredFragment@ as a list of @BlockRep@s, from oldest to
+    -- newest, plus the anchor. @BlockTreeBranch@es include a lot of redundant information;
+    -- all we need is the suffix of the branch (the part that is not shared with the trunk).
     anchoredFragmentToAnchoredForkOldestFirst
-      :: Int -> AF.AnchoredFragment blk -> AnchoredFork BlockRep
-    anchoredFragmentToAnchoredForkOldestFirst forkNo fragment = AnchoredFork
-      (getAnchorRep fragment) (fmap getBlockRep (AF.toOldestFirst fragment)) forkNo
+      :: (AF.AnchoredFragment blk, Int) -> AnchoredFork BlockRep
+    anchoredFragmentToAnchoredForkOldestFirst (fragment, forkNo) =
+      let
+        anchor = getAnchorRep fragment
+        slotNo = case anchor of
+          Nothing           -> SlotNo 0
+          Just (slotNum, _) -> slotNum
+        (fragment', _) = runWithSlotNo
+          (getBlockReps (AF.toOldestFirst fragment)) slotNo
+      in AnchoredFork anchor (fmap fst fragment') forkNo
 
-type KnownHashes blk = M.Map BlockRep (AF.HeaderHash blk)
+    -- | Summarize an anchored fragment's anchor.
+    getAnchorRep
+      :: AF.AnchoredFragment blk -> Maybe (SlotNo, BlockRep)
+    getAnchorRep fragment = case AF.anchor fragment of
+      AF.AnchorGenesis         -> Nothing
+      AF.Anchor slot _ blockNo -> Just (slot, BlockRep (unSlotNo slot) blockNo)
 
+type KnownHashes blk = M.Map (SlotNo, AF.BlockNo) (AF.HeaderHash blk)
+type KnownBlocks blk = M.Map (SlotNo, AF.BlockNo) blk
+
+-- | Given a @ReifiedBlockTree@, attempt to reconstruct the original @BlockTree@
+-- by issuing blocks in order. (Trunk first, then branches one by one). To do this
+-- we keep track of the block hashes as
+-- they are issued in a @KnownHashes@ map; after issuing a block its hash is added
+-- to the map. Morally there is a little state monad going on here, but we're just
+-- passing the state manually to keep it simple.
 fromReifiedBlockTree
   :: forall blk. (AF.HasHeader blk, IssueTestBlock blk)
   => Proxy blk -> ReifiedBlockTree BlockRep -> Either String (BlockTree blk)
 fromReifiedBlockTree _ ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   let
     -- Convert the anchor. If it is not genesis, we look up the
-    -- block hash in a map of previously issued block hashes.
+    -- block in a map of previously issued block hashes.
     makeAnchor
-      :: Maybe BlockRep -> KnownHashes blk -> Either String (AF.Anchor blk)
+      :: Maybe (SlotNo, BlockRep) -> KnownHashes blk -> Either String (AF.Anchor blk)
     makeAnchor mAnchorRep knownHashes = case mAnchorRep of
       Nothing -> Right AF.AnchorGenesis
-      Just rep -> case M.lookup rep knownHashes of
-        Just hash -> Right $ AF.Anchor (brSlotNo rep) hash (brBlockNo rep)
-        Nothing   -> Left $ "Failed to find anchor block for BlockRep: " <> show rep
+      Just (slotNo, rep) -> case M.lookup (slotNo, brBlockNo rep) knownHashes of
+        Just hash -> Right $ AF.Anchor slotNo hash (brBlockNo rep)
+        Nothing   -> Left $
+          "Failed to find anchor block for slot/blockNo: "
+          <> show (slotNo, brBlockNo rep)
+          <> " (from BlockRep " <> show rep <> ")"
 
-    -- Issue the next block.
+    -- Issue the next block. If rep is issued as `block`, with header hash `hash`,
+    -- then this computes:
+    --
+    -- (blocks, hashes) rep ---> (block : blocks, hashes <> (rep -> hash))
     issueNextBlock
-      :: Int -- ^ Current fork number
-      -> ([blk], KnownHashes blk) -- ^ Blocks issued so far, plus known hashes
+      :: Int -- ^ Current fork number, needed to issue the first block on a branch
+      -> Maybe blk -- ^ Anchor block, if this fork is anchored to a block
+      -> ([blk], KnownHashes blk, KnownBlocks blk, SlotNo) -- ^ Blocks issued so far (newest first), known hashes and known blocks
       -> BlockRep -- ^ Block to be issued
-      -> Either String ([blk], KnownHashes blk)
-    issueNextBlock forkNo (accBlocks, accHashes) rep = do
+      -> Either String ([blk], KnownHashes blk, KnownBlocks blk, SlotNo)
+    issueNextBlock forkNo mAnchorBlk (accBlocks, knownHashes, knownBlocks, lastSlotNo) rep = do
+      let slotDelta = SlotNo $ brSlotGap rep
+      let lapsedSlots = case slotDelta of
+            SlotNo 0 -> SlotNo 0
+            SlotNo n -> SlotNo (n - 1)
+      let currentSlotNo = lastSlotNo + fromIntegral (brSlotGap rep)
       blk <- Right $ case accBlocks of
-        []  -> issueFirstBlock forkNo (brSlotNo rep)
-        h:_ -> issueSuccessorBlock Nothing (brSlotNo rep) h
-      let blkHash = AF.headerFieldHash (AF.getHeaderFields blk)
-      pure (blk : accBlocks, M.insert rep blkHash accHashes)
+        []  -> case mAnchorBlk of
+          Nothing        -> issueFirstBlock forkNo slotDelta
+          Just anchorBlk -> issueSuccessorBlock (Just forkNo) lapsedSlots anchorBlk
+        h:_ -> issueSuccessorBlock Nothing lapsedSlots h
+      let blockHash = AF.headerFieldHash (AF.getHeaderFields blk)
+      pure
+        ( blk : accBlocks
+        , M.insert (currentSlotNo, brBlockNo rep) blockHash knownHashes
+        , M.insert (currentSlotNo, brBlockNo rep) blk knownBlocks
+        , currentSlotNo
+        )
 
     -- Issue a chain of blocks.
     issueBlocks
-      :: Int -- ^ Current fork number
+      :: SlotNo -- ^ Last used slot number.
+      -> Int -- ^ Current fork number
+      -> Maybe blk -- ^ Anchor block, if any
       -- | Blocks to be issued, oldest first, and the known hashes so far.
-      -> ([BlockRep], KnownHashes blk)
-      -- | Issued blocks, oldest first, and an updated map of hashes.
-      -> Either String ([blk], KnownHashes blk)
-    issueBlocks forkNo (reps, knownHashes) = do
-      (blocks, hashes) <- foldM (issueNextBlock forkNo) ([], knownHashes) reps
-      pure (reverse blocks, hashes)
+      -> ([BlockRep], KnownHashes blk, KnownBlocks blk)
+      -- | Issued blocks, oldest first, and updated maps of hashes/blocks.
+      -> Either String ([blk], KnownHashes blk, KnownBlocks blk)
+    issueBlocks lastSlotNo forkNo mAnchorBlk (reps, knownHashes, knownBlocks) = do
+      (blocks, hashes, blocksById, _) <-
+        foldM (issueNextBlock forkNo mAnchorBlk) ([], knownHashes, knownBlocks, lastSlotNo) reps
+      pure (reverse blocks, hashes, blocksById)
 
     -- Issue a single fork (blocks plus anchor).
     issueFork
       -- | The fork to process, and the known hashes so far.
-      :: (AnchoredFork BlockRep, KnownHashes blk)
-      -> Either String (AF.AnchoredFragment blk, KnownHashes blk)
-    issueFork (AnchoredFork {alAnchor, alBlocks, alForkNo}, knownHashes) = do
+      :: (AnchoredFork BlockRep, KnownHashes blk, KnownBlocks blk)
+      -> Either String (AF.AnchoredFragment blk, KnownHashes blk, KnownBlocks blk)
+    issueFork (AnchoredFork {alAnchor, alBlocks, alForkNo}, knownHashes, knownBlocks) = do
       anchor <- makeAnchor alAnchor knownHashes
-      (issuedBlocks, knownHashes') <- issueBlocks alForkNo (alBlocks, knownHashes)
+      anchorBlock <- case alAnchor of
+        Nothing -> Right Nothing
+        Just (slotNo, rep) ->
+          case M.lookup (slotNo, brBlockNo rep) knownBlocks of
+            Just blk -> Right (Just blk)
+            Nothing  -> Left $
+              "Failed to find anchor block payload for slot/blockNo: "
+              <> show (slotNo, brBlockNo rep)
+              <> " (from BlockRep " <> show rep <> ")"
+      let lastSlotNo = case alAnchor of
+            Nothing          -> SlotNo 0
+            Just (slotNo, _) -> slotNo
+      (issuedBlocks, knownHashes', knownBlocks') <-
+        issueBlocks lastSlotNo alForkNo anchorBlock (alBlocks, knownHashes, knownBlocks)
       let fragment = AF.fromOldestFirst anchor issuedBlocks
-      pure (fragment, knownHashes')
+      pure (fragment, knownHashes', knownBlocks')
 
     -- Issue the next fragment.
     issueNextFragment
-      :: ([AF.AnchoredFragment blk], KnownHashes blk)
+      :: ([AF.AnchoredFragment blk], KnownHashes blk, KnownBlocks blk)
       -> AnchoredFork BlockRep
-      -> Either String ([AF.AnchoredFragment blk], KnownHashes blk)
-    issueNextFragment (fragments, knownHashes) fork = do
-      (fragment, knownHashes') <- issueFork (fork, knownHashes)
-      pure (fragment : fragments, knownHashes')
+      -> Either String ([AF.AnchoredFragment blk], KnownHashes blk, KnownBlocks blk)
+    issueNextFragment (fragments, knownHashes, knownBlocks) fork = do
+      (fragment, knownHashes', knownBlocks') <- issueFork (fork, knownHashes, knownBlocks)
+      pure (fragment : fragments, knownHashes', knownBlocks')
 
-  (trunk, trunkHashes) <- issueFork (rbtTrunk, M.empty)
-  (branches, _) <- foldM issueNextFragment ([], trunkHashes) rbtBranches
+  (trunk, trunkHashes, trunkBlocks) <- issueFork (rbtTrunk, M.empty, M.empty)
+  (branches, allHashes, allBlocks) <- foldM issueNextFragment ([], trunkHashes, trunkBlocks) (reverse rbtBranches)
 
   case fromTrunkAndBranches trunk branches of
+    Nothing -> Left $
+      "Failed to decode block tree. HeaderHashes:\n"
+      <> show allHashes
+      <> "\nKnown block ids:\n"
+      <> show (M.keys allBlocks)
     Just bt -> Right bt
-    Nothing -> Left "Failed to decode block tree"
 
 -- | Representation of a block within a block tree. Since consensus tests do
 -- not care about the contents of blocks, we only need enough information to
 -- reconstruct the block tree using the methods in `IssueTestBlock` (and thus
 -- do not otherwise care about the specific block type).
 data BlockRep = BlockRep
-  { brSlotNo  :: SlotNo
+  { brSlotGap :: SlotGap -- ^ Number of slots lapsed since the previous block.
   , brBlockNo :: AF.BlockNo
   } deriving (Eq, Ord, Show)
 
+type SlotGap = Word64
+
 instance (Aeson.ToJSON BlockRep) where
-  toJSON BlockRep{ brSlotNo, brBlockNo } = Aeson.object
-    [ "slotNo" .= brSlotNo
+  toJSON BlockRep{ brSlotGap, brBlockNo } = Aeson.object
+    [ "slotGap" .= brSlotGap
     , "blockNo" .= brBlockNo
     ]
 
 instance (Aeson.FromJSON BlockRep) where
   parseJSON = Aeson.withObject "BlockRep" $ \v -> do
-    brSlotNo <- fmap SlotNo $ v .: "slotNo"
+    brSlotGap <- v .: "slotGap"
     brBlockNo <- fmap AF.BlockNo $ v .: "blockNo"
     pure BlockRep {..}
+
+newtype WithSlotNo a
+  = WithSlotNo { runWithSlotNo :: SlotNo -> (a, SlotNo) }
+  deriving (Functor)
+
+instance Applicative WithSlotNo where
+  pure x = WithSlotNo $ \slotNo -> (x, slotNo)
+  WithSlotNo f <*> WithSlotNo g = WithSlotNo $ \slotNo -> do
+    let (h, slotNo') = f slotNo
+    let (x, slotNo'') = g slotNo'
+    (h x, slotNo'')
 
 -- | Summarize a block as a 'BlockRep'. Summarizable block types must
 -- implement 'encodeHeaderHash' from 'IssueTestBlock'.
 getBlockRep
-  :: forall blk. (AF.HasHeader blk, IssueTestBlock blk)
-  => blk -> BlockRep
-getBlockRep blk =
+  :: forall blk. (AF.HasHeader blk)
+  => blk -> WithSlotNo (BlockRep, blk)
+getBlockRep blk = WithSlotNo $ \lastSlotNo ->
   let headers = AF.getHeaderFields blk
-  in BlockRep (AF.headerFieldSlot headers)
-      (AF.headerFieldBlockNo headers)
+      currentSlotNo = AF.headerFieldSlot headers
+      slotGap = slotGapSince lastSlotNo currentSlotNo
+      blockNo = AF.headerFieldBlockNo headers
+  in ((BlockRep slotGap blockNo, blk), currentSlotNo)
 
--- | Get the summary of an anchored fragment's anchor.
-getAnchorRep
-  :: forall blk. (IssueTestBlock blk)
-  => AF.AnchoredFragment blk -> Maybe BlockRep
-getAnchorRep fragment = case AF.anchor fragment of
-  AF.AnchorGenesis            -> Nothing
-  AF.Anchor slot hash blockNo -> Just $ BlockRep slot blockNo
+getBlockReps
+  :: forall blk t. (AF.HasHeader blk, Traversable t)
+  => t blk -> WithSlotNo (t (BlockRep, blk))
+getBlockReps = traverse getBlockRep
 
--- | @AnchoredFork@ is a simplified representation of an @AnchoredFragment@
--- as a list; an anchor of 'Nothing' represents the genesis.
---
--- INVARIANT: the blocks in 'alBlocks' must be in order from oldest to newest,
--- and each block must be a valid successor of the previous block.
-data AnchoredFork u = AnchoredFork
-  { alAnchor :: Maybe u
-  , alBlocks :: [u] -- Oldest first!
-  , alForkNo :: Int
-  } deriving (Eq, Show, Functor, Foldable, Traversable)
+slotGapSince :: SlotNo -> SlotNo -> SlotGap
+slotGapSince (SlotNo previous) (SlotNo current) = current - previous
 
-instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
-  toJSON AnchoredFork{alAnchor, alBlocks, alForkNo} = Aeson.object
-    [ "anchor" .= case alAnchor of
-        Nothing  -> Aeson.String "genesis"
-        Just rep -> Aeson.toJSON rep
-    , "blocks" .= alBlocks
-    , "forkNo" .= show alForkNo
-    ]
+blockRepMap
+  :: forall blk. (AF.HasHeader blk) => BlockTree blk -> M.Map BlockRep blk
+blockRepMap (BlockTree trunk branches) =
+  let
+    fragments :: [AF.AnchoredFragment blk]
+    fragments = trunk : fmap btbSuffix branches
 
-instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
-  parseJSON = Aeson.withObject "AnchoredFork" $ \v -> do
-    alAnchor <- do
-      val <- v .: "anchor"
-      case val of
-        Aeson.String "genesis" -> pure Nothing
-        _                      -> Just <$> Aeson.parseJSON val
-    alBlocks <- v .: "blocks"
-    alForkNo <- do
-      forkNoStr <- v .: "forkNo"
-      case readMaybe forkNoStr of
-        Just n  -> pure n
-        Nothing -> fail $ "Invalid integer: " <> forkNoStr
-    pure AnchoredFork {..}
+    folder
+      :: AF.AnchoredFragment blk -> M.Map BlockRep blk -> M.Map BlockRep blk
+    folder fragment acc =
+      let
+        slotNo = case AF.anchor fragment of
+          AF.AnchorGenesis   -> SlotNo 0
+          AF.Anchor slot _ _ -> slot
+        (fragment', _) = runWithSlotNo (getBlockReps (AF.toOldestFirst fragment)) slotNo
+      in acc <> M.fromList (fmap (\(rep, blk) -> (rep, blk)) (toList fragment'))
+  in foldr folder M.empty fragments
 
 fromReifiedPointSchedule
-  :: forall blk. (AF.HasHeader blk, IssueTestBlock blk)
+  :: forall blk. (AF.HasHeader blk)
   => BlockTree blk -> PointSchedule BlockRep -> Either String (PointSchedule blk)
 fromReifiedPointSchedule blockTree schedule =
   let
-    blockRepMap :: M.Map BlockRep blk
-    blockRepMap = M.fromList $ fmap (\blk -> (getBlockRep blk, blk)) (toList blockTree)
-
     lookupBlockRep :: BlockRep -> Either String blk
     lookupBlockRep rep =
-      case M.lookup rep blockRepMap of
+      case M.lookup rep $ blockRepMap blockTree of
         Just blk -> Right blk
         Nothing  -> Left $ "Failed to find block for BlockRep: " <> show rep
   in traverse lookupBlockRep schedule
@@ -391,7 +488,7 @@ deserializeReifiedTestCase
 deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
   fmtVersion <- obj .: "formatVersion"
   case fmtVersion of
-    FormatVersion_0_0 -> do
+    FormatVersion _ -> do
       -- Currently we only have one format version.
       rtcTestKey <- obj .: "key"
       rtcTestVersion <- obj .: "testVersion"
@@ -402,7 +499,7 @@ deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
       pure ReifiedTestCase {..}
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where
-  toJSON = serializeReifiedTestCase FormatVersion_0_0
+  toJSON = serializeReifiedTestCase (FormatVersion 0)
 
 instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) where
   parseJSON = deserializeReifiedTestCase

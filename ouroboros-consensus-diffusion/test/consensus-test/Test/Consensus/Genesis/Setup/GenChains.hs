@@ -20,7 +20,6 @@ import           Control.Monad (replicateM)
 import qualified Control.Monad.Except as Exn
 import           Data.List as List (foldl')
 import           Data.Proxy (Proxy (..))
-import qualified Data.Text as T
 import           Data.Time.Clock (DiffTime)
 import qualified Data.Vector.Unboxed as Vector
 import           Data.Word (Word8)
