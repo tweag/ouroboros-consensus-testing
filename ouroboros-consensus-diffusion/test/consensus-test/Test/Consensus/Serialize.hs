@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -184,12 +185,6 @@ data BlockRep = BlockRep
   , brBlockNo :: AF.BlockNo
   } deriving (Eq, Ord, Show)
 
--- | There are two numbers relevant to slots running around. @SlotNo@ is an
--- ordinal number that identifies a slot. @SlotGap@ is a cardinal number that
--- counts how many slots have expired since the last issued block; this is
--- what IssueTestBlock needs to issue the next block.
-type SlotGap = Word64
-
 instance (Aeson.ToJSON BlockRep) where
   toJSON BlockRep{ brSlotGap, brBlockNo } = Aeson.object
     [ "slotGap" .= brSlotGap
@@ -201,6 +196,21 @@ instance (Aeson.FromJSON BlockRep) where
     brSlotGap <- v .: "slotGap"
     brBlockNo <- fmap AF.BlockNo $ v .: "blockNo"
     pure BlockRep {..}
+
+-- | There are two numbers relevant to slots running around. @SlotNo@ is an
+-- ordinal number that identifies a slot. @SlotGap@ is a cardinal number that
+-- counts how many slots have expired since the last issued block; this is
+-- what IssueTestBlock needs to issue the next block.
+newtype SlotGap = SlotGap { unSlotGap :: Word64 }
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Num, Real, Enum, Integral)
+
+instance Aeson.ToJSON SlotGap where
+  toJSON (SlotGap gap) = Aeson.Number (fromIntegral gap)
+
+instance Aeson.FromJSON SlotGap where
+  parseJSON = Aeson.withScientific "SlotGap" $ \n ->
+    pure $ SlotGap (fromIntegral (floor n))
 
 -- | Blocks in the block tree carry their slot number, but to issue
 -- new blocks we need to know the slot /gap/ compared to the most
@@ -223,7 +233,7 @@ getBlockRep blk = do
   SlotNo lastSlotNo <- get
   let headers = AF.getHeaderFields blk
       SlotNo currentSlotNo = AF.headerFieldSlot headers
-      slotGap = currentSlotNo - lastSlotNo :: SlotGap
+      slotGap = SlotGap (currentSlotNo - lastSlotNo)
       blockNo = AF.headerFieldBlockNo headers
   put (SlotNo currentSlotNo)
   pure (BlockRep slotGap blockNo, blk)
@@ -336,7 +346,7 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
       :: AF.AnchoredFragment blk -> Maybe (SlotNo, BlockRep)
     getAnchorRep fragment = case AF.anchor fragment of
       AF.AnchorGenesis         -> Nothing
-      AF.Anchor slot _ blockNo -> Just (slot, BlockRep (unSlotNo slot) blockNo)
+      AF.Anchor slot _ blockNo -> Just (slot, BlockRep (SlotGap $ unSlotNo slot) blockNo)
 
 -- | Blocks in a block tree are uniquely identified by thier
 -- slot and block numbers. @KnownBlocks@ maps these identifiers
@@ -377,7 +387,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       -> BlockRep -- ^ Block to be issued
       -> Either String ([blk], KnownBlocks blk, SlotNo)
     issueNextBlock forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
-      let slotDelta = SlotNo $ brSlotGap rep
+      let slotDelta = SlotNo $ unSlotGap (brSlotGap rep)
       let lapsedSlots = case slotDelta of
             SlotNo 0 -> SlotNo 0
             SlotNo n -> SlotNo (n - 1)
