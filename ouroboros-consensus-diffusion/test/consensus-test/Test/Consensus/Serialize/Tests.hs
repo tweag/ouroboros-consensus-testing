@@ -6,7 +6,10 @@ module Test.Consensus.Serialize.Tests (tests) where
 
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
+import           Data.List (foldl')
+import qualified Data.Map as M
 import           Data.Proxy (Proxy (..))
+import qualified Data.Set as Set
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader, SlotNo (..),
                      StandardHash)
@@ -27,20 +30,24 @@ import           Test.Util.TestBlock (TestBlock)
 -- with a proper key type.
 tests :: TestTree
 tests = testGroup "JSON Serialization"
-  [ testGroup "serialize . deserialize . serialize == serialize"
-    [ testProperty "ReifiedTestCase () BlockRep  <===>  JSON" $
+  [ testGroup "ReifiedTestCase () BlockRep"
+    [ testProperty "serialize . deserialize . serialize == serialize" $
       QC.forAll (genReifiedTestCase (pure 1))
         (prop_serialize_weak_inverse (Proxy @(ReifiedTestCase () BlockRep)))
-    ]
-  , testGroup "deserialize . serialize == id"
-    [ testProperty "ReifiedTestCase () BlockRep  <===>  JSON" $
+    , testProperty "deserialize . serialize == id" $
       QC.forAll (genReifiedTestCase (pure 1))
-        (prop_serialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
+        (prop_deserialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
     ]
-  , testGroup "fromReifiedBlockTree . toReifiedBlockTree == id"
-    [ testProperty "BlockTree TestBlock  <===>  ReifiedBlockTree BlockRep" $
+  , testGroup "ReifiedBlockTree invariants"
+    [ testProperty "fromReifiedBlockTree . toReifiedBlockTree == id" $
       QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
-        (prop_reified_block_tree_conversion)
+        (prop_fromReifiedBlockTree_inverse)
+    , testProperty "toReifiedBlockTree . fromReifiedBlockTree . toReifiedBlockTree == toReifiedBlockTree" $
+      QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
+        prop_toReifiedBlockTree_weak_inverse
+    , testProperty "branch anchors always resolve to trunk ids" $
+      QC.forAllShrink (genTestBlockTree (pure 2)) shrinkBlockTree
+        prop_anchor_correctness_invariants
     ]
   ]
 
@@ -141,10 +148,10 @@ shrinkAnchoredFragment fragment = case AF.toNewestFirst fragment of
 --
 -- This property asserts that values survive after being serialized
 -- and then deserialized.
-prop_serialize_inverse
+prop_deserialize_inverse
   :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a, Show a, Eq a)
   => Proxy a -> a -> QC.Property
-prop_serialize_inverse _ value =
+prop_deserialize_inverse _ value =
   let
     json1 = Aeson.toJSON value
     cannotParseMsg err = mconcat
@@ -194,10 +201,10 @@ prop_serialize_weak_inverse _ value =
         True  -> QC.property True
 
 -- | fromReifiedBlockTree . toReifiedBlockTree == id
-prop_reified_block_tree_conversion
+prop_fromReifiedBlockTree_inverse
   :: forall blk. (Show blk, Eq blk, HasHeader blk, IssueTestBlock blk)
   => BlockTree blk -> QC.Property
-prop_reified_block_tree_conversion blockTree =
+prop_fromReifiedBlockTree_inverse blockTree =
   let
     reified = toReifiedBlockTree blockTree
     cannotConvertMsg err = mconcat
@@ -233,3 +240,63 @@ eqBlockTree (BlockTree trunk1 branches1) (BlockTree trunk2 branches2) =
           ]
       in QC.counterexample msg $ QC.property (branches1 == branches2)
     ]
+
+-- | toReifiedBlockTree . fromReifiedBlockTree . toReifiedBlockTree == toReifiedBlockTree
+prop_toReifiedBlockTree_weak_inverse
+  :: forall blk. (Show blk, HasHeader blk, IssueTestBlock blk)
+  => BlockTree blk -> QC.Property
+prop_toReifiedBlockTree_weak_inverse blockTree =
+  let
+    reified1 = toReifiedBlockTree blockTree
+    cannotConvertMsg err = mconcat
+      [ "Unable to decode initial reified tree:\n"
+      , "Initial ReifiedBlockTree: ", show reified1, "\n"
+      , "Error: ", err
+      ]
+    unstableMsg reified2 = mconcat
+      [ "Reified tree not stable after round-trip:\n"
+      , "Initial: ", show reified1, "\n"
+      , "After:   ", show reified2
+      ]
+    fromReified1 :: Either String (BlockTree blk, M.Map (SlotNo, BlockNo) blk)
+    fromReified1 = fromReifiedBlockTree reified1
+  in case fromReified1 of
+      Left err               -> QC.counterexample (cannotConvertMsg err) False
+      Right (blockTree', _ ) ->
+        let reified2 = toReifiedBlockTree blockTree'
+        in QC.counterexample (unstableMsg reified2) $ QC.property (reified1 == reified2)
+
+-- | Every non-genesis branch anchor in a reified tree must refer to a trunk block id.
+prop_anchor_correctness_invariants
+  :: forall blk. (HasHeader blk)
+  => BlockTree blk -> QC.Property
+prop_anchor_correctness_invariants blockTree =
+  let
+    reified@ReifiedBlockTree{rbtTrunk, rbtBranches} = toReifiedBlockTree blockTree
+    trunkIds = Set.fromList (forkBlockIds rbtTrunk)
+    missingAnchors = flip map (zip [0 :: Int ..] rbtBranches) $ \(ix, branch) ->
+      case forkAnchor branch of
+        Nothing -> Nothing
+        Just (slotNo, rep) ->
+          let anchorId = (slotNo, brBlockNo rep)
+          in if Set.member anchorId trunkIds
+             then Nothing
+             else Just (ix, anchorId)
+    failures = [ x | Just x <- missingAnchors ]
+    msg = mconcat
+      [ "Found branch anchors not present in trunk block ids:\n"
+      , "Missing anchors: ", show failures, "\n"
+      , "Trunk ids: ", show (Set.toList trunkIds), "\n"
+      , "ReifiedBlockTree: ", show reified
+      ]
+  in QC.counterexample msg $ QC.property (null failures)
+
+-- | Compute the set of block identifiers (slot and block number) for a fork.
+forkBlockIds :: AnchoredFork BlockRep -> [(SlotNo, BlockNo)]
+forkBlockIds AnchoredFork{forkAnchor, forkBlocks} =
+  let
+    initialSlotNo = maybe (SlotNo 0) fst forkAnchor
+    step (currentSlotNo, acc) BlockRep{brSlotGap, brBlockNo} =
+      let nextSlotNo = currentSlotNo + fromIntegral brSlotGap
+      in (nextSlotNo, (nextSlotNo, brBlockNo) : acc)
+  in reverse $ snd $ foldl' step (initialSlotNo, []) forkBlocks
