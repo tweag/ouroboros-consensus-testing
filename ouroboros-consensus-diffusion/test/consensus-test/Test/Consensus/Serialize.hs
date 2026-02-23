@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -28,6 +30,7 @@ module Test.Consensus.Serialize (
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Control.Monad (foldM)
+import           Control.Monad.State (MonadState (..), State, runState)
 import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -43,7 +46,7 @@ import           Test.Consensus.Genesis.ShrinkIndex
 import           Test.Consensus.PointSchedule
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random
-import           Text.Read
+import           Text.Read (readMaybe)
 
 -- This module implements JSON serialization for consensus test cases. The
 -- interface comprises:
@@ -204,27 +207,26 @@ instance (Aeson.FromJSON BlockRep) where
 -- recently issued block. @WithSlotNo@ is a state monad that stores
 -- the most recently used slot number so we can compute gaps.
 newtype WithSlotNo a = WithSlotNo
-  { runWithSlotNo :: SlotNo -> (a, SlotNo)
-  } deriving (Functor)
+  { unWithSlotNo :: State SlotNo a }
+  deriving stock (Functor)
+  deriving (Applicative, Monad, MonadState SlotNo) via (State SlotNo)
 
-instance Applicative WithSlotNo where
-  pure x = WithSlotNo $ \slotNo -> (x, slotNo)
-  WithSlotNo f <*> WithSlotNo g = WithSlotNo $ \slotNo0 -> do
-    let (h, slotNo1) = f slotNo0
-    let (x, slotNo2) = g slotNo1
-    (h x, slotNo2)
+runWithSlotNo :: WithSlotNo a -> SlotNo -> (a, SlotNo)
+runWithSlotNo action slotNo0 = runState (unWithSlotNo action) slotNo0
 
 -- | Summarize a block as a @BlockRep@. @WithSlotNo@ is keeping track
 -- of the most recently used slot number so we can compute the slot gap.
 getBlockRep
   :: forall blk. (AF.HasHeader blk)
   => blk -> WithSlotNo (BlockRep, blk)
-getBlockRep blk = WithSlotNo $ \(SlotNo lastSlotNo) ->
+getBlockRep blk = do
+  SlotNo lastSlotNo <- get
   let headers = AF.getHeaderFields blk
       SlotNo currentSlotNo = AF.headerFieldSlot headers
       slotGap = currentSlotNo - lastSlotNo :: SlotGap
       blockNo = AF.headerFieldBlockNo headers
-  in ((BlockRep slotGap blockNo, blk), SlotNo currentSlotNo)
+  put (SlotNo currentSlotNo)
+  pure (BlockRep slotGap blockNo, blk)
 
 getBlockReps
   :: forall blk t. (AF.HasHeader blk, Traversable t)
