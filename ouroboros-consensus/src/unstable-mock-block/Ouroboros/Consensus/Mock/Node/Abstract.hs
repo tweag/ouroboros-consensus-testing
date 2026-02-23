@@ -12,7 +12,7 @@ module Ouroboros.Consensus.Mock.Node.Abstract (
 
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
-import           GHC.Stack
+import           Data.Word (Word32)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config.SupportsNode

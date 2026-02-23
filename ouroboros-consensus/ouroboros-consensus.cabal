@@ -522,7 +522,6 @@ library unstable-mock-block
     cborg,
     containers,
     deepseq,
-    hashable,
     mempack,
     mtl,
     nothunks,
