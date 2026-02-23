@@ -41,7 +41,7 @@ tests = testGroup "JSON Serialization"
   , testGroup "ReifiedBlockTree invariants"
     [ testProperty "fromReifiedBlockTree . toReifiedBlockTree == id" $
       QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
-        (prop_fromReifiedBlockTree_inverse)
+        prop_fromReifiedBlockTree_inverse
     , testProperty "toReifiedBlockTree . fromReifiedBlockTree . toReifiedBlockTree == toReifiedBlockTree" $
       QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
         prop_toReifiedBlockTree_weak_inverse
@@ -274,14 +274,12 @@ prop_anchor_correctness_invariants blockTree =
   let
     reified@ReifiedBlockTree{rbtTrunk, rbtBranches} = toReifiedBlockTree blockTree
     trunkIds = Set.fromList (forkBlockIds rbtTrunk)
-    missingAnchors = flip map (zip [0 :: Int ..] rbtBranches) $ \(ix, branch) ->
-      case forkAnchor branch of
-        Nothing -> Nothing
-        Just (slotNo, rep) ->
-          let anchorId = (slotNo, brBlockNo rep)
-          in if Set.member anchorId trunkIds
-             then Nothing
-             else Just (ix, anchorId)
+    missingAnchors = flip map (zip [0..] rbtBranches) $ \(ix :: Int, branch) -> do
+      (slotNo, rep) <- forkAnchor branch
+      let anchorId = (slotNo, brBlockNo rep)
+      case Set.member anchorId trunkIds of
+        True  -> Nothing
+        False -> Just (ix, anchorId)
     failures = [ x | Just x <- missingAnchors ]
     msg = mconcat
       [ "Found branch anchors not present in trunk block ids:\n"
