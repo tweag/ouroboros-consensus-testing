@@ -7,7 +7,6 @@ module Test.Consensus.Serialize.Tests (tests) where
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader, SlotNo (..),
                      StandardHash)
@@ -18,10 +17,9 @@ import           Test.Consensus.Genesis.ShrinkIndex
 import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Consensus.Serialize
 import qualified Test.QuickCheck as QC
-import           Test.Tasty (TestTree, localOption, testGroup)
-import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
-import           Test.Util.TestBlock (TestBlock, Validity (..),
-                     testHashFromList, unsafeTestBlockWithPayload)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Util.TestBlock (TestBlock)
 
 
 
@@ -44,7 +42,6 @@ tests = testGroup "JSON Serialization"
       QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
         (prop_reified_block_tree_conversion)
     ]
-  , test_fromReifiedBlockTree_cases
   ]
 
 
@@ -69,6 +66,7 @@ genTestBlockTreeAndPointSchedule
 genTestBlockTreeAndPointSchedule branchFactor = QC.oneof
   [ do
       -- Create a block tree with @1@ alternative chain.
+      -- (longRangeAttack does not work with more than one branch.)
       blockTree <- genTestBlockTree (pure 1)
       -- Create a 'longRangeAttack' schedule based on the generated chains.
       ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
@@ -211,189 +209,6 @@ prop_reified_block_tree_conversion blockTree =
   in case fromReifiedBlockTree reified of
       Left err              -> QC.counterexample (cannotConvertMsg err) False
       Right (blockTree', _) -> eqBlockTree blockTree blockTree'
-
-
-
--- Test Cases for fromReifiedBlockTree --
------------------------------------------
-
--- | Specific input output pairs for testing 'fromReifiedBlockTree'. These are
--- intended to demonstrate the expected semantics of slot number assignments.
-test_fromReifiedBlockTree_cases :: TestTree
-test_fromReifiedBlockTree_cases = localOption (QuickCheckTests 1) $
-  testGroup "fromReifiedBlockTree cases"
-  [ test_fromReifiedBlockTree_case
-    "Empty trunk, no branches"
-    ( AnchoredFork Nothing mempty 0
-    , []
-    , AF.fromOldestFirst AF.AnchorGenesis mempty
-    , []
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 1 block, no branches"
-    ( AnchoredFork Nothing [BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}] 0
-    , [] :: [AnchoredFork BlockRep]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [makeTestBlock [0] 0 Valid]
-    , []
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 2 blocks, no branches"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      ] 0
-    , [] :: [AnchoredFork BlockRep]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ makeTestBlock [0] 0 Valid
-      , makeTestBlock [0,0] 1 Valid
-      ]
-    , []
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 3 blocks, no branches"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-      ] 0
-    , [] :: [AnchoredFork BlockRep]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ makeTestBlock [0] 0 Valid
-      , makeTestBlock [0,0] 1 Valid
-      , makeTestBlock [0,0,0] 2 Valid
-      ]
-    , []
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 2 blocks, 1 branch at genesis"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      ] 0
-    , [ AnchoredFork Nothing
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-        ] 1
-      ]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ makeTestBlock [0] 0 Valid
-      , makeTestBlock [0,0] 1 Valid
-      ]
-    , [ AF.fromOldestFirst AF.AnchorGenesis
-        [makeTestBlock [1] 0 Valid]
-      ]
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 3 blocks, 1 branch from block"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-      ] 0
-    , [ AnchoredFork (Just (SlotNo 0, BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}))
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-        ] 1
-      ]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ unsafeTestBlockWithPayload (testHashFromList [0]) (SlotNo 0) Valid ()
-      , unsafeTestBlockWithPayload (testHashFromList [0,0]) (SlotNo 1) Valid ()
-      , unsafeTestBlockWithPayload (testHashFromList [0,0,0]) (SlotNo 2) Valid ()
-      ]
-    , [ AF.fromOldestFirst (AF.Anchor (SlotNo 0) (testHashFromList [0]) (BlockNo 1))
-        [ unsafeTestBlockWithPayload (testHashFromList [0,1]) (SlotNo 1) Valid ()
-        ]
-      ]
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 3 blocks, 2 branches from genesis and block"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-      ] 0
-    , [ AnchoredFork Nothing
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 4}
-        ] 1
-      , AnchoredFork (Just (SlotNo 0, BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}))
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 5}
-        ] 2
-      ]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ makeTestBlock [0] 0 Valid
-      , makeTestBlock [0,0] 1 Valid
-      , makeTestBlock [0,0,0] 2 Valid
-      ]
-    , [ AF.fromOldestFirst AF.AnchorGenesis
-        [ makeTestBlock [1] 0 Valid
-        ]
-      , AF.fromOldestFirst (AF.Anchor (SlotNo 0) (testHashFromList [0]) (BlockNo 1))
-        [ makeTestBlock [0,2] 1 Valid
-        ]
-      ]
-    )
-  , test_fromReifiedBlockTree_case
-    "Trunk with 3 blocks, 2 branches from genesis and block (reverse branch order)"
-    ( AnchoredFork Nothing
-      [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 2}
-      , BlockRep {brSlotGap = 0, brBlockNo = BlockNo 3}
-      ] 0
-    , [ AnchoredFork (Just (SlotNo 0, BlockRep {brSlotGap = 0, brBlockNo = BlockNo 1}))
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 5}
-        ] 2
-      , AnchoredFork Nothing
-        [ BlockRep {brSlotGap = 0, brBlockNo = BlockNo 4}
-        ] 1
-      ]
-    , AF.fromOldestFirst AF.AnchorGenesis
-      [ makeTestBlock [0] 0 Valid
-      , makeTestBlock [0,0] 1 Valid
-      , makeTestBlock [0,0,0] 2 Valid
-      ]
-    , [ AF.fromOldestFirst (AF.Anchor (SlotNo 0) (testHashFromList [0]) (BlockNo 1))
-        [ makeTestBlock [0,2] 1 Valid
-        ]
-      , AF.fromOldestFirst AF.AnchorGenesis
-        [ makeTestBlock [1] 0 Valid
-        ]
-      ]
-    )
-  ]
-
--- | Helper for manually construcing a 'TestBlock' with a given hash, slot number,
--- and validity.
-makeTestBlock :: [Word64] -> Word64 -> Validity -> TestBlock
-makeTestBlock hash slot validity =
-  unsafeTestBlockWithPayload (testHashFromList hash) (SlotNo slot) validity ()
-
--- | Convert a given reified block tree (as a trunk + branches) to a @BlockTree@,
--- and assert that the result is an expected value.
-test_fromReifiedBlockTree_case
-  :: String
-  -> ( AnchoredFork BlockRep
-     , [AnchoredFork BlockRep]
-     , AF.AnchoredFragment TestBlock
-     , [AF.AnchoredFragment TestBlock]
-     )
-  -> TestTree
-test_fromReifiedBlockTree_case title parts =
-  testProperty title $
-    let
-      (rTrunk, rBranches, bTrunk, bBranches) = parts
-      actual = fmap fst $ fromReifiedBlockTree $ ReifiedBlockTree rTrunk rBranches
-      expect = fromTrunkAndBranches bTrunk bBranches
-      cannotConvertMsg err = mconcat
-        [ "Failed to convert from ReifiedBlockTree to BlockTree:\n"
-        , "Reified trunk: ", show rTrunk, "\n"
-        , "Reified branches: ", show rBranches, "\n"
-        , "Expected: ", show expect, "\n"
-        , "Error: ", err
-        ]
-    in case (expect, actual) of
-        (Just expectedBlockTree, Right actualBlockTree) ->
-          eqBlockTree actualBlockTree expectedBlockTree
-        (Nothing, _) -> QC.counterexample "Expected block tree is invalid" False
-        (_, Left err) -> QC.counterexample (cannotConvertMsg err) False
 
 -- Are two block trees equal?
 eqBlockTree
