@@ -34,7 +34,7 @@ class ( MockProtocolSpecific c ext
 --
 -- The sole purpose of this is to make sure that these mock protocols have
 -- different IDs from each other and from regular protocols.
-constructMockNetworkMagic :: NetworkMagic
+constructMockNetworkMagic :: HasCallStack => NetworkMagic
 constructMockNetworkMagic =
   NetworkMagic (764824073 :: Word32)
 
