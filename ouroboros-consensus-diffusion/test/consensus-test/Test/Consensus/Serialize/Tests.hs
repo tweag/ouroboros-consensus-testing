@@ -7,7 +7,6 @@ module Test.Consensus.Serialize.Tests (tests) where
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import           Data.List (foldl')
-import qualified Data.Map as M
 import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -32,24 +31,32 @@ tests :: TestTree
 tests = testGroup "JSON Serialization"
   [ testGroup "ReifiedTestCase () BlockRep"
     [ testProperty "serialize . deserialize . serialize == serialize" $
-      QC.forAll (genReifiedTestCase (pure 1))
+      QC.forAll (genReifiedTestCase branchFactor)
         (prop_serialize_weak_inverse (Proxy @(ReifiedTestCase () BlockRep)))
     , testProperty "deserialize . serialize == id" $
-      QC.forAll (genReifiedTestCase (pure 1))
+      QC.forAll (genReifiedTestCase branchFactor)
         (prop_deserialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
     ]
-  , testGroup "ReifiedBlockTree invariants"
+  , testGroup "ReifiedBlockTree"
     [ testProperty "fromReifiedBlockTree . toReifiedBlockTree == id" $
-      QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
+      QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
         prop_fromReifiedBlockTree_inverse
     , testProperty "toReifiedBlockTree . fromReifiedBlockTree . toReifiedBlockTree == toReifiedBlockTree" $
-      QC.forAllShrink (genTestBlockTree (pure 1)) shrinkBlockTree
+      QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
         prop_toReifiedBlockTree_weak_inverse
     , testProperty "branch anchors always resolve to trunk ids" $
-      QC.forAllShrink (genTestBlockTree (pure 2)) shrinkBlockTree
+      QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
         prop_anchor_correctness_invariants
     ]
+  , testGroup "PointSchedule"
+    [ testProperty "toReifiedPointSchedule . fromReifiedPointSchedule . toReifiedPointSchedule == toReifiedPointSchedule" $
+      QC.forAll (genTestBlockTreeWithPointSchedule branchFactor) $
+        \(blockTree, pointSchedule) ->
+          prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule
+    ]
   ]
+  where
+    branchFactor = pure 5
 
 
 
@@ -60,39 +67,41 @@ genReifiedTestCase
   :: (QC.Arbitrary key)
   => QC.Gen Word -> QC.Gen (ReifiedTestCase key BlockRep)
 genReifiedTestCase branchFactor = do
-  (rtcBlockTree, rtcPointSchedule) <- genTestBlockTreeAndPointSchedule branchFactor
+  (rtcBlockTree, rtcPointSchedule) <- genTestReifiedBlockTreeWithPointSchedule branchFactor
   rtcTestKey <- QC.arbitrary
   rtcTestVersion <- QC.arbitrary
   rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
   rtcSeed <- fmap Seed QC.arbitrary
   pure ReifiedTestCase {..}
 
-genTestBlockTreeAndPointSchedule
+genTestReifiedBlockTreeWithPointSchedule
   :: QC.Gen Word
   -> QC.Gen (ReifiedBlockTree BlockRep, Schedule.PointSchedule (SlotNo, BlockNo))
-genTestBlockTreeAndPointSchedule branchFactor = QC.oneof
-  [ do
-      -- Create a block tree with @1@ alternative chain.
-      -- (longRangeAttack does not work with more than one branch.)
-      blockTree <- genTestBlockTree (pure 1)
-      -- Create a 'longRangeAttack' schedule based on the generated chains.
-      ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
-      reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
-      pure (reifiedBlockTree, toReifiedPointSchedule ps)
-  , do
-      -- Create a block tree with @branchFactor@ alternative chains.
-      blockTree <- genTestBlockTree branchFactor
-      -- Create a 'uniform' schedule based on the generated chains.
-      ps <- Schedule.stToGen $ Schedule.uniformPoints
-        (Schedule.PointsGeneratorParams
-          {pgpExtraHonestPeers = 1, pgpDowntime = Schedule.NoDowntime})
-        blockTree
-      reifiedBlockTree <- fmap toReifiedBlockTree $ genTestBlockTree branchFactor
-      pure (reifiedBlockTree, toReifiedPointSchedule ps)
-  ]
+genTestReifiedBlockTreeWithPointSchedule branchFactor = do
+  (blockTree, pointSchedule) <- genTestBlockTreeWithPointSchedule branchFactor
+  pure (toReifiedBlockTree blockTree, toReifiedPointSchedule pointSchedule)
 
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
 genTestBlockTree = fmap gtBlockTree . genChains
+
+genTestBlockTreeWithPointSchedule
+  :: QC.Gen Word
+  -> QC.Gen (BlockTree TestBlock, Schedule.PointSchedule TestBlock)
+genTestBlockTreeWithPointSchedule branchFactor = QC.oneof
+  [ do
+      blockTree <- genTestBlockTree (pure 1)
+      ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
+      pure (blockTree, ps)
+  , do
+      blockTree <- genTestBlockTree branchFactor
+      ps <- Schedule.stToGen $ Schedule.uniformPoints
+        (Schedule.PointsGeneratorParams
+          { pgpExtraHonestPeers = 1
+          , pgpDowntime = Schedule.NoDowntime
+          })
+        blockTree
+      pure (blockTree, ps)
+  ]
 
 shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
 shrinkBlockTree (BlockTree trunk branches) = mconcat
@@ -258,7 +267,7 @@ prop_toReifiedBlockTree_weak_inverse blockTree =
       , "Initial: ", show reified1, "\n"
       , "After:   ", show reified2
       ]
-    fromReified1 :: Either String (BlockTree blk, M.Map (SlotNo, BlockNo) blk)
+    fromReified1 :: Either String (BlockTree blk, KnownBlocks blk)
     fromReified1 = fromReifiedBlockTree reified1
   in case fromReified1 of
       Left err               -> QC.counterexample (cannotConvertMsg err) False
@@ -276,7 +285,7 @@ prop_anchor_correctness_invariants blockTree =
     trunkIds = Set.fromList (forkBlockIds rbtTrunk)
     missingAnchors = flip map (zip [0..] rbtBranches) $ \(ix :: Int, branch) -> do
       (slotNo, rep) <- forkAnchor branch
-      let anchorId = (slotNo, brBlockNo rep)
+      let anchorId = BlockId slotNo (brBlockNo rep) (ForkNo 0)
       case Set.member anchorId trunkIds of
         True  -> Nothing
         False -> Just (ix, anchorId)
@@ -289,12 +298,49 @@ prop_anchor_correctness_invariants blockTree =
       ]
   in QC.counterexample msg $ QC.property (null failures)
 
+-- | toReifiedPointSchedule . fromReifiedPointSchedule . toReifiedPointSchedule == toReifiedPointSchedule
+prop_toReifiedPointSchedule_weak_inverse
+  :: forall blk.
+     (Show blk, HasHeader blk, IssueTestBlock blk)
+  => BlockTree blk -> Schedule.PointSchedule blk -> QC.Property
+prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule =
+  let
+    reifiedTree = toReifiedBlockTree blockTree
+    reifiedSchedule1 = toReifiedPointSchedule pointSchedule
+    cannotConvertTreeMsg err = mconcat
+      [ "Unable to decode reified block tree for point schedule test:\n"
+      , "BlockTree: ", show blockTree, "\n"
+      , "ReifiedBlockTree: ", show reifiedTree, "\n"
+      , "Error: ", err
+      ]
+    cannotConvertScheduleMsg err = mconcat
+      [ "Unable to decode reified point schedule:\n"
+      , "PointSchedule: ", show pointSchedule, "\n"
+      , "ReifiedPointSchedule: ", show reifiedSchedule1, "\n"
+      , "Error: ", err
+      ]
+    notStableMsg reifiedSchedule2 = mconcat
+      [ "Reified point schedule not stable after weak round-trip:\n"
+      , "Original: ", show reifiedSchedule1, "\n"
+      , "After:    ", show reifiedSchedule2
+      ]
+    fromReifiedTree :: Either String (BlockTree blk, KnownBlocks blk)
+    fromReifiedTree = fromReifiedBlockTree reifiedTree
+  in case fromReifiedTree of
+      Left err -> QC.counterexample (cannotConvertTreeMsg err) False
+      Right (_, knownBlocks) ->
+        case fromReifiedPointSchedule knownBlocks reifiedSchedule1 of
+          Left err -> QC.counterexample (cannotConvertScheduleMsg err) False
+          Right pointSchedule' ->
+            let reifiedSchedule2 = toReifiedPointSchedule pointSchedule'
+            in QC.counterexample (notStableMsg reifiedSchedule2) $ QC.property (reifiedSchedule2 == reifiedSchedule1)
+
 -- | Compute the set of block identifiers (slot and block number) for a fork.
-forkBlockIds :: AnchoredFork BlockRep -> [(SlotNo, BlockNo)]
-forkBlockIds AnchoredFork{forkAnchor, forkBlocks} =
+forkBlockIds :: AnchoredFork BlockRep -> [BlockId]
+forkBlockIds AnchoredFork{forkAnchor, forkBlocks, forkNumber} =
   let
     initialSlotNo = maybe (SlotNo 0) fst forkAnchor
     step (currentSlotNo, acc) BlockRep{brSlotGap, brBlockNo} =
       let nextSlotNo = currentSlotNo + fromIntegral brSlotGap
-      in (nextSlotNo, (nextSlotNo, brBlockNo) : acc)
+      in (nextSlotNo, BlockId nextSlotNo brBlockNo forkNumber : acc)
   in reverse $ snd $ foldl' step (initialSlotNo, []) forkBlocks

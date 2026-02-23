@@ -10,8 +10,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.Serialize (
     AnchoredFork (..)
+  , BlockId (..)
   , BlockRep (..)
+  , ForkNo (..)
   , FormatVersion (..)
+  , KnownBlocks (..)
   , ReifiedBlockTree (..)
   , ReifiedTestCase (..)
   , Seed (..)
@@ -280,8 +283,18 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (ReifiedBlockTree blk) where
 data AnchoredFork u = AnchoredFork
   { forkAnchor :: Maybe (SlotNo, u)
   , forkBlocks :: [u] -- Oldest first!
-  , forkNumber :: Int
+  , forkNumber :: ForkNo
   } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+newtype ForkNo = ForkNo { unForkNo :: Int }
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Num)
+
+data BlockId = BlockId
+  { bidSlotNo  :: SlotNo
+  , bidBlockNo :: AF.BlockNo
+  , bidForkNo  :: ForkNo
+  } deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
   toJSON AnchoredFork{forkAnchor, forkBlocks, forkNumber} = Aeson.object
@@ -292,7 +305,7 @@ instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
           , "blockRep" .= rep
           ]
     , "blocks" .= forkBlocks
-    , "forkNo" .= forkNumber
+    , "forkNo" .= unForkNo forkNumber
     ]
 
 instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
@@ -307,7 +320,7 @@ instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
           pure $ Just (slotNo, blockRep)
         _ -> fail "Invalid anchor format"
     forkBlocks <- v .: "blocks"
-    forkNumber <- v .: "forkNo"
+    forkNumber <- fmap ForkNo $ v .: "forkNo"
     pure AnchoredFork {..}
 
 
@@ -321,14 +334,14 @@ toReifiedBlockTree
   :: forall blk. (AF.HasHeader blk)
   => BlockTree blk -> ReifiedBlockTree BlockRep
 toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
-  (anchoredFragmentToAnchoredForkOldestFirst (trunk, 0))
-  (fmap anchoredFragmentToAnchoredForkOldestFirst $ zip (fmap btbSuffix branches) [1..])
+  (anchoredFragmentToAnchoredForkOldestFirst (trunk, ForkNo 0))
+  (fmap anchoredFragmentToAnchoredForkOldestFirst $ zip (reverse $ fmap btbSuffix branches) (fmap ForkNo [1..]))
   where
     -- Represent an @AnchoredFragment@ as a list of @BlockRep@s, from oldest to
     -- newest, plus the anchor. @BlockTreeBranch@es include a lot of redundant information;
     -- all we need is the suffix of the branch (the part that is not shared with the trunk).
     anchoredFragmentToAnchoredForkOldestFirst
-      :: (AF.AnchoredFragment blk, Int) -> AnchoredFork BlockRep
+      :: (AF.AnchoredFragment blk, ForkNo) -> AnchoredFork BlockRep
     anchoredFragmentToAnchoredForkOldestFirst (fragment, forkNo) =
       let
         anchor = getAnchorRep fragment
@@ -351,7 +364,35 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
 -- | Blocks in a block tree are uniquely identified by thier
 -- slot and block numbers. @KnownBlocks@ maps these identifiers
 -- to actual blocks.
-type KnownBlocks blk = M.Map (SlotNo, AF.BlockNo) blk
+newtype KnownBlocks blk = KnownBlocks { unKnownBlocks :: M.Map BlockId blk }
+
+emptyKnownBlocks :: KnownBlocks blk
+emptyKnownBlocks = KnownBlocks M.empty
+
+lookupKnownBlock :: BlockId -> KnownBlocks blk -> Maybe blk
+lookupKnownBlock blockId (KnownBlocks m) = M.lookup blockId m
+
+insertKnownBlock :: BlockId -> blk -> KnownBlocks blk -> KnownBlocks blk
+insertKnownBlock blockId blk (KnownBlocks m) = KnownBlocks (M.insert blockId blk m)
+
+knownBlockIds :: KnownBlocks blk -> [BlockId]
+knownBlockIds (KnownBlocks m) = M.keys m
+
+lookupKnownBlockBySlotAndBlockNo
+  :: SlotNo
+  -> AF.BlockNo
+  -> KnownBlocks blk
+  -> Maybe blk
+lookupKnownBlockBySlotAndBlockNo slotNo blockNo (KnownBlocks m) =
+  let candidates =
+        [ blk
+        | (BlockId slotNo' blockNo' _, blk) <- M.toList m
+        , slotNo' == slotNo
+        , blockNo' == blockNo
+        ]
+  in case candidates of
+      []      -> Nothing
+      blk : _ -> Just blk
 
 -- | Given a @ReifiedBlockTree@, attempt to reconstruct the original @BlockTree@
 -- by issuing blocks in order. (Trunk first, then branches one by one.) To do this
@@ -367,21 +408,22 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
     -- Convert the anchor. If it is not genesis, we look up the
     -- block in a map of previously issued blocks.
     makeAnchor
-      :: Maybe (SlotNo, BlockRep) -> KnownBlocks blk -> Either String (AF.Anchor blk)
-    makeAnchor mAnchorRep knownBlocks = case mAnchorRep of
+      :: Maybe BlockId -> KnownBlocks blk -> Either String (AF.Anchor blk)
+    makeAnchor mAnchorId knownBlocks = case mAnchorId of
       Nothing -> Right AF.AnchorGenesis
-      Just (slotNo, rep) -> case M.lookup (slotNo, brBlockNo rep) knownBlocks of
+      Just blockId -> case lookupKnownBlock blockId knownBlocks of
         Just blk ->
-          let hash = AF.headerFieldHash (AF.getHeaderFields blk)
-          in Right $ AF.Anchor slotNo hash (brBlockNo rep)
+          let BlockId slotNo blockNo _ = blockId
+              hash = AF.headerFieldHash (AF.getHeaderFields blk)
+          in Right $ AF.Anchor slotNo hash blockNo
         Nothing   -> Left $
           "Failed to find anchor block for slot/blockNo: "
-          <> show (slotNo, brBlockNo rep)
-          <> " (from BlockRep " <> show rep <> ")"
+          <> show blockId
+          <> " (from BlockId " <> show blockId <> ")"
 
     -- Issue the next block.
     issueNextBlock
-      :: Int -- ^ Current fork number, needed to issue the first block on a branch
+      :: ForkNo -- ^ Current fork number, needed to issue the first block on a branch
       -> Maybe blk -- ^ Anchor block, if this fork is anchored to a block
       -> ([blk], KnownBlocks blk, SlotNo) -- ^ Blocks issued so far (newest first) and known blocks
       -> BlockRep -- ^ Block to be issued
@@ -392,21 +434,22 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
             SlotNo 0 -> SlotNo 0
             SlotNo n -> SlotNo (n - 1)
       let currentSlotNo = lastSlotNo + fromIntegral (brSlotGap rep)
+      let blockId = BlockId currentSlotNo (brBlockNo rep) forkNo
       blk <- Right $ case accBlocks of
         []  -> case mAnchorBlk of
-          Nothing        -> issueFirstBlock forkNo slotDelta
-          Just anchorBlk -> issueSuccessorBlock (Just forkNo) lapsedSlots anchorBlk
+          Nothing        -> issueFirstBlock (unForkNo forkNo) slotDelta
+          Just anchorBlk -> issueSuccessorBlock (Just (unForkNo forkNo)) lapsedSlots anchorBlk
         h:_ -> issueSuccessorBlock Nothing lapsedSlots h
       pure
         ( blk : accBlocks
-        , M.insert (currentSlotNo, brBlockNo rep) blk knownBlocks
+        , insertKnownBlock blockId blk knownBlocks
         , currentSlotNo
         )
 
     -- Issue a chain of blocks.
     issueBlocks
       :: SlotNo -- ^ Last used slot number.
-      -> Int -- ^ Current fork number
+      -> ForkNo -- ^ Current fork number
       -> Maybe blk -- ^ Anchor block, if any
       -- | Blocks to be issued, oldest first, and the known blocks so far.
       -> ([BlockRep], KnownBlocks blk)
@@ -423,16 +466,18 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       :: (AnchoredFork BlockRep, KnownBlocks blk)
       -> Either String (AF.AnchoredFragment blk, KnownBlocks blk)
     issueFork (AnchoredFork {forkAnchor, forkBlocks, forkNumber}, knownBlocks) = do
-      anchor <- makeAnchor forkAnchor knownBlocks
-      anchorBlock <- case forkAnchor of
+      let blockId = case forkAnchor of
+            Nothing -> Nothing
+            Just (slotNo, rep) -> Just $ BlockId slotNo (brBlockNo rep) (ForkNo 0)
+      anchor <- makeAnchor blockId knownBlocks
+      anchorBlock <- case blockId of
         Nothing -> Right Nothing
-        Just (slotNo, rep) ->
-          case M.lookup (slotNo, brBlockNo rep) knownBlocks of
+        Just blockId ->
+          case lookupKnownBlock blockId knownBlocks of
             Just blk -> Right (Just blk)
             Nothing  -> Left $
-              "Failed to find anchor block payload for slot/blockNo: "
-              <> show (slotNo, brBlockNo rep)
-              <> " (from BlockRep " <> show rep <> ")"
+              "Failed to find anchor block payload for blockId: "
+              <> show blockId
       let lastSlotNo = case forkAnchor of
             Nothing          -> SlotNo 0
             Just (slotNo, _) -> slotNo
@@ -450,7 +495,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       (fragment, knownBlocks') <- issueFork (fork, knownBlocks)
       pure (fragment : fragments, knownBlocks')
 
-  (trunk, trunkBlocks) <- issueFork (rbtTrunk, M.empty)
+  (trunk, trunkBlocks) <- issueFork (rbtTrunk, emptyKnownBlocks)
   (branches, allBlocks) <- foldM issueNextFragment ([], trunkBlocks) (reverse rbtBranches)
 
   -- @fromTrunkAndBranches@ is a smart constructor for @BlockTree@ that ensures
@@ -458,7 +503,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   case fromTrunkAndBranches trunk branches of
     Nothing -> Left $ mconcat
       [ "Failed to decode block tree! Some branches do not intersect the trunk.\n"
-      , "Known block ids:\n", show (M.keys allBlocks)
+      , "Known block ids:\n", show (knownBlockIds allBlocks)
       , "Trunk:\n", show trunk
       , "Branches:\n", show branches
       ]
@@ -482,12 +527,12 @@ toReifiedPointSchedule pointSchedule = pointSchedule <&> \blk ->
 -- identifiers (slot and block number) to actual blocks. We can use this with
 -- @traverse@ to repopulate the point schedule.
 fromReifiedPointSchedule
-  :: M.Map (SlotNo, AF.BlockNo) blk -> PointSchedule (SlotNo, AF.BlockNo)
+  :: KnownBlocks blk -> PointSchedule (SlotNo, AF.BlockNo)
   -> Either String (PointSchedule blk)
 fromReifiedPointSchedule blockTree schedule =
   let
     lookupBlockRep rep =
-      case M.lookup rep blockTree of
+      case lookupKnownBlockBySlotAndBlockNo (fst rep) (snd rep) blockTree of
         Just blk -> Right blk
         Nothing  -> Left $ "Failed to find block and slot number: " <> show rep
   in traverse lookupBlockRep schedule
