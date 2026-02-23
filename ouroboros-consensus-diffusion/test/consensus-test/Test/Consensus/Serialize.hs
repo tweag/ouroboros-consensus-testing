@@ -210,7 +210,7 @@ instance Aeson.ToJSON SlotGap where
 
 instance Aeson.FromJSON SlotGap where
   parseJSON = Aeson.withScientific "SlotGap" $ \n ->
-    pure $ SlotGap (fromIntegral (floor n))
+    pure $ SlotGap (floor n :: Word64)
 
 -- | Blocks in the block tree carry their slot number, but to issue
 -- new blocks we need to know the slot /gap/ compared to the most

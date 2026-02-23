@@ -68,7 +68,6 @@ import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import qualified Data.Text as T
 import           Data.Time (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime)
 import           Data.Traversable (for)
@@ -110,7 +109,6 @@ import           Test.QuickCheck (Gen, arbitrary)
 import           Test.QuickCheck.Random (QCGen)
 import           Test.Util.TersePrinting (Terse, terseFragment)
 import           Text.Printf (printf)
-import           Text.Read (readMaybe)
 
 
 prettyPointSchedule ::
@@ -207,20 +205,18 @@ peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
 instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
   toJSON schedule =
     let
-      timeToJSON :: Time -> Aeson.Value
-      timeToJSON (Time t) = Aeson.String (T.pack (show (diffTimeToPicoseconds t)))
-
       peerScheduleToJSON :: PeerSchedule blk -> Aeson.Value
       peerScheduleToJSON = Aeson.listValue $
-        \(time, pt) -> Aeson.object
-          [ "time" .= timeToJSON time
+        \(Time time, pt) -> Aeson.object
+          [ "time" .= diffTimeToPicoseconds time
           , "schedulePoint" .= Aeson.toJSON pt
           ]
+      Time minEndTime = psMinEndTime schedule
 
     in Aeson.object
       [ "schedule" .= fmap peerScheduleToJSON (psSchedule schedule)
       , "startOrder" .= psStartOrder schedule
-      , "minEndTime" .= timeToJSON (psMinEndTime schedule)
+      , "minEndTime" .= diffTimeToPicoseconds minEndTime
       ]
 
 instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
@@ -229,21 +225,13 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
       peerScheduleFromJSON :: Aeson.Value -> Aeson.Parser (PeerSchedule blk)
       peerScheduleFromJSON = Aeson.withArray "PeerSchedule" $ \arr ->
         for (toList arr) $ Aeson.withObject "PeerScheduleEntry" $ \obj -> do
-          time  <- obj .: "time" >>= timeFromJSON
+          time  <- obj .: "time"
           point <- obj .: "schedulePoint"
-          pure (time, point)
-
-      timeFromJSON :: Aeson.Value -> Aeson.Parser Time
-      timeFromJSON = \case
-        Aeson.String t ->
-          case readMaybe (T.unpack t) of
-            Just picos -> pure $ Time (picosecondsToDiffTime picos)
-            Nothing    -> fail $ "Invalid time: " ++ T.unpack t
-        _ -> fail "Time should be a string"
+          pure (Time $ picosecondsToDiffTime time, point)
 
     psSchedule <- v .: "schedule" >>= Aeson.parseJSON >>= traverse peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
-    psMinEndTime <- v .: "minEndTime" >>= timeFromJSON
+    psMinEndTime <- fmap Time $ v .: "minEndTime"
     pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------
