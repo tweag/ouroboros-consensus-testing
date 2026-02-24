@@ -30,10 +30,10 @@ import           Test.Util.TestBlock (TestBlock)
 tests :: TestTree
 tests = testGroup "JSON Serialization"
   [ testGroup "ReifiedTestCase () BlockRep"
-    [ testProperty "serialize . deserialize . serialize == serialize" $
+    [ testProperty "toJSON . fromJSON . toJSON == toJSON" $
       QC.forAll (genReifiedTestCase branchFactor)
         (prop_serialize_weak_inverse (Proxy @(ReifiedTestCase () BlockRep)))
-    , testProperty "deserialize . serialize == id" $
+    , testProperty "fromJSON . toJSON == id" $
       QC.forAll (genReifiedTestCase branchFactor)
         (prop_deserialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
     ]
@@ -153,7 +153,7 @@ shrinkAnchoredFragment fragment = case AF.toNewestFirst fragment of
 -- Properties --
 ----------------
 
--- | deserialize . serialize == id
+-- | fromJSON . toJSON == id
 --
 -- This property asserts that values survive after being serialized
 -- and then deserialized.
@@ -179,11 +179,11 @@ prop_deserialize_inverse _ value =
       False -> QC.counterexample (valueNotStableMsg value') False
       True  -> QC.property True
 
--- | serialize . deserialize . serialize == serialize
+-- | toJSON . fromJSON . toJSON == toJSON
 --
 -- This property tests that if a JSON value was produced by serializing a reified
 -- test case, then deserializing and serializing again gives the same JSON value.
--- This is weaker than saying that deserialize . serialize == id, but if that
+-- This is weaker than saying that fromJSON . toJSON == id, but if that
 -- test fails, whether or not this one passes can help with debugging.
 prop_serialize_weak_inverse
   :: forall a. (Aeson.ToJSON a, Aeson.FromJSON a)

@@ -466,11 +466,15 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       :: (AnchoredFork BlockRep, KnownBlocks blk)
       -> Either String (AF.AnchoredFragment blk, KnownBlocks blk)
     issueFork (AnchoredFork {forkAnchor, forkBlocks, forkNumber}, knownBlocks) = do
-      let blockId = case forkAnchor of
-            Nothing -> Nothing
-            Just (slotNo, rep) -> Just $ BlockId slotNo (brBlockNo rep) (ForkNo 0)
-      anchor <- makeAnchor blockId knownBlocks
-      anchorBlock <- case blockId of
+      let
+        getAnchorBlockId :: (SlotNo, BlockRep) -> BlockId
+        getAnchorBlockId (slotNo, rep) =
+          BlockId slotNo (brBlockNo rep) (ForkNo 0)
+
+        mBlockId :: Maybe BlockId
+        mBlockId = fmap getAnchorBlockId forkAnchor
+      anchor <- makeAnchor mBlockId knownBlocks
+      anchorBlock <- case mBlockId of
         Nothing -> Right Nothing
         Just blockId ->
           case lookupKnownBlock blockId knownBlocks of
@@ -478,9 +482,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
             Nothing  -> Left $
               "Failed to find anchor block payload for blockId: "
               <> show blockId
-      let lastSlotNo = case forkAnchor of
-            Nothing          -> SlotNo 0
-            Just (slotNo, _) -> slotNo
+      let lastSlotNo = maybe (SlotNo 0) fst forkAnchor
       (issuedBlocks, knownBlocks') <-
         issueBlocks lastSlotNo forkNumber anchorBlock (forkBlocks, knownBlocks)
       let fragment = AF.fromOldestFirst anchor issuedBlocks
