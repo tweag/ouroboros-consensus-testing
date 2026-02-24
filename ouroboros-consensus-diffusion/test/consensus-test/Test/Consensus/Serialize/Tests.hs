@@ -16,6 +16,10 @@ import           Test.Consensus.BlockTree
 import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest (..),
                      IssueTestBlock (..), genChains)
 import           Test.Consensus.Genesis.ShrinkIndex
+import           Test.Consensus.Genesis.Tests.CSJ (genDuplicatedHonestSchedule)
+import           Test.Consensus.Genesis.Tests.Uniform
+                     (genBlockFetchLeashingSchedule, genLeashingSchedule,
+                     genTimeLimitedSchedule, genUniformSchedulePoints)
 import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Consensus.Serialize
 import qualified Test.QuickCheck as QC
@@ -87,21 +91,16 @@ genTestBlockTree = fmap gtBlockTree . genChains
 genTestBlockTreeWithPointSchedule
   :: QC.Gen Word
   -> QC.Gen (BlockTree TestBlock, Schedule.PointSchedule TestBlock)
-genTestBlockTreeWithPointSchedule branchFactor = QC.oneof
-  [ do
-      blockTree <- genTestBlockTree (pure 1)
-      ps <- Schedule.stToGen (Schedule.longRangeAttack blockTree)
-      pure (blockTree, ps)
-  , do
-      blockTree <- genTestBlockTree branchFactor
-      ps <- Schedule.stToGen $ Schedule.uniformPoints
-        (Schedule.PointsGeneratorParams
-          { pgpExtraHonestPeers = 1
-          , pgpDowntime = Schedule.NoDowntime
-          })
-        blockTree
-      pure (blockTree, ps)
-  ]
+genTestBlockTreeWithPointSchedule branchFactor = do
+  genesisTest <- genChains branchFactor
+  schedule <- QC.oneof $ fmap ($ genesisTest)
+    [ genDuplicatedHonestSchedule
+    , genLeashingSchedule
+    , genTimeLimitedSchedule
+    , genUniformSchedulePoints
+    , genBlockFetchLeashingSchedule
+    ]
+  pure (gtBlockTree genesisTest, schedule)
 
 shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
 shrinkBlockTree (BlockTree trunk branches) = mconcat

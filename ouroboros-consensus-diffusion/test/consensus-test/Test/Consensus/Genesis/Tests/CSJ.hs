@@ -8,6 +8,7 @@
 -- | ChainSync Jumping tests.
 module Test.Consensus.Genesis.Tests.CSJ (
     TestKey
+  , genDuplicatedHonestSchedule
   , testSuite
   ) where
 
@@ -183,20 +184,6 @@ test_csj description adversariesFlag numHonestSchedules = do
           receivedHeadersAtMostOnceFromHonestPeers
     )
   where
-    genDuplicatedHonestSchedule :: GenesisTest blk () -> Gen (PointSchedule blk)
-    genDuplicatedHonestSchedule gt@GenesisTest {gtExtraHonestPeers} = do
-      ps@PointSchedule {psSchedule = Peers {honestPeers, adversarialPeers}} <- genUniformSchedulePoints gt
-      pure $ ps {
-        psSchedule =
-          Peers.unionWithKey
-            (\_ _ _ -> error "should not happen")
-            ( peers'
-                (replicate (fromIntegral gtExtraHonestPeers + 1) (getHonestPeer honestPeers))
-                []
-            )
-            (Peers Map.empty adversarialPeers)
-        }
-
     isNewerThanJumpSizeFromTip :: GenesisTestFull blk -> Header blk -> Bool
     isNewerThanJumpSizeFromTip gt hdr =
       let jumpSize = csjpJumpSize $ gtCSJParams gt
@@ -214,3 +201,19 @@ test_csj description adversariesFlag numHonestSchedules = do
                 idleTimeout = Nothing
               }
         }
+
+genDuplicatedHonestSchedule
+  :: forall blk. (AF.HasHeader blk)
+  => GenesisTest blk () -> Gen (PointSchedule blk)
+genDuplicatedHonestSchedule gt@GenesisTest {gtExtraHonestPeers} = do
+  ps@PointSchedule {psSchedule = Peers {honestPeers, adversarialPeers}} <- genUniformSchedulePoints gt
+  pure $ ps {
+    psSchedule =
+      Peers.unionWithKey
+        (\_ _ _ -> error "should not happen")
+        ( peers'
+            (replicate (fromIntegral gtExtraHonestPeers + 1) (getHonestPeer honestPeers))
+            []
+        )
+        (Peers Map.empty adversarialPeers)
+    }
