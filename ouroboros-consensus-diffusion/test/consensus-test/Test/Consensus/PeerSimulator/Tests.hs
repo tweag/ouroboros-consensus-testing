@@ -29,7 +29,7 @@ data SmokeTestKey = LinkedThreads LinkedThreads.TestKey
                   | Rollback Rollback.TestKey
                   | Timeouts Timeouts.TestKey
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse SmokeTestKey
+  deriving SmallKey via Generically SmokeTestKey
 
 testSuite ::
   ( IssueTestBlock blk

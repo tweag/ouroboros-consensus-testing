@@ -35,7 +35,7 @@ import           Test.Util.Orphans.IOLike ()
 
 data TestKey = ChainSyncKillsBlockFetch
   deriving (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( IssueTestBlock blk

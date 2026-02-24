@@ -51,9 +51,12 @@ adjustTestMaxSize :: Int -> Int
 adjustTestMaxSize = (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
-data TestKey = ChainSyncJump !WithAdversariesFlag !NumHonestSchedulesFlag
+data TestKey = WithNoAdversariesAndOneScheduleForAllPeers
+             | WithNoAdversariesAndOneSchedulePerHonestPeer
+             | WithAdversariesAndOneScheduleForAllPeers
+             | WithAdversariesAndOneSchedulePerHonestPeer
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( HasHeader blk
@@ -64,25 +67,22 @@ testSuite ::
   , Eq (Header blk)
   ) => TestSuite blk TestKey
 testSuite = group "CSJ" $ newTestSuite $ \case
-  ChainSyncJump NoAdversaries OneScheduleForAllPeers ->
+  WithNoAdversariesAndOneScheduleForAllPeers ->
     test_csj "adversary free: honest peers are synchronised" NoAdversaries OneScheduleForAllPeers
-  ChainSyncJump NoAdversaries OneSchedulePerHonestPeer ->
+  WithNoAdversariesAndOneSchedulePerHonestPeer ->
     test_csj "adversary free: peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
-  ChainSyncJump WithAdversaries OneScheduleForAllPeers ->
+  WithAdversariesAndOneScheduleForAllPeers ->
     test_csj "with some adversaries: honest peers are synchronised" WithAdversaries OneScheduleForAllPeers
-  ChainSyncJump WithAdversaries OneSchedulePerHonestPeer ->
+  WithAdversariesAndOneSchedulePerHonestPeer ->
     test_csj "with some adversaries: honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
 
 -- | A flag to indicate if properties are tested with adversarial peers
 data WithAdversariesFlag = NoAdversaries | WithAdversaries
-  deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via (GenericUniverse WithAdversariesFlag)
+  deriving stock Eq
 
 -- | A flag to indicate if properties are tested using the same schedule for the
 -- honest peers, or if each peer should used its own schedule.
 data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
-  deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via (GenericUniverse NumHonestSchedulesFlag)
 
 -- | Test of ChainSync Jumping (CSJ).
 --

@@ -41,7 +41,7 @@ desiredPasses = (`div` 10)
 data TestKey = DoesTimeout
              | DoesNotTimeout
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( IssueTestBlock blk

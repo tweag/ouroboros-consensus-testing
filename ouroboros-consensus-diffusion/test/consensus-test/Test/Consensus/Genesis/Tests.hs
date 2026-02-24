@@ -36,7 +36,7 @@ data GenesisTestKey = Uniform !Uniform.TestKey
              | LoE !LoE.TestKey
              | LoP !LoP.TestKey
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse GenesisTestKey
+  deriving SmallKey via Generically GenesisTestKey
 
 testSuite ::
   ( HasHeader blk
