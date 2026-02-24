@@ -9,6 +9,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.Serialize (
+    -- * JSON Serialization
+    -- $intro
     AnchoredFork (..)
   , BlockId (..)
   , BlockRep (..)
@@ -52,6 +54,7 @@ import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random
 import           Text.Read (readMaybe)
 
+-- $intro
 -- This module implements JSON serialization for consensus test cases. The
 -- interface comprises:
 --
@@ -215,6 +218,9 @@ instance Aeson.FromJSON SlotGap where
   parseJSON = Aeson.withScientific "SlotGap" $ \n ->
     pure $ SlotGap (floor n :: Word64)
 
+offsetSlotNo :: SlotNo -> SlotGap -> SlotNo
+offsetSlotNo (SlotNo slot) (SlotGap gap) = SlotNo (slot + gap)
+
 -- | Blocks in the block tree carry their slot number, but to issue
 -- new blocks we need to know the slot /gap/ compared to the most
 -- recently issued block. @WithSlotNo@ is a state monad that stores
@@ -278,7 +284,7 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (ReifiedBlockTree blk) where
 -- as a list that also remembers its fork number. An anchor of 'Nothing'
 -- represents the genesis.
 --
--- INVARIANT: the blocks in 'alBlocks' must be in order from oldest to newest,
+-- INVARIANT: the blocks in 'forkBlocks' must be in order from oldest to newest,
 -- and each block must be a valid successor of the previous block.
 data AnchoredFork u = AnchoredFork
   { forkAnchor :: Maybe (SlotNo, u)
@@ -289,12 +295,6 @@ data AnchoredFork u = AnchoredFork
 newtype ForkNo = ForkNo { unForkNo :: Int }
   deriving stock (Eq, Ord, Show)
   deriving newtype (Num)
-
-data BlockId = BlockId
-  { bidSlotNo  :: SlotNo
-  , bidBlockNo :: AF.BlockNo
-  , bidForkNo  :: ForkNo
-  } deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON u => Aeson.ToJSON (AnchoredFork u) where
   toJSON AnchoredFork{forkAnchor, forkBlocks, forkNumber} = Aeson.object
@@ -361,10 +361,16 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
       AF.AnchorGenesis         -> Nothing
       AF.Anchor slot _ blockNo -> Just (slot, BlockRep (SlotGap $ unSlotNo slot) blockNo)
 
--- | Blocks in a block tree are uniquely identified by thier
--- slot and block numbers. @KnownBlocks@ maps these identifiers
+-- | Blocks in a block tree are uniquely identified by their fork,
+-- slot, and block numbers. @KnownBlocks@ maps these identifiers
 -- to actual blocks.
 newtype KnownBlocks blk = KnownBlocks { unKnownBlocks :: M.Map BlockId blk }
+
+data BlockId = BlockId
+  { bidSlotNo  :: SlotNo
+  , bidBlockNo :: AF.BlockNo
+  , bidForkNo  :: ForkNo
+  } deriving (Eq, Ord, Show)
 
 emptyKnownBlocks :: KnownBlocks blk
 emptyKnownBlocks = KnownBlocks M.empty
@@ -429,21 +435,26 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       -> BlockRep -- ^ Block to be issued
       -> Either String ([blk], KnownBlocks blk, SlotNo)
     issueNextBlock forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
-      let slotDelta = SlotNo $ unSlotGap (brSlotGap rep)
-      let lapsedSlots = case slotDelta of
-            SlotNo 0 -> SlotNo 0
-            SlotNo n -> SlotNo (n - 1)
-      let currentSlotNo = lastSlotNo + fromIntegral (brSlotGap rep)
-      let blockId = BlockId currentSlotNo (brBlockNo rep) forkNo
-      blk <- Right $ case accBlocks of
+      let
+        forkNo' = unForkNo forkNo
+        slotGap = brSlotGap rep
+        -- issueFirstBlock and issueSuccessorBlock treat their SlotNo
+        -- arguments differently; successor treats it like an offset
+        -- and adds one, and first treats it like an index.
+        slotNumber = offsetSlotNo lastSlotNo slotGap -- absolute slot number
+        slotSuccOffset = offsetSlotNo 0 (slotGap - 1) -- offset from last slot number minus one
+
+      blk <- pure $ case accBlocks of
         []  -> case mAnchorBlk of
-          Nothing        -> issueFirstBlock (unForkNo forkNo) slotDelta
-          Just anchorBlk -> issueSuccessorBlock (Just (unForkNo forkNo)) lapsedSlots anchorBlk
-        h:_ -> issueSuccessorBlock Nothing lapsedSlots h
+          Nothing        -> issueFirstBlock forkNo' slotNumber
+          Just anchorBlk -> issueSuccessorBlock (Just forkNo') slotSuccOffset anchorBlk
+        h:_ -> issueSuccessorBlock Nothing slotSuccOffset h
+
+      let blockId = BlockId slotNumber (brBlockNo rep) forkNo
       pure
         ( blk : accBlocks
         , insertKnownBlock blockId blk knownBlocks
-        , currentSlotNo
+        , slotNumber
         )
 
     -- Issue a chain of blocks.
