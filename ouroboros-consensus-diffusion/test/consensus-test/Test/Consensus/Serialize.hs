@@ -69,6 +69,18 @@ import           Text.Read (readMaybe)
 -- The JSON format is meant to be as stable as possible under changes to
 -- test case generation. This is achieved via a test version number and
 -- a serialization format version number, both of which are included in the JSON.
+--
+-- ** How It Works
+-- We could have added Generic instances to everything and derived ToJSON/FromJSON.
+-- That is not ideal however; first because generated test cases contain a lot of
+-- redundant information (a LOT). Second, because this would tie the serialization
+-- format to the internal representation, making it difficult to change both. We
+-- expect serialized test cases to persist beyond a single run, so the format needs
+-- to be stable under refactorings.
+--
+-- This implementation instead uses custom JSON instances, a simplified model of the
+-- block tree that only includes the trunk and branch suffixes, and a representation
+-- of blocks that only includes the data necessary to issue them in order.
 
 -- | A fully concrete consensus test case, suitable for serialization.
 --
@@ -164,22 +176,6 @@ fromReifiedTestCase f ReifiedTestCase{..} = do
 
 
 
--- How It Works --
-------------------
-
--- We could have added Generic instances to everything and derived ToJSON/FromJSON.
--- That is not ideal however; first because generated test cases contain a lot of
--- redundant information (a LOT). Second, because this would tie the serialization
--- format to the internal representation, making it difficult to change both. We
--- expect serialized test cases to persist beyond a single run, so the format needs
--- to be stable under refactorings.
---
--- This implementation instead uses custom JSON instances, a simplified model of the
--- block tree that only includes the trunk and branch suffixes, and a representation
--- of blocks that only includes the data necessary to issue them in order.
-
-
-
 -- Representation of Blocks --
 ------------------------------
 
@@ -188,7 +184,7 @@ fromReifiedTestCase f ReifiedTestCase{..} = do
 -- reconstruct the block tree using the methods in `IssueTestBlock` (and thus
 -- do not otherwise care about the specific block type).
 data BlockRep = BlockRep
-  { brSlotGap :: SlotGap -- ^ Number of slots lapsed since the previous issued block.
+  { brSlotGap :: SlotGap  -- ^ Number of slots lapsed since the previous issued block.
   , brBlockNo :: AF.BlockNo
   } deriving (Eq, Ord, Show)
 
@@ -432,10 +428,10 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
     -- Issue the next block.
     issueNextBlock
-      :: ForkNo -- ^ Current fork number, needed to issue the first block on a branch
-      -> Maybe blk -- ^ Anchor block, if this fork is anchored to a block
-      -> ([blk], KnownBlocks blk, SlotNo) -- ^ Blocks issued so far (newest first) and known blocks
-      -> BlockRep -- ^ Block to be issued
+      :: ForkNo  -- ^ Current fork number, needed to issue the first block on a branch
+      -> Maybe blk  -- ^ Anchor block, if this fork is anchored to a block
+      -> ([blk], KnownBlocks blk, SlotNo)  -- ^ Blocks issued so far (newest first) and known blocks
+      -> BlockRep  -- ^ Block to be issued
       -> Either String ([blk], KnownBlocks blk, SlotNo)
     issueNextBlock forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
       let
@@ -462,9 +458,9 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
     -- Issue a chain of blocks.
     issueBlocks
-      :: SlotNo -- ^ Last used slot number.
-      -> ForkNo -- ^ Current fork number
-      -> Maybe blk -- ^ Anchor block, if any
+      :: SlotNo  -- ^ Last used slot number.
+      -> ForkNo  -- ^ Current fork number
+      -> Maybe blk  -- ^ Anchor block, if any
       -- | Blocks to be issued, oldest first, and the known blocks so far.
       -> ([BlockRep], KnownBlocks blk)
       -- | Issued blocks, oldest first, and an updated map of blocks.
