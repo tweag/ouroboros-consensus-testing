@@ -28,6 +28,7 @@ module Test.Consensus.Genesis.TestSuite (
   ) where
 
 import           Data.Coerce (coerce)
+import           Data.Foldable (toList)
 import           Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MMap
 import           Data.Map.Strict (Map)
@@ -55,7 +56,6 @@ import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule (HasPointScheduleTestParams)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Tasty (TestTree, testGroup)
-import qualified Test.Tasty.QuickCheck as QC
 import           Test.Util.TersePrinting (Terse)
 
 -- | A data type with generically defined  'Universe' and 'Finite' instances.
@@ -140,14 +140,6 @@ mkTestTrie pfs t =
       leaf = TestTrie [t] mempty
   in appEndo (foldMap nest pfs) leaf
 
--- | Fold a list of prefixed tests into a 'TestTrie'.
---
--- Each input pair @([Prefix], TestTree)@ is interpreted as a path
--- in the trie, and the resulting trie merges common prefixes into
--- shared nodes.
-buildTrie :: [([String], TestTree)] -> TestTrie
-buildTrie = foldMap (uncurry mkTestTrie)
-
 -- | Fold a 'TestTrie' into a list of 'TestTree's by recursively
 -- rendering each trie node as a 'testGroup'.
 render :: TestTrie -> [TestTree]
@@ -156,32 +148,6 @@ render (TestTrie here children) =
     fmap
       (\(p,tt) -> testGroup p (render tt))
       (MMap.toList children)
-
--- | Produces a single-test 'TestTree', along with its containing
--- 'group' prefixes, out a 'TestSuiteData'.
-compileSingleTest ::
-  ( Condense (StateView blk)
-  , CondenseList (NodeState blk)
-  , ShowProxy blk
-  , ShowProxy (Header blk)
-  , ConfigSupportsNode blk
-  , LedgerSupportsProtocol blk
-  , SerialiseDiskConstraints blk
-  , BlockSupportsDiffusionPipelining blk
-  , InspectLedger blk
-  , HasHardForkHistory blk
-  , ConvertRawHash blk
-  , CanUpgradeLedgerTables (LedgerState blk)
-  , HasPointScheduleTestParams blk
-  , Eq (Header blk)
-  , Eq blk
-  , Terse blk
-  , Condense (NodeState blk)
-  ) =>
-  TestSuiteData blk -> ([String], TestTree)
-compileSingleTest (TestSuiteData {tsPrefix, tsTest}) =
-  let testName = ctDescription tsTest
-   in (tsPrefix, QC.testProperty testName (runConformanceTest tsTest))
 
 -- | Compile a 'TestSuite' into a list of tasty 'TestTree'.
 toTestTree ::
@@ -205,6 +171,6 @@ toTestTree ::
   ) =>
   TestSuite blk key -> [TestTree]
 toTestTree (TestSuite m) =
-  let tests = fmap snd $ Map.toList m
-      prefixedTests = fmap compileSingleTest tests
-   in render . buildTrie $ prefixedTests
+  render $ mconcat $ do
+    TestSuiteData {tsPrefix, tsTest} <- toList m
+    pure $ mkTestTrie tsPrefix $ runConformanceTest tsTest

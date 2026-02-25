@@ -58,10 +58,14 @@ import           Test.Consensus.PeerSimulator.Trace (traceLinesWith,
 import           Test.Consensus.PointSchedule
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.QuickCheck
+import           Test.Tasty (TestTree)
+import qualified Test.Tasty.QuickCheck as QC
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (forAllGenRunShrinkCheck)
 import           Test.Util.TersePrinting (Terse)
 import           Test.Util.TestBlock (TestBlock)
+import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
+                     adjustQuickCheckTests)
 import           Test.Util.Tracer (recordingTracerM)
 import           Text.Printf (printf)
 
@@ -182,34 +186,31 @@ runConformanceTest :: forall blk.
   , Terse blk
   , Condense (NodeState blk)
   ) =>
-  ConformanceTest blk -> Property
-runConformanceTest ConformanceTest {..} = idempotentIOProperty $ do
-  protocolInfoArgs <- getProtocolInfoArgs
-  pure $ forAllGenRunShrinkCheck ctGenerator (runGenesisTest protocolInfoArgs ctSchedulerConfig) shrinker' $ \genesisTest result ->
-    let cls = classifiers genesisTest
-        resCls = resultClassifiers genesisTest result
-        schCls = scheduleClassifiers genesisTest
-        stateView = rgtrStateView result
-     in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection" $
-        classify (allAdversariesForecastable cls) "All adversaries have at least 1 forecastable block after intersection" $
-        classify (allAdversariesKPlus1InForecast cls) "All adversaries have k+1 blocks in forecast window after intersection" $
-        classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection" $
-        classify (adversaryRollback schCls) "An adversary did a rollback" $
-        classify (honestRollback schCls) "The honest peer did a rollback" $
-        classify (allAdversariesEmpty schCls) "All adversaries have empty schedules" $
-        classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules" $
-        tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls] $
-        tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls] $
-        tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
-        tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
-        counterexample (rgtrTrace result) $
-        -- | TODO: Here we want to transform the default /max size/ and
-        -- /max success/ values instead of hard coding them to 100. We will be
-        -- implementing the necesary helpers (similar in spirit to
-        -- 'TestEnv.adjustQuickCheckMaxSize' and 'adjustQuickCheckTests'
-        -- respectively) in a follow up PR.
-        withMaxSize (ctMaxSize 100) . withMaxSuccess (ctDesiredPasses 100) $
-        ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
+  ConformanceTest blk -> TestTree
+runConformanceTest ConformanceTest {..} =
+  adjustQuickCheckTests ctDesiredPasses $
+  adjustQuickCheckMaxSize ctMaxSize $
+  QC.testProperty ctDescription $ idempotentIOProperty $ do
+    protocolInfoArgs <- getProtocolInfoArgs
+    pure $ forAllGenRunShrinkCheck ctGenerator (runGenesisTest protocolInfoArgs ctSchedulerConfig) shrinker' $ \genesisTest result ->
+      let cls = classifiers genesisTest
+          resCls = resultClassifiers genesisTest result
+          schCls = scheduleClassifiers genesisTest
+          stateView = rgtrStateView result
+      in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection" $
+          classify (allAdversariesForecastable cls) "All adversaries have at least 1 forecastable block after intersection" $
+          classify (allAdversariesKPlus1InForecast cls) "All adversaries have k+1 blocks in forecast window after intersection" $
+          classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection" $
+          classify (adversaryRollback schCls) "An adversary did a rollback" $
+          classify (honestRollback schCls) "The honest peer did a rollback" $
+          classify (allAdversariesEmpty schCls) "All adversaries have empty schedules" $
+          classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules" $
+          tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls] $
+          tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls] $
+          tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
+          tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
+          counterexample (rgtrTrace result) $
+          ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
   where
     shrinker' gt = ctShrinker gt . rgtrStateView
     hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
