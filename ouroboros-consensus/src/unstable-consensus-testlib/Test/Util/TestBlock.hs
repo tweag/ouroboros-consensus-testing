@@ -217,7 +217,6 @@ data Validity = Valid | Invalid
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
 
-
 instance SupportedNetworkProtocolVersion (TestBlockWith ptype) where
   supportedNodeToNodeVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
   supportedNodeToClientVersions _ = foldMap (flip Map.singleton ()) [minBound .. maxBound]
