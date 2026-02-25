@@ -10,9 +10,10 @@ module Ouroboros.Consensus.Mock.Node.Abstract (
   , constructMockNetworkMagic
   ) where
 
+import           Data.Hashable (hash)
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
-import           Data.Word (Word32)
+import           GHC.Stack
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -36,7 +37,7 @@ class ( MockProtocolSpecific c ext
 -- different IDs from each other and from regular protocols.
 constructMockNetworkMagic :: HasCallStack => NetworkMagic
 constructMockNetworkMagic =
-  NetworkMagic (764824073 :: Word32)
+  NetworkMagic $ fromIntegral $ 764824073
 
 instance RunMockBlock c ext
       => ConfigSupportsNode (SimpleBlock c ext) where
