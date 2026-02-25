@@ -1,12 +1,18 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module Test.Consensus.Serialize.Tests (tests) where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Key as AesonKey
+import qualified Data.Aeson.KeyMap as AesonKeyMap
 import qualified Data.Aeson.Types as Aeson
+import           Data.Foldable (toList)
 import           Data.List (foldl')
+import qualified Data.Map as M
+import           Data.Maybe (isJust)
 import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -40,6 +46,24 @@ tests = testGroup "JSON Serialization"
     , testProperty "fromJSON . toJSON == id" $
       QC.forAll (genReifiedTestCase branchFactor)
         (prop_deserialize_inverse (Proxy @(ReifiedTestCase () BlockRep)))
+    , testProperty "fromReifiedTestCase . toReifiedTestCase == id" $
+      QC.forAll (genConcreteTestCase branchFactor)
+        prop_fromReifiedTestCase_faithful_on_metadata
+    , testProperty "toReifiedTestCase preserves key/version/shrinkIndex/seed" $
+      QC.forAll (genConcreteTestCase branchFactor)
+        prop_toReifiedTestCase_preserves_metadata
+    , testProperty "serializeReifiedTestCase emits exactly expected top-level keys" $
+      QC.forAll (genReifiedTestCase branchFactor)
+        prop_serializeReifiedTestCase_emits_expected_keys
+    , testProperty "deserializeReifiedTestCase rejects missing required fields" $
+      QC.forAll (genReifiedTestCase branchFactor)
+        prop_deserializeReifiedTestCase_rejects_missing_required_field
+    , testProperty "deserializeReifiedTestCase rejects invalid required field types" $
+      QC.forAll (genReifiedTestCase branchFactor)
+        prop_deserializeReifiedTestCase_rejects_bad_field_type
+    , testProperty "deserializeReifiedTestCase ignores unknown fields" $
+      QC.forAll (genReifiedTestCase branchFactor)
+        prop_deserializeReifiedTestCase_ignores_unknown_fields
     ]
   , testGroup "ReifiedBlockTree"
     [ testProperty "fromReifiedBlockTree . toReifiedBlockTree == id" $
@@ -51,12 +75,22 @@ tests = testGroup "JSON Serialization"
     , testProperty "branch anchors always resolve to trunk ids" $
       QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
         prop_anchor_correctness_invariants
+    , testProperty "fromReifiedBlockTree populates KnownBlocks for every reified block id" $
+      QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
+        prop_fromReifiedBlockTree_knownBlocks_complete
+    , testProperty "fromReifiedBlockTree rejects dangling branch anchors" $
+      QC.forAllShrink (genTestBlockTree branchFactor) shrinkBlockTree
+        prop_fromReifiedBlockTree_rejects_dangling_anchor
     ]
   , testGroup "PointSchedule"
     [ testProperty "toReifiedPointSchedule . fromReifiedPointSchedule . toReifiedPointSchedule == toReifiedPointSchedule" $
       QC.forAll (genTestBlockTreeWithPointSchedule branchFactor) $
         \(blockTree, pointSchedule) ->
           prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule
+    , testProperty "fromReifiedPointSchedule rejects unknown (slot, blockNo) points" $
+      QC.forAll (genTestBlockTreeWithPointSchedule branchFactor) $
+        \(blockTree, pointSchedule) ->
+          prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule
     ]
   ]
   where
@@ -77,6 +111,16 @@ genReifiedTestCase branchFactor = do
   rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
   rtcSeed <- fmap Seed QC.arbitrary
   pure ReifiedTestCase {..}
+
+genConcreteTestCase
+  :: QC.Gen Word
+  -> QC.Gen ((), TestVersion, BlockTree TestBlock, Schedule.PointSchedule TestBlock, ShrinkIndex, Seed)
+genConcreteTestCase branchFactor = do
+  (blockTree, pointSchedule) <- genTestBlockTreeWithPointSchedule branchFactor
+  testVersion <- QC.arbitrary
+  shrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
+  seed <- fmap Seed QC.arbitrary
+  pure ((), testVersion, blockTree, pointSchedule, shrinkIndex, seed)
 
 genTestReifiedBlockTreeWithPointSchedule
   :: QC.Gen Word
@@ -333,6 +377,294 @@ prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule =
           Right pointSchedule' ->
             let reifiedSchedule2 = toReifiedPointSchedule pointSchedule'
             in QC.counterexample (notStableMsg reifiedSchedule2) $ QC.property (reifiedSchedule2 == reifiedSchedule1)
+
+-- | The type of @fromReifiedTestCase@ takes a continuation that is used to construct
+-- a concrete test case. Verify that the metadata passed to the continuation matches
+-- that of the original test case.
+prop_fromReifiedTestCase_faithful_on_metadata
+  :: ((), TestVersion, BlockTree TestBlock, Schedule.PointSchedule TestBlock, ShrinkIndex, Seed)
+  -> QC.Property
+prop_fromReifiedTestCase_faithful_on_metadata (testKey, testVersion, blockTree, pointSchedule, shrinkIndex, seed) =
+  let
+    reified = toReifiedTestCase testKey testVersion blockTree pointSchedule shrinkIndex seed
+    cannotConvertMsg err = mconcat
+      [ "Unable to reconstruct concrete test case from reified representation:\n"
+      , "Error: ", err, "\n"
+      , "ReifiedTestCase: ", show reified
+      ]
+    fromReified = fromReifiedTestCase (,,,,,) reified
+  in case fromReified of
+      Left err -> QC.counterexample (cannotConvertMsg err) False
+      Right (testKey', testVersion', blockTree', pointSchedule', shrinkIndex', seed') ->
+        QC.conjoin
+          [ QC.counterexample "test key changed after to/from reified conversion" $
+              QC.property (testKey == testKey')
+          , QC.counterexample "test version changed after to/from reified conversion" $
+              QC.property (testVersion == testVersion')
+          , eqBlockTree blockTree' blockTree
+          , QC.counterexample "reified point schedule changed after to/from reified conversion" $
+            QC.property (toReifiedPointSchedule pointSchedule == toReifiedPointSchedule pointSchedule')
+          , QC.counterexample "shrink index changed after to/from reified conversion" $
+              QC.property (shrinkIndex == shrinkIndex')
+          , QC.counterexample "seed changed after to/from reified conversion" $
+              QC.property (seed == seed')
+          ]
+
+prop_toReifiedTestCase_preserves_metadata
+  :: ((), TestVersion, BlockTree TestBlock, Schedule.PointSchedule TestBlock, ShrinkIndex, Seed)
+  -> QC.Property
+prop_toReifiedTestCase_preserves_metadata (testKey, testVersion, blockTree, pointSchedule, shrinkIndex, seed) =
+  let
+    reified = toReifiedTestCase testKey testVersion blockTree pointSchedule shrinkIndex seed
+  in QC.conjoin
+      [ QC.counterexample "rtcTestKey mismatch" $ QC.property (rtcTestKey reified == testKey)
+      , QC.counterexample "rtcTestVersion mismatch" $ QC.property (rtcTestVersion reified == testVersion)
+      , QC.counterexample "rtcShrinkIndex mismatch" $ QC.property (rtcShrinkIndex reified == shrinkIndex)
+      , QC.counterexample "rtcSeed mismatch" $ QC.property (rtcSeed reified == seed)
+      ]
+
+-- | Serialized test cases have the expected keys.
+prop_serializeReifiedTestCase_emits_expected_keys
+  :: ReifiedTestCase () BlockRep -> QC.Property
+prop_serializeReifiedTestCase_emits_expected_keys reified =
+  case serializeReifiedTestCase (FormatVersion 0) reified of
+    Aeson.Object obj ->
+      let
+        observed = Set.fromList (fmap AesonKey.toText $ AesonKeyMap.keys obj)
+        expected = Set.fromList
+          [ "formatVersion"
+          , "key"
+          , "testVersion"
+          , "blockTree"
+          , "pointSchedule"
+          , "shrinkIndex"
+          , "seed"
+          ]
+        msg = mconcat
+          [ "Unexpected top-level JSON keys in serializeReifiedTestCase output.\n"
+          , "Expected: ", show expected, "\n"
+          , "Observed: ", show observed
+          ]
+      in QC.counterexample msg $ QC.property (observed == expected)
+    value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
+
+-- | Deserializing a ReifiedTestCase with any required field missing should fail.
+prop_deserializeReifiedTestCase_rejects_missing_required_field
+  :: ReifiedTestCase () BlockRep -> QC.Property
+prop_deserializeReifiedTestCase_rejects_missing_required_field reified =
+  case serializeReifiedTestCase (FormatVersion 0) reified of
+    Aeson.Object obj ->
+      QC.conjoin $ fmap (fieldMustFailWhenMissing obj) requiredFields
+    value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
+  where
+    requiredFields :: [AesonKey.Key]
+    requiredFields =
+      [ "formatVersion"
+      , "key"
+      , "testVersion"
+      , "blockTree"
+      , "pointSchedule"
+      , "shrinkIndex"
+      , "seed"
+      ]
+
+    fieldMustFailWhenMissing
+      :: Aeson.Object
+      -> AesonKey.Key
+      -> QC.Property
+    fieldMustFailWhenMissing obj field =
+      let mutated = Aeson.Object $ AesonKeyMap.delete field obj
+      in case parseReifiedTestCaseValue mutated of
+          Left _ -> QC.property True
+          Right parsed -> QC.counterexample
+            (mconcat
+              [ "Expected parsing to fail when field is missing: "
+              , show (AesonKey.toText field)
+              , "\nParsed value: "
+              , show parsed
+              ])
+            False
+
+-- | Deserializing a ReifiedTestCase with an invalid type
+-- for a required field should fail.
+prop_deserializeReifiedTestCase_rejects_bad_field_type
+  :: ReifiedTestCase () BlockRep -> QC.Property
+prop_deserializeReifiedTestCase_rejects_bad_field_type reified =
+  case serializeReifiedTestCase (FormatVersion 0) reified of
+    Aeson.Object obj ->
+      QC.conjoin $ fmap (mutationMustFail obj)
+        [ ("formatVersion", Aeson.String "0.0")
+        , ("testVersion", Aeson.String "0.0")
+        , ("blockTree", Aeson.String "not-an-object")
+        , ("pointSchedule", Aeson.String "not-an-object")
+        , ("shrinkIndex", Aeson.Bool True)
+        , ("seed", Aeson.Number 0)
+        ]
+    value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
+  where
+    mutationMustFail
+      :: Aeson.Object
+      -> (AesonKey.Key, Aeson.Value)
+      -> QC.Property
+    mutationMustFail obj (field, badValue) =
+      let mutated = Aeson.Object $ AesonKeyMap.insert field badValue obj
+      in case parseReifiedTestCaseValue mutated of
+          Left _ -> QC.property True
+          Right parsed -> QC.counterexample
+            (mconcat
+              [ "Expected parsing to fail for invalid field type.\n"
+              , "Field: ", show (AesonKey.toText field), "\n"
+              , "Bad value: ", show badValue, "\n"
+              , "Parsed value: ", show parsed
+              ])
+            False
+
+-- | Adding unknown JSON fields should not cause parsing to fail, and the
+-- unknown fields should be ignored.
+prop_deserializeReifiedTestCase_ignores_unknown_fields
+  :: ReifiedTestCase () BlockRep -> QC.Property
+prop_deserializeReifiedTestCase_ignores_unknown_fields reified =
+  case serializeReifiedTestCase (FormatVersion 0) reified of
+    Aeson.Object obj ->
+      let
+        mutated = Aeson.Object $ AesonKeyMap.insert "_unknownField" (Aeson.String "extra") obj
+      in case parseReifiedTestCaseValue mutated of
+          Left err -> QC.counterexample
+            ("Expected parse success with unknown field, got error: " <> err)
+            False
+          Right parsed -> QC.counterexample
+            (mconcat
+              [ "Unknown fields should be ignored during parsing.\n"
+              , "Expected: ", show reified, "\n"
+              , "Parsed: ", show parsed
+              ])
+            (QC.property (parsed == reified))
+    value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
+
+-- | The KnownBlocks map produced by fromReifiedBlockTree should contain entries
+-- for every block ID present in the block tree.
+prop_fromReifiedBlockTree_knownBlocks_complete
+  :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
+  => BlockTree blk -> QC.Property
+prop_fromReifiedBlockTree_knownBlocks_complete blockTree =
+  let
+    reified = toReifiedBlockTree blockTree
+    expectedIds = Set.fromList $
+      concatMap forkBlockIds (rbtTrunk reified : rbtBranches reified)
+    cannotConvertMsg err = mconcat
+      [ "Unable to decode ReifiedBlockTree:\n"
+      , "ReifiedBlockTree: ", show reified, "\n"
+      , "Error: ", err
+      ]
+    fromReified :: Either String (BlockTree blk, KnownBlocks blk)
+    fromReified = fromReifiedBlockTree reified
+  in case fromReified of
+      Left err -> QC.counterexample (cannotConvertMsg err) False
+      Right (_, knownBlocks) ->
+        let
+          observedIds = Set.fromList (M.keys (unKnownBlocks knownBlocks))
+          missing = Set.toList (expectedIds Set.\\ observedIds)
+          msg = mconcat
+            [ "KnownBlocks is missing ids after reconstruction.\n"
+            , "Missing ids: ", show missing, "\n"
+            , "Expected ids: ", show (Set.toList expectedIds), "\n"
+            , "Observed ids: ", show (Set.toList observedIds)
+            ]
+        in QC.counterexample msg $ QC.property (Set.null (expectedIds Set.\\ observedIds))
+
+-- | A dangling anchor refers to an anchor node that does not exist in the trunk.
+-- fromReifiedBlockTree should reject forks with dangling anchors.
+prop_fromReifiedBlockTree_rejects_dangling_anchor
+  :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
+  => BlockTree blk -> QC.Property
+prop_fromReifiedBlockTree_rejects_dangling_anchor blockTree =
+  let
+    reified = toReifiedBlockTree blockTree
+    mMutated = mutateDanglingAnchor reified
+  in case mMutated of
+      Nothing -> QC.property True
+      Just mutated ->
+        let
+          msgSuccess = mconcat
+            [ "Expected fromReifiedBlockTree to reject dangling branch anchor, but it succeeded.\n"
+            , "Original reified tree: ", show reified, "\n"
+            , "Mutated reified tree: ", show mutated
+            ]
+        in case fromReifiedBlockTree mutated :: Either String (BlockTree blk, KnownBlocks blk) of
+            Left _  -> QC.property True
+            Right _ -> QC.counterexample msgSuccess False
+
+-- | Reified point schedules should only contain points that are present
+-- in the block tree.
+prop_fromReifiedPointSchedule_rejects_unknown_point
+  :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
+  => BlockTree blk -> Schedule.PointSchedule blk -> QC.Property
+prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule =
+  let
+    reifiedTree = toReifiedBlockTree blockTree
+    reifiedSchedule = toReifiedPointSchedule pointSchedule
+    hasSchedulePoints = not (null (toList reifiedSchedule))
+    cannotConvertTreeMsg err = mconcat
+      [ "Unable to decode reified block tree for point schedule test:\n"
+      , "ReifiedBlockTree: ", show reifiedTree, "\n"
+      , "Error: ", err
+      ]
+    fromReifiedTree :: Either String (BlockTree blk, KnownBlocks blk)
+    fromReifiedTree = fromReifiedBlockTree reifiedTree
+  in case fromReifiedTree of
+      Left err -> QC.counterexample (cannotConvertTreeMsg err) False
+      Right (_, knownBlocks) ->
+        let
+          badPoint = freshSlotAndBlockNo knownBlocks
+          mutatedSchedule = fmap (const badPoint) reifiedSchedule
+          msgSuccess = mconcat
+            [ "Expected fromReifiedPointSchedule to fail on unknown points, but it succeeded.\n"
+            , "Bad point used: ", show badPoint, "\n"
+            , "Mutated schedule: ", show mutatedSchedule
+            ]
+        in hasSchedulePoints QC.==>
+            case fromReifiedPointSchedule knownBlocks mutatedSchedule of
+              Left _  -> QC.property True
+              Right _ -> QC.counterexample msgSuccess False
+
+parseReifiedTestCaseValue :: Aeson.Value -> Either String (ReifiedTestCase () BlockRep)
+parseReifiedTestCaseValue = Aeson.parseEither deserializeReifiedTestCase
+
+-- | Invent a slot and block number that are not present in the given KnownBlocks map.
+freshSlotAndBlockNo :: KnownBlocks blk -> (SlotNo, BlockNo)
+freshSlotAndBlockNo knownBlocks =
+  let
+    pairs = Set.fromList [ (bidSlotNo bid, bidBlockNo bid) | bid <- M.keys (unKnownBlocks knownBlocks) ]
+    maxSlotNo = maximum (SlotNo 0 : fmap fst (Set.toList pairs))
+    maxBlockNo = maximum (BlockNo 0 : fmap snd (Set.toList pairs))
+    SlotNo s = maxSlotNo
+    BlockNo b = maxBlockNo
+    candidate = (SlotNo (s + 1), BlockNo (b + 1))
+  in if Set.member candidate pairs
+      then (SlotNo (s + 2), BlockNo (b + 2))
+      else candidate
+
+-- | Mutate one branch anchor to refer to a slot and block number that are not
+-- present in the tree.
+mutateDanglingAnchor
+  :: ReifiedBlockTree BlockRep
+  -> Maybe (ReifiedBlockTree BlockRep)
+mutateDanglingAnchor reified@ReifiedBlockTree{rbtBranches} =
+  let hasAnchor = isJust . forkAnchor
+  -- Find the first branch with an anchor and mutate it.
+  in case break hasAnchor rbtBranches of
+    (_, []) -> Nothing
+    (prefix, branch:suffix) ->
+      case forkAnchor branch of
+        Nothing -> Nothing
+        Just (slotNo, rep) ->
+          let
+            SlotNo s = slotNo
+            BlockNo n = brBlockNo rep
+            badSlotNo = SlotNo (s + 1000000)
+            badRep = rep { brBlockNo = BlockNo (n + 1000000) }
+            mutatedBranch = branch { forkAnchor = Just (badSlotNo, badRep) }
+          in Just reified { rbtBranches = prefix ++ (mutatedBranch : suffix) }
 
 -- | Compute the set of block identifiers (slot and block number) for a fork.
 forkBlockIds :: AnchoredFork BlockRep -> [BlockId]

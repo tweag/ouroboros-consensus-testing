@@ -231,7 +231,7 @@ instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
 
     psSchedule <- v .: "schedule" >>= Aeson.parseJSON >>= traverse peerScheduleFromJSON
     psStartOrder <- v .: "startOrder"
-    psMinEndTime <- fmap Time $ v .: "minEndTime"
+    psMinEndTime <- fmap (Time . picosecondsToDiffTime) $ v .: "minEndTime"
     pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------

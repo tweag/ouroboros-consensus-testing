@@ -42,6 +42,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import           Data.Functor ((<&>))
 import qualified Data.Map as M
+import           Data.Scientific (toBoundedInteger)
 import qualified Data.Text as T
 import           Data.Word (Word64)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -215,8 +216,10 @@ instance Aeson.ToJSON SlotGap where
   toJSON (SlotGap gap) = Aeson.Number (fromIntegral gap)
 
 instance Aeson.FromJSON SlotGap where
-  parseJSON = Aeson.withScientific "SlotGap" $ \n ->
-    pure $ SlotGap (floor n :: Word64)
+  parseJSON = Aeson.withScientific "SlotGap" $ \sci ->
+    case toBoundedInteger sci of
+      Just v  -> pure (SlotGap v)
+      Nothing -> fail $ "Invalid SlotGap: " <> show sci
 
 offsetSlotNo :: SlotNo -> SlotGap -> SlotNo
 offsetSlotNo (SlotNo slot) (SlotGap gap) = SlotNo (slot + gap)
@@ -580,13 +583,13 @@ data FormatVersion = FormatVersion Int
   deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON FormatVersion where
-  toJSON (FormatVersion v) = Aeson.String (T.pack $ show v)
+  toJSON (FormatVersion v) = Aeson.Number (fromIntegral v)
 
 instance Aeson.FromJSON FormatVersion where
-  parseJSON = Aeson.withText "FormatVersion" $ \txt ->
-    case readMaybe (T.unpack txt) of
+  parseJSON = Aeson.withScientific "FormatVersion" $ \sci ->
+    case toBoundedInteger sci of
       Just v  -> pure (FormatVersion v)
-      Nothing -> fail $ "Invalid FormatVersion: " <> T.unpack txt
+      Nothing -> fail $ "Invalid FormatVersion: " <> show sci
 
 -- | A version number for the property test itself (as represented by 'key').
 -- This is included to allow for backward compatibility in case the property
@@ -595,13 +598,13 @@ newtype TestVersion = TestVersion Int
   deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON TestVersion where
-  toJSON (TestVersion v) = Aeson.String (T.pack $ show v)
+  toJSON (TestVersion v) = Aeson.Number (fromIntegral v)
 
 instance Aeson.FromJSON TestVersion where
-  parseJSON = Aeson.withText "TestVersion" $ \txt ->
-    case readMaybe (T.unpack txt) of
+  parseJSON = Aeson.withScientific "TestVersion" $ \sci ->
+    case toBoundedInteger sci of
       Just v  -> pure (TestVersion v)
-      Nothing -> fail $ "Invalid TestVersion: " <> T.unpack txt
+      Nothing -> fail $ "Invalid TestVersion: " <> show sci
 
 instance QC.Arbitrary TestVersion where
   arbitrary = do

@@ -317,6 +317,7 @@ library unstable-consensus-conformance-testlib
     quiet,
     random,
     resource-registry,
+    scientific,
     serialise,
     si-timers,
     sop-core,
