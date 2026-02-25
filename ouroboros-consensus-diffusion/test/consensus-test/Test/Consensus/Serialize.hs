@@ -9,8 +9,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.Serialize (
-    -- * JSON Serialization
+    -- * JSON serialization for test cases
     -- $intro
+    -- $howitworks
     AnchoredFork (..)
   , BlockId (..)
   , BlockRep (..)
@@ -69,8 +70,8 @@ import           Text.Read (readMaybe)
 -- The JSON format is meant to be as stable as possible under changes to
 -- test case generation. This is achieved via a test version number and
 -- a serialization format version number, both of which are included in the JSON.
---
--- ** How It Works
+
+-- $howitworks
 -- We could have added Generic instances to everything and derived ToJSON/FromJSON.
 -- That is not ideal however; first because generated test cases contain a lot of
 -- redundant information (a LOT). Second, because this would tie the serialization
