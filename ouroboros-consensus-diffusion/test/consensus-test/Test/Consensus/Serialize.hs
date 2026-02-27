@@ -154,7 +154,7 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) w
 
 -- | Construct a 'ReifiedTestCase' from a concrete test case.
 toReifiedTestCase
-  :: (AF.HasHeader blk, Ord (AF.HeaderHash blk), Show blk)
+  :: (AF.HasHeader blk, Show blk)
   => key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed
   -> ReifiedTestCase key BlockRep
 toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
@@ -235,7 +235,7 @@ offsetSlotNo (SlotNo slot) (SlotGap gap) = SlotNo (slot + gap)
 newtype WithSlotNo a = WithSlotNo
   { unWithSlotNo :: State SlotNo a }
   deriving stock (Functor)
-  deriving (Applicative, Monad, MonadState SlotNo) via (State SlotNo)
+  deriving newtype (Applicative, Monad, MonadState SlotNo)
 
 runWithSlotNo :: WithSlotNo a -> SlotNo -> (a, SlotNo)
 runWithSlotNo action slotNo0 = runState (unWithSlotNo action) slotNo0
@@ -338,7 +338,7 @@ instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
 -- | Convert a @BlockTree@ to a @ReifiedBlockTree@. This direction
 -- turns slot numbers into slot gaps.
 toReifiedBlockTree
-  :: forall blk. (AF.HasHeader blk, Ord (AF.HeaderHash blk))
+  :: forall blk. (AF.HasHeader blk)
   => BlockTree blk -> (ReifiedBlockTree BlockRep, KnownForks blk)
 toReifiedBlockTree (BlockTree trunk branches) =
   let
@@ -449,10 +449,10 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
     -- Issue the next block.
     issueNextBlock
-      :: ForkNo  -- ^ Current fork number, needed to issue the first block on a branch
-      -> Maybe blk  -- ^ Anchor block, if this fork is anchored to a block
-      -> ([blk], KnownBlocks blk, SlotNo)  -- ^ Blocks issued so far (newest first) and known blocks
-      -> BlockRep  -- ^ Block to be issued
+      :: ForkNo  -- Current fork number, needed to issue the first block on a branch
+      -> Maybe blk  -- Anchor block, if this fork is anchored to a block
+      -> ([blk], KnownBlocks blk, SlotNo)  -- Blocks issued so far (newest first) and known blocks
+      -> BlockRep  -- Block to be issued
       -> Either String ([blk], KnownBlocks blk, SlotNo)
     issueNextBlock forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
       let
@@ -479,12 +479,12 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
     -- Issue a chain of blocks.
     issueBlocks
-      :: SlotNo  -- ^ Last used slot number.
-      -> ForkNo  -- ^ Current fork number
-      -> Maybe blk  -- ^ Anchor block, if any
-      -- | Blocks to be issued, oldest first, and the known blocks so far.
+      :: SlotNo  -- Last used slot number.
+      -> ForkNo  -- Current fork number
+      -> Maybe blk  -- Anchor block, if any
+      -- Blocks to be issued, oldest first, and the known blocks so far.
       -> ([BlockRep], KnownBlocks blk)
-      -- | Issued blocks, oldest first, and an updated map of blocks.
+      -- Issued blocks, oldest first, and an updated map of blocks.
       -> Either String ([blk], KnownBlocks blk)
     issueBlocks lastSlotNo forkNo mAnchorBlk (reps, knownBlocks) = do
       (blocks, blocksById, _) <-
@@ -493,7 +493,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
     -- Issue a single fork (blocks plus anchor).
     issueFork
-      -- | The fork to process and the known blocks so far.
+      -- The fork to process and the known blocks so far.
       :: (AnchoredFork BlockRep, KnownBlocks blk)
       -> Either String (AF.AnchoredFragment blk, KnownBlocks blk)
     issueFork (AnchoredFork {forkAnchor, forkBlocks, forkNumber}, knownBlocks) = do
@@ -554,7 +554,7 @@ lookupKnownFork blockHash (KnownForks m) = M.lookup blockHash m
 
 -- | Replace the blocks in a point schedule with corresponding @BlockId@s.
 toReifiedPointSchedule
-  :: forall blk. (AF.HasHeader blk, Ord (AF.HeaderHash blk), Show blk)
+  :: forall blk. (AF.HasHeader blk, Show blk)
   => KnownForks blk -> PointSchedule blk -> PointSchedule BlockId
 toReifiedPointSchedule knownForks pointSchedule = pointSchedule <&> \blk ->
   let
@@ -578,13 +578,10 @@ toReifiedPointSchedule knownForks pointSchedule = pointSchedule <&> \blk ->
 fromReifiedPointSchedule
   :: KnownBlocks blk -> PointSchedule BlockId
   -> Either String (PointSchedule blk)
-fromReifiedPointSchedule blockTree schedule =
-  let
-    lookupBlockRep blockId =
-      case lookupKnownBlock blockId blockTree of
-        Just blk -> Right blk
-        Nothing  -> Left $ "Failed to find block id: " <> show blockId
-  in traverse lookupBlockRep schedule
+fromReifiedPointSchedule blockTree = traverse $
+  \blockId -> case lookupKnownBlock blockId blockTree of
+    Just blk -> Right blk
+    Nothing  -> Left $ "Failed to find block id: " <> show blockId
 
 
 
