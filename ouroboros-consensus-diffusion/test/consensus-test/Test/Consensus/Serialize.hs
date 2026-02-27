@@ -2,12 +2,15 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Test.Consensus.Serialize (
     -- * JSON serialization for test cases
     -- $intro
@@ -18,6 +21,7 @@ module Test.Consensus.Serialize (
   , ForkNo (..)
   , FormatVersion (..)
   , KnownBlocks (..)
+  , KnownForks (..)
   , ReifiedBlockTree (..)
   , ReifiedTestCase (..)
   , Seed (..)
@@ -102,7 +106,7 @@ data ReifiedTestCase key u = ReifiedTestCase
   -- ^ The block tree is represented as a trunk and a list of branches,
   -- oldest nodes first.
 
-  , rtcPointSchedule :: PointSchedule (SlotNo, AF.BlockNo)
+  , rtcPointSchedule :: PointSchedule BlockId
 
   , rtcShrinkIndex   :: ShrinkIndex
   -- ^ Used for specifying a shrink of the generated test case.
@@ -132,7 +136,7 @@ deserializeReifiedTestCase
 deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
   fmtVersion <- obj .: "formatVersion"
   case fmtVersion of
-    FormatVersion _ -> do
+    FormatVersionOne -> do
       -- Currently we only have one format version.
       rtcTestKey <- obj .: "key"
       rtcTestVersion <- obj .: "testVersion"
@@ -143,22 +147,25 @@ deserializeReifiedTestCase = Aeson.withObject "ReifiedTestCase" $ \obj -> do
       pure ReifiedTestCase {..}
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key BlockRep) where
-  toJSON = serializeReifiedTestCase (FormatVersion 0)
+  toJSON = serializeReifiedTestCase FormatVersionOne
 
 instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key BlockRep) where
   parseJSON = deserializeReifiedTestCase
 
 -- | Construct a 'ReifiedTestCase' from a concrete test case.
 toReifiedTestCase
-  :: (AF.HasHeader blk)
+  :: (AF.HasHeader blk, Ord (AF.HeaderHash blk), Show blk)
   => key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed
   -> ReifiedTestCase key BlockRep
 toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
-  ReifiedTestCase
+  let
+    (reifiedBlockTree, knownForks) = toReifiedBlockTree blockTree
+    reifiedPointSchedule = toReifiedPointSchedule knownForks pointSchedule
+  in ReifiedTestCase
     { rtcTestKey = key
     , rtcTestVersion = testVersion
-    , rtcBlockTree = toReifiedBlockTree blockTree
-    , rtcPointSchedule = toReifiedPointSchedule pointSchedule
+    , rtcBlockTree = reifiedBlockTree
+    , rtcPointSchedule = reifiedPointSchedule
     , rtcShrinkIndex = shrinkIndex
     , rtcSeed = seed
     }
@@ -288,7 +295,7 @@ instance (Aeson.FromJSON blk) => Aeson.FromJSON (ReifiedBlockTree blk) where
 -- and each block must be a valid successor of the previous block.
 data AnchoredFork u = AnchoredFork
   { forkAnchor :: Maybe (SlotNo, u)
-  , forkBlocks :: [u] -- Oldest first!
+  , forkBlocks :: [u] -- ^ Oldest first!
   , forkNumber :: ForkNo
   } deriving (Eq, Show, Functor, Foldable, Traversable)
 
@@ -331,17 +338,23 @@ instance Aeson.FromJSON u => Aeson.FromJSON (AnchoredFork u) where
 -- | Convert a @BlockTree@ to a @ReifiedBlockTree@. This direction
 -- turns slot numbers into slot gaps.
 toReifiedBlockTree
-  :: forall blk. (AF.HasHeader blk)
-  => BlockTree blk -> ReifiedBlockTree BlockRep
-toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
-  (anchoredFragmentToAnchoredForkOldestFirst (trunk, ForkNo 0))
-  (fmap anchoredFragmentToAnchoredForkOldestFirst $ zip (reverse $ fmap btbSuffix branches) (fmap ForkNo [1..]))
+  :: forall blk. (AF.HasHeader blk, Ord (AF.HeaderHash blk))
+  => BlockTree blk -> (ReifiedBlockTree BlockRep, KnownForks blk)
+toReifiedBlockTree (BlockTree trunk branches) =
+  let
+    (reifiedTrunk, knownForksTrunk) = anchoredFragmentToAnchoredForkOldestFirst (trunk, ForkNo 0)
+    (reifiedBranches, knownForksBranches) = unzip $ fmap anchoredFragmentToAnchoredForkOldestFirst
+      (zip (reverse $ fmap btbSuffix branches) (fmap ForkNo [1..]))
+  in
+    ( ReifiedBlockTree reifiedTrunk reifiedBranches
+    , mconcat (knownForksTrunk : knownForksBranches)
+    )
   where
     -- Represent an @AnchoredFragment@ as a list of @BlockRep@s, from oldest to
     -- newest, plus the anchor. @BlockTreeBranch@es include a lot of redundant information;
     -- all we need is the suffix of the branch (the part that is not shared with the trunk).
     anchoredFragmentToAnchoredForkOldestFirst
-      :: (AF.AnchoredFragment blk, ForkNo) -> AnchoredFork BlockRep
+      :: (AF.AnchoredFragment blk, ForkNo) -> (AnchoredFork BlockRep, KnownForks blk)
     anchoredFragmentToAnchoredForkOldestFirst (fragment, forkNo) =
       let
         anchor = getAnchorRep fragment
@@ -352,7 +365,11 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
         -- we use that to compute slot gaps for the fragment.
         (fragment', _) = runWithSlotNo
           (getBlockReps (AF.toOldestFirst fragment)) slotNo
-      in AnchoredFork anchor (fmap fst fragment') forkNo
+        knownForks = KnownForks $ M.fromList
+          [ (AF.headerFieldHash (AF.getHeaderFields blk), forkNo)
+          | (_, blk) <- fragment'
+          ]
+      in (AnchoredFork anchor (fmap fst fragment') forkNo, knownForks)
 
     -- Summarize an anchored fragment's anchor.
     getAnchorRep
@@ -365,6 +382,14 @@ toReifiedBlockTree (BlockTree trunk branches) = ReifiedBlockTree
 -- slot, and block numbers. @KnownBlocks@ maps these identifiers
 -- to actual blocks.
 newtype KnownBlocks blk = KnownBlocks { unKnownBlocks :: M.Map BlockId blk }
+  deriving newtype (Semigroup, Monoid)
+
+
+
+newtype KnownForks blk = KnownForks { unKnownForks :: M.Map (AF.HeaderHash blk) ForkNo }
+
+deriving instance (Ord (AF.HeaderHash blk)) => Semigroup (KnownForks blk)
+deriving instance (Ord (AF.HeaderHash blk)) => Monoid (KnownForks blk)
 
 data BlockId = BlockId
   { bidSlotNo  :: SlotNo
@@ -372,8 +397,19 @@ data BlockId = BlockId
   , bidForkNo  :: ForkNo
   } deriving (Eq, Ord, Show)
 
-emptyKnownBlocks :: KnownBlocks blk
-emptyKnownBlocks = KnownBlocks M.empty
+instance Aeson.ToJSON BlockId where
+  toJSON BlockId { bidSlotNo, bidBlockNo, bidForkNo } = Aeson.object
+    [ "slotNo" .= bidSlotNo
+    , "blockNo" .= bidBlockNo
+    , "forkNo" .= unForkNo bidForkNo
+    ]
+
+instance Aeson.FromJSON BlockId where
+  parseJSON = Aeson.withObject "BlockId" $ \v -> do
+    bidSlotNo <- v .: "slotNo"
+    bidBlockNo <- fmap AF.BlockNo $ v .: "blockNo"
+    bidForkNo <- fmap ForkNo $ v .: "forkNo"
+    pure BlockId {..}
 
 lookupKnownBlock :: BlockId -> KnownBlocks blk -> Maybe blk
 lookupKnownBlock blockId (KnownBlocks m) = M.lookup blockId m
@@ -383,22 +419,6 @@ insertKnownBlock blockId blk (KnownBlocks m) = KnownBlocks (M.insert blockId blk
 
 knownBlockIds :: KnownBlocks blk -> [BlockId]
 knownBlockIds (KnownBlocks m) = M.keys m
-
-lookupKnownBlockBySlotAndBlockNo
-  :: SlotNo
-  -> AF.BlockNo
-  -> KnownBlocks blk
-  -> Maybe blk
-lookupKnownBlockBySlotAndBlockNo slotNo blockNo (KnownBlocks m) =
-  let candidates =
-        [ blk
-        | (BlockId slotNo' blockNo' _, blk) <- M.toList m
-        , slotNo' == slotNo
-        , blockNo' == blockNo
-        ]
-  in case candidates of
-      []      -> Nothing
-      blk : _ -> Just blk
 
 -- | Given a @ReifiedBlockTree@, attempt to reconstruct the original @BlockTree@
 -- by issuing blocks in order. (Trunk first, then branches one by one.) To do this
@@ -508,7 +528,7 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       (fragment, knownBlocks') <- issueFork (fork, knownBlocks)
       pure (fragment : fragments, knownBlocks')
 
-  (trunk, trunkBlocks) <- issueFork (rbtTrunk, emptyKnownBlocks)
+  (trunk, trunkBlocks) <- issueFork (rbtTrunk, mempty)
   (branches, allBlocks) <- foldM issueNextFragment ([], trunkBlocks) (reverse rbtBranches)
 
   -- @fromTrunkAndBranches@ is a smart constructor for @BlockTree@ that ensures
@@ -527,27 +547,43 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 -- Point Schedule Conversion --
 -------------------------------
 
--- | Replace the blocks in a point schedule with corresponding
--- @SlotNo@s and @BlockNo@s.
-toReifiedPointSchedule
-  :: forall blk. (AF.HasHeader blk)
-  => PointSchedule blk -> PointSchedule (SlotNo, AF.BlockNo)
-toReifiedPointSchedule pointSchedule = pointSchedule <&> \blk ->
-  let headers = AF.getHeaderFields blk
-  in (AF.headerFieldSlot headers, AF.headerFieldBlockNo headers)
+lookupKnownFork
+  :: (Ord (AF.HeaderHash blk))
+  => AF.HeaderHash blk -> KnownForks blk -> Maybe ForkNo
+lookupKnownFork blockHash (KnownForks m) = M.lookup blockHash m
 
--- | During reconstruction of the block tree, we generated a map from block
--- identifiers (slot and block number) to actual blocks. We can use this with
--- @traverse@ to repopulate the point schedule.
+-- | Replace the blocks in a point schedule with corresponding @BlockId@s.
+toReifiedPointSchedule
+  :: forall blk. (AF.HasHeader blk, Ord (AF.HeaderHash blk), Show blk)
+  => KnownForks blk -> PointSchedule blk -> PointSchedule BlockId
+toReifiedPointSchedule knownForks pointSchedule = pointSchedule <&> \blk ->
+  let
+    headers = AF.getHeaderFields blk
+    slotNo = AF.headerFieldSlot headers
+    blockNo = AF.headerFieldBlockNo headers
+    blockHash = AF.headerFieldHash headers
+  in case lookupKnownFork blockHash knownForks of
+      Just forkNo -> BlockId slotNo blockNo forkNo
+      Nothing -> error $ mconcat
+        [ "Failed to find fork number for block while reifying point schedule: "
+        , show (slotNo, blockNo)
+        , " block hash: "
+        , show blockHash
+        , " block: "
+        , show blk
+        ]
+
+-- | During reconstruction of the block tree, we generated a map from block ids
+-- to blocks. Use this with @traverse@ to repopulate the point schedule.
 fromReifiedPointSchedule
-  :: KnownBlocks blk -> PointSchedule (SlotNo, AF.BlockNo)
+  :: KnownBlocks blk -> PointSchedule BlockId
   -> Either String (PointSchedule blk)
 fromReifiedPointSchedule blockTree schedule =
   let
-    lookupBlockRep rep =
-      case lookupKnownBlockBySlotAndBlockNo (fst rep) (snd rep) blockTree of
+    lookupBlockRep blockId =
+      case lookupKnownBlock blockId blockTree of
         Just blk -> Right blk
-        Nothing  -> Left $ "Failed to find block and slot number: " <> show rep
+        Nothing  -> Left $ "Failed to find block id: " <> show blockId
   in traverse lookupBlockRep schedule
 
 
@@ -576,17 +612,17 @@ instance Aeson.FromJSON Seed where
 -- allow for backward compatibility in case the JSON format needs to change.
 -- This only exists in the JSON, and consumers of this library should not
 -- use or rely on it.
-data FormatVersion = FormatVersion Int
+data FormatVersion = FormatVersionOne
   deriving (Eq, Ord, Show)
 
 instance Aeson.ToJSON FormatVersion where
-  toJSON (FormatVersion v) = Aeson.Number (fromIntegral v)
+  toJSON FormatVersionOne = Aeson.String "v1"
 
 instance Aeson.FromJSON FormatVersion where
-  parseJSON = Aeson.withScientific "FormatVersion" $ \sci ->
-    case toBoundedInteger sci of
-      Just v  -> pure (FormatVersion v)
-      Nothing -> fail $ "Invalid FormatVersion: " <> show sci
+  parseJSON = Aeson.withText "FormatVersion" $ \txt ->
+    case txt of
+      "v1" -> pure FormatVersionOne
+      _    -> fail $ "Invalid FormatVersion: " <> T.unpack txt
 
 -- | A version number for the property test itself (as represented by 'key').
 -- This is included to allow for backward compatibility in case the property
