@@ -26,7 +26,6 @@ module Test.Consensus.Serialize (
   , ReifiedTestCase (..)
   , Seed (..)
   , TestVersion (..)
-  , WithSlotNo (..)
   , deserializeReifiedTestCase
   , fromReifiedBlockTree
   , fromReifiedPointSchedule
@@ -41,7 +40,7 @@ module Test.Consensus.Serialize (
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Control.Monad (foldM)
-import           Control.Monad.State (MonadState (..), State, runState)
+import           Control.Monad.State (MonadState (..), runState)
 import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -228,23 +227,11 @@ instance Aeson.FromJSON SlotGap where
 offsetSlotNo :: SlotNo -> SlotGap -> SlotNo
 offsetSlotNo (SlotNo slot) (SlotGap gap) = SlotNo (slot + gap)
 
--- | Blocks in the block tree carry their slot number, but to issue
--- new blocks we need to know the slot /gap/ compared to the most
--- recently issued block. @WithSlotNo@ is a state monad that stores
--- the most recently used slot number so we can compute gaps.
-newtype WithSlotNo a = WithSlotNo
-  { unWithSlotNo :: State SlotNo a }
-  deriving stock (Functor)
-  deriving newtype (Applicative, Monad, MonadState SlotNo)
-
-runWithSlotNo :: WithSlotNo a -> SlotNo -> (a, SlotNo)
-runWithSlotNo action slotNo0 = runState (unWithSlotNo action) slotNo0
-
--- | Summarize a block as a @BlockRep@. @WithSlotNo@ is keeping track
+-- | Summarize a block as a @BlockRep@. @m@ is keeping track
 -- of the most recently used slot number so we can compute the slot gap.
 getBlockRep
-  :: forall blk. (AF.HasHeader blk)
-  => blk -> WithSlotNo (BlockRep, blk)
+  :: forall blk m. (AF.HasHeader blk, MonadState SlotNo m)
+  => blk -> m (BlockRep, blk)
 getBlockRep blk = do
   SlotNo lastSlotNo <- get
   let headers = AF.getHeaderFields blk
@@ -255,8 +242,8 @@ getBlockRep blk = do
   pure (BlockRep slotGap blockNo, blk)
 
 getBlockReps
-  :: forall blk t. (AF.HasHeader blk, Traversable t)
-  => t blk -> WithSlotNo (t (BlockRep, blk))
+  :: forall blk t m. (AF.HasHeader blk, Traversable t, MonadState SlotNo m)
+  => t blk -> m (t (BlockRep, blk))
 getBlockReps = traverse getBlockRep
 
 
@@ -363,7 +350,7 @@ toReifiedBlockTree (BlockTree trunk branches) =
           Just (slotNum, _) -> slotNum
         -- The anchor's slot number is the one most recently used;
         -- we use that to compute slot gaps for the fragment.
-        (fragment', _) = runWithSlotNo
+        (fragment', _) = runState
           (getBlockReps (AF.toOldestFirst fragment)) slotNo
         knownForks = KnownForks $ M.fromList
           [ (AF.headerFieldHash (AF.getHeaderFields blk), forkNo)
@@ -425,6 +412,8 @@ knownBlockIds (KnownBlocks m) = M.keys m
 -- we keep track of previously issued blocks in a @KnownBlocks@ map. Morally there
 -- is a little state monad going on here, but we're just passing the state manually
 -- to keep it simple.
+--
+-- TODO: Unify this with the tree generation code in @genChains@.
 fromReifiedBlockTree
   :: forall blk. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
   => ReifiedBlockTree BlockRep
