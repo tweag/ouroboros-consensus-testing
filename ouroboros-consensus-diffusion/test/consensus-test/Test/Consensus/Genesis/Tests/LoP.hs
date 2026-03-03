@@ -58,7 +58,7 @@ data TestKey = WaitJustEnoughUntilEmpty
              | DelayAttackSucceeds
              | DelayAttackFails
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( HasHeader blk

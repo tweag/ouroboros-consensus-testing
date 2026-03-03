@@ -88,7 +88,7 @@ adjustTestMaxSize = (`div` 5)
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = TriggersChainSelection
   deriving stock (Eq,Ord,Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( HasHeader blk

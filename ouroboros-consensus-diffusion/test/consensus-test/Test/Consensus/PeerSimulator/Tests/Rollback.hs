@@ -41,7 +41,7 @@ desiredPasses = (`div` 2)
 
 data TestKey = CanRollback | CannotRollback
   deriving stock (Eq, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( IssueTestBlock blk

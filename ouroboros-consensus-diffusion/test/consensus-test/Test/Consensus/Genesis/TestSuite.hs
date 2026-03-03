@@ -5,8 +5,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 -- | A 'TestSuite' data structure for quick access to 'ConformanceTest' values.
 -- It encodes a hierarchical nested structure allowing it to compile into a
@@ -14,11 +12,14 @@
 -- It's purpose is interfacing between property test execution and the
 -- conformance testing harness.
 module Test.Consensus.Genesis.TestSuite (
-    Finite
-  , Generic
-  , GenericUniverse (..)
+    -- * 'SmallKey' class
+    --
+    -- $deriveSmallkey
+    Generic
+  , Generically (..)
+  , SmallKey
+    -- * 'TestSuite' API
   , TestSuite
-  , Universe
   , at
   , getTest
   , group
@@ -27,16 +28,13 @@ module Test.Consensus.Genesis.TestSuite (
   , toTestTree
   ) where
 
-import           Data.Coerce (coerce)
 import           Data.Foldable (toList)
 import           Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid (Endo (..))
-import           Data.Universe.Class (Finite (..), Universe (..))
-import           Data.Universe.Generic (GUniverse, universeGeneric)
-import           GHC.Generics (Generic (Rep), Generically (..))
+import           GHC.Generics (Generic, Generically (..))
 import           Ouroboros.Consensus.Block (BlockSupportsDiffusionPipelining,
                      ConvertRawHash, Header)
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
@@ -52,20 +50,12 @@ import           Ouroboros.Consensus.Util.Condense (Condense, CondenseList)
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 import           Test.Consensus.Genesis.Setup (ConformanceTest (..),
                      runConformanceTest)
+import           Test.Consensus.Genesis.TestSuite.SmallKey (SmallKey (..))
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule (HasPointScheduleTestParams)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Util.TersePrinting (Terse)
-
--- | A data type with generically defined  'Universe' and 'Finite' instances.
--- Intended to derive said instances (via @DerivingVia@ extension) for 'TestSuite' keys.
-newtype GenericUniverse a = GenericUniverse a
-
-instance (Generic a, GUniverse (Rep a)) => Universe (GenericUniverse a) where
-  universe = coerce $ universeGeneric @a
-
-instance (Generic a, GUniverse (Rep a)) => Finite (GenericUniverse a)
 
 data TestSuiteData blk = TestSuiteData
   { -- | A prefix representing a path through the test group tree.
@@ -80,26 +70,23 @@ data TestSuiteData blk = TestSuiteData
 -- | A @TestSuite blk key@ contains one 'ConformanceTest'@blk@ for each @key@.
 newtype TestSuite blk key = TestSuite (Map key (TestSuiteData blk))
 
--- NOTE: [GenericFinite]
--- 'Universe' and 'Finite' constraints on @key@ are meant to be derived
--- generically by means of the 'GenericUniverse' wrapper.
--- Using a @key@ having a constructor with a big finite type parameter
--- (such as 'Int') should be avoided as this is likely to flood the memory.
--- TODO: Reimplement 'Finite' to prevent instances of big finite types.
-
 -- | Build a 'TestSuite' by looking 'at' 'TestSuiteData', allowing to preserve the
 -- hierarchical structure of a previously constructed 'TestSuite'.
--- See NOTE [GenericFinite]
-mkTestSuite :: (Ord key, Finite key)
+--
+-- See NOTE [DeriveSmallKey]
+--
+mkTestSuite :: (Ord key, SmallKey key)
                  => (key -> TestSuiteData blk)
                  -> TestSuite blk key
 mkTestSuite toData =
-  TestSuite . Map.fromList . fmap ((,) <$> id <*> toData) $ universeF
+  TestSuite . Map.fromList . fmap ((,) <$> id <*> toData) $ allKeys
 
 -- | Build a 'TestSuite' from a function mapping a @key@ type to 'ConformanceTest'
 -- making all tests top-level.
--- See NOTE [GenericFinite]
-newTestSuite :: (Ord key, Finite key)
+--
+-- See NOTE [DeriveSmallKey]
+--
+newTestSuite :: (Ord key, SmallKey key)
             => (key -> ConformanceTest blk)
             -> TestSuite blk key
 newTestSuite toConformanceTest =
@@ -107,6 +94,22 @@ newTestSuite toConformanceTest =
                                , tsTest = toConformanceTest k
                                }
    in mkTestSuite toData
+
+-- $deriveSmallKey
+--
+-- NOTE [DeriveSmallKey]
+-- The 'SmallKey' constraint on 'TestSuite' @key@s is meant to be derived
+-- 'via Generically' only; because of this, some its class methods are not
+-- exported to prevent users of this class from instantiating it for large
+-- finite data types (such as 'Int' or 'Word32'), which are likely to flood the
+-- memory when constructing a 'TestSuite' because 'allKeys' are used
+-- operationally to drive its exhaustive construction. As precaution, product
+-- and syntactically-recursive types are forbidden from instanciating it and some
+-- large types have been explicitly black-listed.
+--
+-- The rationale behind the enforced restrictions is that @keys@ are expected
+-- to be constructed primarily from user defined sum types of nullary
+-- constructors corresponding to single test properties.
 
 at :: Ord key => TestSuite blk key -> key ->  TestSuiteData blk
 at (TestSuite m) k = case Map.lookup k m of

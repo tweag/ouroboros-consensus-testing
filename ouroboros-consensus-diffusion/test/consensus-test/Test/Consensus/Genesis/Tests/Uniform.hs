@@ -80,7 +80,7 @@ data TestKey = BlockFetchLeashingAttack
              | LOEStalling
              | ServeAdversarialBranches
   deriving stock (Eq, Show, Ord, Generic)
-  deriving (Universe, Finite) via GenericUniverse TestKey
+  deriving SmallKey via Generically TestKey
 
 testSuite ::
   ( AF.HasHeader blk
