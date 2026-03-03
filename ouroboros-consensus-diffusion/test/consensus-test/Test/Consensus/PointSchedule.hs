@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -57,12 +59,18 @@ import           Control.Monad (replicateM)
 import           Control.Monad.Class.MonadTime.SI (Time (Time), addTime,
                      diffTime)
 import           Control.Monad.ST (ST)
+import           Data.Aeson ((.:), (.=))
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import           Data.Bifunctor (first)
+import           Data.Foldable (toList)
 import           Data.Functor (($>))
 import           Data.List (mapAccumL, partition, scanl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
-import           Data.Time (DiffTime)
+import           Data.Time (DiffTime, diffTimeToPicoseconds,
+                     picosecondsToDiffTime)
+import           Data.Traversable (for)
 import           Data.Word (Word64)
 import           Ouroboros.Consensus.Block.Abstract (HasHeader,
                      withOriginToMaybe)
@@ -84,6 +92,7 @@ import qualified System.Random.Stateful as Random
 import           System.Random.Stateful (STGenM, StatefulGen, runSTGen_)
 import           Test.Consensus.BlockTree (BlockTree (..), BlockTreeBranch (..),
                      allFragments, deforestBlockTree, prettyBlockTree)
+import           Test.Consensus.OrphanInstances ()
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule.NodeState (NodeState (..),
                      genesisNodeState)
@@ -187,11 +196,43 @@ data PointSchedule blk = PointSchedule {
     -- If no point in the schedule is larger than 'psMinEndTime',
     -- the simulation will still run until this time is reached.
     psMinEndTime :: Time
-  }
+  } deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | List of all blocks appearing in the schedules.
 peerSchedulesBlocks :: Peers (PeerSchedule blk) -> [blk]
 peerSchedulesBlocks = concatMap (peerScheduleBlocks . value) . peersList
+
+instance Aeson.ToJSON blk => Aeson.ToJSON (PointSchedule blk) where
+  toJSON schedule =
+    let
+      peerScheduleToJSON :: PeerSchedule blk -> Aeson.Value
+      peerScheduleToJSON = Aeson.listValue $
+        \(Time time, pt) -> Aeson.object
+          [ "time" .= diffTimeToPicoseconds time
+          , "schedulePoint" .= Aeson.toJSON pt
+          ]
+      Time minEndTime = psMinEndTime schedule
+
+    in Aeson.object
+      [ "schedule" .= fmap peerScheduleToJSON (psSchedule schedule)
+      , "startOrder" .= psStartOrder schedule
+      , "minEndTime" .= diffTimeToPicoseconds minEndTime
+      ]
+
+instance Aeson.FromJSON blk => Aeson.FromJSON (PointSchedule blk) where
+  parseJSON = Aeson.withObject "PointSchedule" $ \v -> do
+    let
+      peerScheduleFromJSON :: Aeson.Value -> Aeson.Parser (PeerSchedule blk)
+      peerScheduleFromJSON = Aeson.withArray "PeerSchedule" $ \arr ->
+        for (toList arr) $ Aeson.withObject "PeerScheduleEntry" $ \obj -> do
+          time  <- obj .: "time"
+          point <- obj .: "schedulePoint"
+          pure (Time $ picosecondsToDiffTime time, point)
+
+    psSchedule <- v .: "schedule" >>= Aeson.parseJSON >>= traverse peerScheduleFromJSON
+    psStartOrder <- v .: "startOrder"
+    psMinEndTime <- fmap (Time . picosecondsToDiffTime) $ v .: "minEndTime"
+    pure PointSchedule {..}
 
 ----------------------------------------------------------------------------------------------------
 -- Schedule generators
@@ -499,12 +540,12 @@ newtype ForecastRange = ForecastRange { unForecastRange :: Word64 }
 data LoPBucketParams = LoPBucketParams {
   lbpCapacity :: Integer,
   lbpRate     :: Rational
-  }
+  } deriving (Show)
 
 data CSJParams = CSJParams {
     csjpJumpSize :: SlotNo
   }
-  deriving Show
+  deriving (Show)
 
 -- | Similar to 'ChainSyncTimeout' for BlockFetch. Only the states in which the
 -- server has agency are specified. REVIEW: Should it be upstreamed to
@@ -512,7 +553,7 @@ data CSJParams = CSJParams {
 data BlockFetchTimeout = BlockFetchTimeout
   { busyTimeout      :: Maybe DiffTime,
     streamingTimeout :: Maybe DiffTime
-  }
+  } deriving (Show)
 
 -- | All the data used by point schedule tests.
 data GenesisTest blk schedule = GenesisTest

@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -13,9 +13,10 @@ import           Ouroboros.Consensus.Block.Abstract (HasHeader, HeaderHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockHash)
 import           Test.Consensus.BlockTree
-import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest(..), genChains)
-import           Test.QuickCheck
+import           Test.Consensus.Genesis.Setup.GenChains (GenesisTest (..),
+                     genChains)
 import qualified Test.QuickCheck as QC
+import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.TestBlock (TestBlock)

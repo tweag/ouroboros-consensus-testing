@@ -14,6 +14,9 @@
 -- biased towards a specific situation.
 module Test.Consensus.Genesis.Tests.Uniform (
     TestKey
+  , genBlockFetchLeashingSchedule
+  , genLeashingSchedule
+  , genTimeLimitedSchedule
   , genUniformSchedulePoints
   , testSuite
   ) where
@@ -247,17 +250,17 @@ test_leashingAttackStalling =
     shrinkPeerSchedules
 
     theProperty
-  where
-    -- | Produces schedules that might cause the node under test to stall.
-    --
-    -- This is achieved by dropping random points from the schedule of each peer
-    -- and by adding sufficient time at the end of a test to allow LoP and
-    -- timeouts to disconnect adversaries.
-    genLeashingSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
-    genLeashingSchedule genesisTest = do
-      ps@PointSchedule{psSchedule = sch} <- ensureScheduleDuration genesisTest <$> genUniformSchedulePoints genesisTest
-      advs <- mapM dropRandomPoints $ adversarialPeers sch
-      pure $ ps {psSchedule = sch {adversarialPeers = advs}}
+
+-- | Produces schedules that might cause the node under test to stall.
+--
+-- This is achieved by dropping random points from the schedule of each peer
+-- and by adding sufficient time at the end of a test to allow LoP and
+-- timeouts to disconnect adversaries.
+genLeashingSchedule :: (AF.HasHeader blk) => GenesisTest blk () -> QC.Gen (PointSchedule blk)
+genLeashingSchedule genesisTest = do
+  ps@PointSchedule{psSchedule = sch} <- ensureScheduleDuration genesisTest <$> genUniformSchedulePoints genesisTest
+  advs <- mapM dropRandomPoints $ adversarialPeers sch
+  pure $ ps {psSchedule = sch {adversarialPeers = advs}}
 
 dropRandomPoints :: [(Time, SchedulePoint blk)] -> QC.Gen [(Time, SchedulePoint blk)]
 dropRandomPoints ps = do
@@ -300,24 +303,26 @@ test_leashingAttackTimeLimited =
     shrinkPeerSchedules
 
     theProperty
-  where
-    -- | A schedule which doesn't run past the last event of the honest peer
-    genTimeLimitedSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
-    genTimeLimitedSchedule genesisTest = do
-      Peers honests advs0 <- psSchedule <$> genUniformSchedulePoints genesisTest
-      let timeLimit = estimateTimeBound
-            (gtChainSyncTimeouts genesisTest)
-            (gtLoPBucketParams genesisTest)
-            (getHonestPeer honests)
-            (Map.elems advs0)
-          advs1 = fmap (takePointsUntil timeLimit) advs0
-      advs <- mapM dropRandomPoints advs1
-      pure $ PointSchedule
-        { psSchedule = Peers honests advs
-        , psStartOrder = []
-        , psMinEndTime = addGracePeriodDelay (length advs) timeLimit
-        }
 
+-- | A schedule which doesn't run past the last event of the honest peer
+genTimeLimitedSchedule
+  :: forall blk. (AF.HasHeader blk)
+  => GenesisTest blk () -> QC.Gen (PointSchedule blk)
+genTimeLimitedSchedule genesisTest = do
+  Peers honests advs0 <- psSchedule <$> genUniformSchedulePoints genesisTest
+  let timeLimit = estimateTimeBound
+        (gtChainSyncTimeouts genesisTest)
+        (gtLoPBucketParams genesisTest)
+        (getHonestPeer honests)
+        (Map.elems advs0)
+      advs1 = fmap (takePointsUntil timeLimit) advs0
+  advs <- mapM dropRandomPoints advs1
+  pure $ PointSchedule
+    { psSchedule = Peers honests advs
+    , psStartOrder = []
+    , psMinEndTime = addGracePeriodDelay (length advs) timeLimit
+    }
+  where
     takePointsUntil limit = takeWhile ((<= limit) . fst)
 
     estimateTimeBound
@@ -476,35 +481,37 @@ test_blockFetchLeashingAttack =
     shrinkPeerSchedules
 
     theProperty
-  where
-    genBlockFetchLeashingSchedule :: GenesisTest blk () -> QC.Gen (PointSchedule blk)
-    genBlockFetchLeashingSchedule genesisTest = do
-      -- A schedule with several honest peers and no adversaries. We will then
-      -- keep one of those as honest and remove the block points from the
-      -- others, hence producing one honest peer and several adversaries.
-      PointSchedule {psSchedule} <-
-        stToGen $
-          uniformPoints
-            (PointsGeneratorParams {pgpExtraHonestPeers = 1, pgpDowntime = NoDowntime})
-            (gtBlockTree genesisTest)
-      peers <- QC.shuffle $ Map.elems $ honestPeers psSchedule
-      let (honest, adversaries) = fromMaybe (error "blockFetchLeashingAttack") $ uncons peers
-          adversaries' = map (filter (not . isBlockPoint . snd)) adversaries
-          psSchedule' = peers' [honest] adversaries'
-      -- Important to shuffle the order in which the peers start, otherwise the
-      -- honest peer starts first and systematically becomes dynamo.
-      psStartOrder <- shuffle $ getPeerIds psSchedule'
-      let maxTime = addGracePeriodDelay (length adversaries') $ maximum $
-            Time 0 : [ pt | s <- honest : adversaries', (pt, _) <- take 1 (reverse s) ]
-      pure $ PointSchedule {
-          psSchedule = psSchedule',
-          psStartOrder,
-          -- Allow to run the blockfetch decision logic after the last tick
-          -- 11 is the grace period for unresponsive peers that should send
-          -- blocks
-          psMinEndTime = addTime 11 maxTime
-        }
 
+genBlockFetchLeashingSchedule
+  :: forall blk. (AF.HasHeader blk)
+  => GenesisTest blk () -> QC.Gen (PointSchedule blk)
+genBlockFetchLeashingSchedule genesisTest = do
+  -- A schedule with several honest peers and no adversaries. We will then
+  -- keep one of those as honest and remove the block points from the
+  -- others, hence producing one honest peer and several adversaries.
+  PointSchedule {psSchedule} <-
+    stToGen $
+      uniformPoints
+        (PointsGeneratorParams {pgpExtraHonestPeers = 1, pgpDowntime = NoDowntime})
+        (gtBlockTree genesisTest)
+  peers <- QC.shuffle $ Map.elems $ honestPeers psSchedule
+  let (honest, adversaries) = fromMaybe (error "blockFetchLeashingAttack") $ uncons peers
+      adversaries' = map (filter (not . isBlockPoint . snd)) adversaries
+      psSchedule' = peers' [honest] adversaries'
+  -- Important to shuffle the order in which the peers start, otherwise the
+  -- honest peer starts first and systematically becomes dynamo.
+  psStartOrder <- shuffle $ getPeerIds psSchedule'
+  let maxTime = addGracePeriodDelay (length adversaries') $ maximum $
+        Time 0 : [ pt | s <- honest : adversaries', (pt, _) <- take 1 (reverse s) ]
+  pure $ PointSchedule {
+      psSchedule = psSchedule',
+      psStartOrder,
+      -- Allow to run the blockfetch decision logic after the last tick
+      -- 11 is the grace period for unresponsive peers that should send
+      -- blocks
+      psMinEndTime = addTime 11 maxTime
+    }
+  where
     isBlockPoint :: SchedulePoint blk -> Bool
     isBlockPoint (ScheduleBlockPoint _) = True
     isBlockPoint _                      = False

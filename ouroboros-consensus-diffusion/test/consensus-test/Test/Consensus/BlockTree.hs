@@ -1,12 +1,12 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -26,6 +26,7 @@ module Test.Consensus.BlockTree (
   , deforestBlockTree
   , findFragment
   , findPath
+  , fromTrunkAndBranches
   , isAncestorOf
   , isStrictAncestorOf
   , mkTrunk
@@ -35,7 +36,7 @@ module Test.Consensus.BlockTree (
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo (unSlotNo), WithOrigin (..))
-import qualified Data.Aeson as Aeson
+import           Control.Monad (foldM)
 import           Data.Foldable (asum, fold)
 import           Data.Function ((&))
 import           Data.Functor ((<&>))
@@ -44,7 +45,6 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (Down))
 import qualified Data.Vector as Vector
-import           GHC.Generics
 import           Ouroboros.Consensus.Block (blockHash, blockNo, blockSlot)
 import           Ouroboros.Consensus.Block.Abstract (GetHeader (..), HasHeader,
                      Header, HeaderHash, Point, fromWithOrigin, pointSlot,
@@ -59,21 +59,16 @@ import           Text.Printf (printf)
 -- INVARIANT: the head of @btbPrefix@ is the anchor of @btbSuffix@.
 --
 -- INVARIANT: @btbFull == fromJust $ AF.join btbPrefix btbSuffix@.
---
--- The derived @Generic@ instance here is the reason why this module uses
--- @UndecidableInstances@. The underlying 'AnchoredFragment' type of a
--- @BlockTreeBranch@ is responsible for the @HeaderHash@ and @HasHeader@
--- constraints, and the former is a type family.
 data BlockTreeBranch blk = BlockTreeBranch {
     btbPrefix      :: AF.AnchoredFragment blk,
     btbSuffix      :: AF.AnchoredFragment blk,
     btbTrunkSuffix :: AF.AnchoredFragment blk,
     btbFull        :: AF.AnchoredFragment blk
   }
-  deriving (Show, Generic)
+  deriving (Eq, Show)
 
-instance (Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.ToJSON (BlockTreeBranch blk)
-instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)) => Aeson.FromJSON (BlockTreeBranch blk)
+instance Foldable BlockTreeBranch where
+  foldMap f BlockTreeBranch{..} = foldMap f $ AF.toOldestFirst btbFull
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -97,26 +92,21 @@ instance (Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk
 -- REVIEW: Find another name so as not to clash with 'BlockTree' from
 -- `unstable-consensus-testlib/Test/Util/TestBlock.hs`.
 data BlockTree blk = RawBlockTree {
-    btTrunk'    :: AF.AnchoredFragment blk,
-    btBranches' :: [BlockTreeBranch blk],
+    btTrunk'     :: AF.AnchoredFragment blk,
+    btBranches'  :: [BlockTreeBranch blk],
 
     -- Cached deforestation of the block tree. This gets queried
     -- many times and there's no reason to rebuild the tree every time.
     btDeforested :: DeforestedBlockTree blk
   }
-  deriving (Show, Generic)
-
-instance
-  ( Aeson.ToJSON (HeaderHash blk), HasHeader blk, Aeson.ToJSON blk, Aeson.ToJSONKey (HeaderHash blk)
-  , Aeson.ToJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
-  ) => Aeson.ToJSON (BlockTree blk)
-instance
-  ( Aeson.FromJSON (HeaderHash blk), HasHeader blk, Aeson.FromJSON blk, Aeson.FromJSONKey (HeaderHash blk)
-  , Aeson.FromJSON (AF.AnchoredSeq (WithOrigin SlotNo) (AF.Anchor blk) blk)
-  ) => Aeson.FromJSON (BlockTree blk)
+  deriving (Show)
 
 pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTree blk
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _
+
+instance Foldable BlockTree where
+  foldMap f BlockTree{..} = foldMap f $ AF.toOldestFirst btTrunk
+    <> foldMap (AF.toOldestFirst . btbFull) btBranches
 
 {-# COMPLETE BlockTree #-}
 
@@ -147,6 +137,11 @@ addBranch branch bt = do
   -- catch bugs quicker.
   let btbFull = fromJust $ AF.join btbPrefix btbSuffix
   pure $ mkBlockTree (btTrunk bt) (BlockTreeBranch { .. } : btBranches bt)
+
+-- | Build a block tree from a trunk and a list of anchored branches from genesis to tips.
+fromTrunkAndBranches
+  :: (HasHeader blk) => AF.AnchoredFragment blk -> [AF.AnchoredFragment blk] -> Maybe (BlockTree blk)
+fromTrunkAndBranches trunk branches = foldM (flip addBranch) (mkTrunk trunk) branches
 
 -- | Same as @addBranch@ but calls to 'error' if the former yields 'Nothing'.
 addBranch' :: AF.HasHeader blk => AF.AnchoredFragment blk -> BlockTree blk -> BlockTree blk

@@ -1,11 +1,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module contains the definition of point schedule _peers_ as well as
@@ -40,6 +42,10 @@ module Test.Consensus.PointSchedule.Peers (
   , updatePeer
   ) where
 
+import           Control.Monad ((>=>))
+import           Data.Aeson ((.:), (.=))
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -76,6 +82,25 @@ instance CondenseList PeerId where
 
 instance Hashable PeerId
 
+instance Aeson.ToJSON PeerId where
+  toJSON peerId = Aeson.object
+    [ "peerType" .= case peerId of
+        HonestPeer _      -> "honest" :: String
+        AdversarialPeer _ -> "adversarial" :: String
+    , "peerIndex" .= case peerId of
+        HonestPeer n      -> n
+        AdversarialPeer n -> n
+    ]
+
+instance Aeson.FromJSON PeerId where
+  parseJSON = Aeson.withObject "PeerId" $ \v -> do
+    peerType <- v Aeson..: "peerType"
+    peerIndex <- v Aeson..: "peerIndex"
+    case peerType of
+      "honest"      -> pure $ HonestPeer peerIndex
+      "adversarial" -> pure $ AdversarialPeer peerIndex
+      (_ :: String) -> fail $ "Unknown peerType: " ++ peerType
+
 -- | General-purpose functor associated with a peer.
 data Peer a =
   Peer {
@@ -109,7 +134,7 @@ data Peers a = Peers
   { honestPeers      :: Map Int a,
     adversarialPeers :: Map Int a
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Traversable)
 
 -- | Variant of 'honestPeers' that returns a map with 'PeerId's as keys.
 honestPeers' :: Peers a -> Map PeerId a
@@ -139,6 +164,38 @@ instance Functor Peers where
 instance Foldable Peers where
   foldMap f Peers {honestPeers, adversarialPeers} =
     foldMap f honestPeers <> foldMap f adversarialPeers
+
+peersToJSON :: Peers Aeson.Value -> Aeson.Value
+peersToJSON Peers {honestPeers, adversarialPeers} =
+  let pairToJSON (peerId, value) = Aeson.object
+        [ "peerId" .= peerId
+        , "value" .= value
+        ]
+  in Aeson.object
+    [ "honestPeers" .= Aeson.listValue pairToJSON (Map.toList honestPeers)
+    , "adversarialPeers" .= Aeson.listValue pairToJSON (Map.toList adversarialPeers)
+    ]
+
+peersFromJSON
+  :: Aeson.Value -> Aeson.Parser (Peers Aeson.Value)
+peersFromJSON = Aeson.withObject "Peers" $ \v -> do
+  let
+    pairFromJSON :: Aeson.Value -> Aeson.Parser (Int, Aeson.Value)
+    pairFromJSON = Aeson.withObject "Peer" $ \obj -> do
+      peerId <- obj .: "peerId"
+      value <- obj .: "value"
+      pure (peerId, value)
+  honestPeersList <- v .: "honestPeers"
+  adversarialPeersList <- v .: "adversarialPeers"
+  let parseFromList = fmap Map.fromList . Aeson.listParser pairFromJSON
+  honestPeers <- parseFromList honestPeersList
+  adversarialPeers <- parseFromList adversarialPeersList
+  pure Peers {..}
+
+instance Aeson.ToJSON a => Aeson.ToJSON (Peers a) where
+  toJSON = peersToJSON . fmap Aeson.toJSON
+instance Aeson.FromJSON a => Aeson.FromJSON (Peers a) where
+  parseJSON = peersFromJSON >=> traverse Aeson.parseJSON
 
 -- | A set of peers with only one honest peer carrying the given value.
 peersOnlyHonest :: a -> Peers a
