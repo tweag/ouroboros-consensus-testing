@@ -234,6 +234,7 @@ library unstable-consensus-conformance-testlib
     Test.Consensus.Genesis.Setup
     Test.Consensus.Genesis.Setup.Classifiers
     Test.Consensus.Genesis.Setup.GenChains
+    Test.Consensus.Genesis.ShrinkIndex
     Test.Consensus.Genesis.Tests
     Test.Consensus.Genesis.Tests.CSJ
     Test.Consensus.Genesis.Tests.DensityDisconnect
@@ -288,6 +289,8 @@ library unstable-consensus-conformance-testlib
     cardano-ledger-core,
     cardano-slotting:{cardano-slotting, testlib},
     cardano-strict-containers,
+    checkers,
+    comonad,
     containers,
     contra-tracer,
     directory,
