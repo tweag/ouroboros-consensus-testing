@@ -39,7 +39,6 @@ testSuite ::
    (HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
-  , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
@@ -58,7 +57,6 @@ test_longRangeAttack ::
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
-  , Ord blk
   ) => ConformanceTest blk
 test_longRangeAttack =
   mkConformanceTest "one adversary" adjustDesiredPasses id
