@@ -12,12 +12,12 @@
 
 -- | Internal module defining the 'SmallKey' utiliy class for 'TestSuite'
 -- construction. Exposed through `Test.Consensus.Genesis.TestSuite` re-exports.
-module Test.Consensus.Genesis.TestSuite.SmallKey (SmallKey (..)) where
+module Test.Consensus.Genesis.TestSuite.SmallKey (SmallKey (allKeys)) where
 
 import           Data.Kind
 import           Data.Word
 import           GHC.Generics
-import           GHC.TypeLits
+import           GHC.TypeError
 
 -- | Creating an instance of this class is a declaration that the type has a
 -- /small/ finite number of values and that 'allKeys' constains them all.
@@ -40,6 +40,16 @@ instance
   , GSmallKey (Rep a)
   ) => SmallKey (Generically a) where
   allKeys = fmap (Generically . to) $ gAllKeys @(Rep a)
+
+--------------------------------------------------------------------------------
+-- TODO [Blacklist]
+--
+-- If @base ^>=4.19.0.0@, then `GHC.TypeError.Unsatisfiable` +
+-- `GHC.TypeError.unsatisfiable` can be used to black-list types instead of
+-- 'TypeError' + 'error', allowing a finer triggering of the error.
+--
+-- See https://github.com/ghc-proposals/ghc-proposals/blob/master/proposals/0433-unsatisfiable.rst
+--------------------------------------------------------------------------------
 
 type family AssertNotRecursive (a :: Type) (f :: Type -> Type) :: Constraint where
   -- Throw type error if a direct recursive occurrence of the data type is found
