@@ -411,7 +411,15 @@ knownBlockIds (KnownBlocks m) = M.keys m
 -- by issuing blocks in order. (Trunk first, then branches one by one.) To do this
 -- we keep track of previously issued blocks in a @KnownBlocks@ map. Morally there
 -- is a little state monad going on here, but we're just passing the state manually
--- to keep it simple.
+-- to keep it simple. @KnownBlocks@ is needed for two reasons: to look up anchor
+-- blocks when forking, and to rehydrate the point schedule.
+--
+-- This function is a nested fold:
+--   * for each branch (including the trunk, which is special),
+--     * for each block rep (including the anchor, which is special),
+--       * issue the block and add it to the known block map
+--     * then convert to an anchored fragment
+--   * then try to assemble the converted trunk and branches to a block tree.
 --
 -- TODO: Unify this with the tree generation code in @genChains@.
 fromReifiedBlockTree
@@ -420,8 +428,10 @@ fromReifiedBlockTree
   -> Either String (BlockTree blk, KnownBlocks blk)
 fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   let
-    -- Convert the anchor. If it is not genesis, we look up the
-    -- block in a map of previously issued blocks.
+    -- Construct the anchor of a chain. For non-trunk branches we
+    -- need to make sure the anchor has already been issued; it's
+    -- enough to convert the trunk first since all fork anchors
+    -- are there. For the trunk the anchor is always genesis.
     makeAnchor
       :: Maybe BlockId -> KnownBlocks blk -> Either String (AF.Anchor blk)
     makeAnchor mAnchorId knownBlocks = case mAnchorId of
@@ -434,16 +444,14 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
         Nothing   -> Left $
           "Failed to find anchor block for slot/blockNo: "
           <> show blockId
-          <> " (from BlockId " <> show blockId <> ")"
 
-    -- Issue the next block.
-    issueNextBlock
+    issueNextBlockOnFork
       :: ForkNo  -- Current fork number, needed to issue the first block on a branch
       -> Maybe blk  -- Anchor block, if this fork is anchored to a block
       -> ([blk], KnownBlocks blk, SlotNo)  -- Blocks issued so far (newest first) and known blocks
       -> BlockRep  -- Block to be issued
       -> Either String ([blk], KnownBlocks blk, SlotNo)
-    issueNextBlock forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
+    issueNextBlockOnFork forkNo mAnchorBlk (accBlocks, knownBlocks, lastSlotNo) rep = do
       let
         forkNo' = unForkNo forkNo
         slotGap = brSlotGap rep
@@ -466,7 +474,6 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
         , slotNumber
         )
 
-    -- Issue a chain of blocks.
     issueBlocks
       :: SlotNo  -- Last used slot number.
       -> ForkNo  -- Current fork number
@@ -477,48 +484,44 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
       -> Either String ([blk], KnownBlocks blk)
     issueBlocks lastSlotNo forkNo mAnchorBlk (reps, knownBlocks) = do
       (blocks, blocksById, _) <-
-        foldM (issueNextBlock forkNo mAnchorBlk) ([], knownBlocks, lastSlotNo) reps
+        foldM (issueNextBlockOnFork forkNo mAnchorBlk) ([], knownBlocks, lastSlotNo) reps
       pure (reverse blocks, blocksById)
 
-    -- Issue a single fork (blocks plus anchor).
+    -- Issue a single fork (blocks plus anchor, the trunk is also a fork).
     issueFork
       -- The fork to process and the known blocks so far.
       :: (AnchoredFork BlockRep, KnownBlocks blk)
       -> Either String (AF.AnchoredFragment blk, KnownBlocks blk)
     issueFork (AnchoredFork {forkAnchor, forkBlocks, forkNumber}, knownBlocks) = do
       let
-        getAnchorBlockId :: (SlotNo, BlockRep) -> BlockId
-        getAnchorBlockId (slotNo, rep) =
+        mAnchorBlockId :: Maybe BlockId
+        mAnchorBlockId = forkAnchor <&> \(slotNo, rep) ->
+          -- Anchor blocks are always on the trunk (aka fork zero)
           BlockId slotNo (brBlockNo rep) (ForkNo 0)
-
-        mBlockId :: Maybe BlockId
-        mBlockId = fmap getAnchorBlockId forkAnchor
-      anchor <- makeAnchor mBlockId knownBlocks
-      anchorBlock <- case mBlockId of
+      anchor <- makeAnchor mAnchorBlockId knownBlocks
+      anchorBlock <- case mAnchorBlockId of
         Nothing -> Right Nothing
-        Just blockId ->
-          case lookupKnownBlock blockId knownBlocks of
-            Just blk -> Right (Just blk)
-            Nothing  -> Left $
-              "Failed to find anchor block payload for blockId: "
-              <> show blockId
+        Just blockId -> case lookupKnownBlock blockId knownBlocks of
+          Just blk -> Right (Just blk)
+          Nothing  -> Left $
+            "Failed to find anchor block for blockId: " <> show blockId
       let lastSlotNo = maybe (SlotNo 0) fst forkAnchor
       (issuedBlocks, knownBlocks') <-
         issueBlocks lastSlotNo forkNumber anchorBlock (forkBlocks, knownBlocks)
       let fragment = AF.fromOldestFirst anchor issuedBlocks
       pure (fragment, knownBlocks')
 
-    -- Issue the next fragment.
-    issueNextFragment
+    issueNextBranch
       :: ([AF.AnchoredFragment blk], KnownBlocks blk)
       -> AnchoredFork BlockRep
       -> Either String ([AF.AnchoredFragment blk], KnownBlocks blk)
-    issueNextFragment (fragments, knownBlocks) fork = do
+    issueNextBranch (fragments, knownBlocks) fork = do
       (fragment, knownBlocks') <- issueFork (fork, knownBlocks)
       pure (fragment : fragments, knownBlocks')
 
+  -- Issue the trunk blocks first so that the fork anchors will be in the known blocks map
   (trunk, trunkBlocks) <- issueFork (rbtTrunk, mempty)
-  (branches, allBlocks) <- foldM issueNextFragment ([], trunkBlocks) (reverse rbtBranches)
+  (branches, allBlocks) <- foldM issueNextBranch ([], trunkBlocks) (reverse rbtBranches)
 
   -- @fromTrunkAndBranches@ is a smart constructor for @BlockTree@ that ensures
   -- all the invariants are satisfied.
