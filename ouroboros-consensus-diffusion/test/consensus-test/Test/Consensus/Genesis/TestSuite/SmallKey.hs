@@ -15,9 +15,11 @@
 module Test.Consensus.Genesis.TestSuite.SmallKey (SmallKey (allKeys)) where
 
 import           Data.Kind
+import           Data.Proxy
 import           Data.Word
 import           GHC.Generics
 import           GHC.TypeError
+import           Type.Reflection
 
 -- | Creating an instance of this class is a declaration that the type has a
 -- /small/ finite number of values and that 'allKeys' constains them all.
@@ -88,7 +90,7 @@ instance (GSmallKey f, GSmallKey g) => GSmallKey (f :+: g) where
 instance TypeError ('Text "Product types are not allowed "
                     ':<>: 'Text "to have a SmallKey instance" )
   => GSmallKey (f :*: g) where
-  gAllKeys = error "unreachable"
+  gAllKeys = error "unreachable: product type"
 
 instance GSmallKey f => GSmallKey (M1 i c f) where
   gAllKeys = fmap M1 gAllKeys
@@ -111,23 +113,27 @@ type family NoSmallKey ty :: Constraint where
     TypeError ('ShowType ty ':<>: 'Text " doesn't have a SmallKey instance"
                ':$$: 'Text "because it is too large for exhaustive construction")
 
+
+unreachableSK :: forall a. Typeable a => Proxy a -> String
+unreachableSK _ = "unreachable: NoSmallKey " <> show (typeRep @a)
+
 instance NoSmallKey Integer  => SmallKey Integer where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Integer)
 
 instance NoSmallKey Int => SmallKey Int where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Int)
 
 instance NoSmallKey Word => SmallKey Word where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Word)
 
 instance NoSmallKey Word16 => SmallKey Word16 where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Word16)
 
 instance NoSmallKey Word32 => SmallKey Word32 where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Word32)
 
 instance NoSmallKey Word64 => SmallKey Word64 where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Word64)
 
 instance NoSmallKey Char => SmallKey Char where
-  allKeys = error "unreachable"
+  allKeys = error $ unreachableSK (Proxy :: Proxy Char)

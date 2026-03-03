@@ -63,9 +63,9 @@ tests = testGroup "SmallKey"
       assertBool "allKeys must be a permutation of the list of all values" $
         elem (allKeys @UnitSumType) $ permutations [L (), R ()]
   , testCase "A minimal product type instance is forbidden" $
-      assertError "unreachable" $ allKeys @UnitProductType
+      assertError "unreachable: product type" $ allKeys @UnitProductType
   , testCase "A minimal unary type instance with black-listed Int argument is forbidden" $
-      assertError "unreachable" $ allKeys @IntUnaryType
+      assertError "unreachable: NoSmallKey Int" $ allKeys @IntUnaryType
   ]
 
 assertError :: String -> a -> Assertion
