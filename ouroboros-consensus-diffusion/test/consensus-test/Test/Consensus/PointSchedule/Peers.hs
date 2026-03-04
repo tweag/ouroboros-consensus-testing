@@ -119,7 +119,7 @@ data Peer a =
     name  :: PeerId,
     value :: a
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 instance Functor Peer where
   fmap f Peer {name, value} = Peer {name, value = f value}
@@ -152,7 +152,7 @@ data Peers a = Peers
   { honestPeers      :: Map Int a,
     adversarialPeers :: Map Int a
   }
-  deriving (Eq, Show, Traversable)
+  deriving (Eq, Show, Generic, Traversable)
 
 -- | Variant of 'honestPeers' that returns a map with 'PeerId's as keys.
 honestPeers' :: Peers a -> Map PeerId a
