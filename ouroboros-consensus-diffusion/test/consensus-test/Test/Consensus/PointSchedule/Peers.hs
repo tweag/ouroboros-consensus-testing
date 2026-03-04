@@ -60,6 +60,7 @@ import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Util.Condense (Condense (..),
                      CondenseList (..), PaddingDirection (..),
                      condenseListWithPadding)
+import qualified Test.QuickCheck as QC
 
 -- | Identifier used to index maps and specify which peer is active during a tick.
 data PeerId
@@ -106,7 +107,13 @@ instance Aeson.FromJSON PeerId where
       "adversarial" -> pure $ AdversarialPeer peerIndex
       (_ :: String) -> fail $ "Unknown peerType: " ++ peerType
 
--- | General-purpose functor associated with a peer.
+instance QC.Arbitrary PeerId where
+  arbitrary = QC.oneof
+    [ fmap (HonestPeer . QC.getNonNegative) QC.arbitrary
+    , fmap (AdversarialPeer . QC.getNonNegative) QC.arbitrary
+    ]
+
+-- | General-purpose functor for associating data to a peer.
 data Peer a =
   Peer {
     name  :: PeerId,
@@ -133,6 +140,12 @@ instance CondenseList a => CondenseList (Peer a) where
       (\name value -> name ++ ": " ++ value)
       (condenseList $ name <$> peers)
       (condenseList $ value <$> peers)
+
+instance (QC.Arbitrary a) => QC.Arbitrary (Peer a) where
+  arbitrary = do
+    name <- QC.arbitrary
+    value <- QC.arbitrary
+    return Peer {..}
 
 -- | General-purpose functor for a set of peers.
 data Peers a = Peers
@@ -169,6 +182,12 @@ instance Functor Peers where
 instance Foldable Peers where
   foldMap f Peers {honestPeers, adversarialPeers} =
     foldMap f honestPeers <> foldMap f adversarialPeers
+
+instance (QC.Arbitrary a) => QC.Arbitrary (Peers a) where
+  arbitrary = do
+    honestPeers <- QC.arbitrary
+    adversarialPeers <- QC.arbitrary
+    return Peers {..}
 
 peersToJSON :: Peers Aeson.Value -> Aeson.Value
 peersToJSON Peers {honestPeers, adversarialPeers} =
