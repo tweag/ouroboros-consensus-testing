@@ -147,7 +147,7 @@ instance (QC.Arbitrary a) => QC.Arbitrary (Peer a) where
     value <- QC.arbitrary
     return Peer {..}
 
--- | General-purpose functor for a set of peers.
+-- | General-purpose functor for associating data to each of a set of peers.
 data Peers a = Peers
   { honestPeers      :: Map Int a,
     adversarialPeers :: Map Int a
@@ -245,6 +245,8 @@ getPeer :: PeerId -> Peers a -> Peer a
 getPeer (HonestPeer n) Peers {honestPeers} = Peer (HonestPeer n) (honestPeers Map.! n)
 getPeer (AdversarialPeer n) Peers {adversarialPeers} = Peer (AdversarialPeer n) (adversarialPeers Map.! n)
 
+-- | Apply a function to the value at a specific peer ID, returning the
+-- updated 'Peers' structure and the result of the function.
 updatePeer :: (a -> (a, b)) -> PeerId -> Peers a -> (Peers a, b)
 updatePeer f (HonestPeer n) Peers {honestPeers, adversarialPeers} =
   let (a, b) = f (honestPeers Map.! n)
@@ -324,6 +326,8 @@ toMap' Peers {honestPeers, adversarialPeers} =
 
 -- | Convert 'Peers' to an explicit map from 'PeerId's to wrapped values.
 --
+-- Returns a coherent map: the peer ID at each entry matches the entry's index. This
+-- is witnessed by the following invariant:
 -- INVARIANT: and $ zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) == True
 toMap :: Peers a -> Map PeerId (Peer a)
 toMap = Map.mapWithKey Peer . toMap'
