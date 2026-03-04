@@ -12,32 +12,39 @@
 -- represented opaquely by a 'PeerId'.
 
 module Test.Consensus.PointSchedule.Peers (
+    -- * 'Peer'
     Peer (..)
   , PeerId (..)
+  , enumerateAdversaries
+  , isAdversarialPeerId
+  , isHonestPeerId
+    -- * 'Peers'
   , Peers (..)
+    -- ** Constructors
+  , peersOnlyAdversary
+  , peersOnlyHonest
+    -- ** Combinators
+  , unionWithKey
+    -- ** Queries
   , adversarialPeers'
   , adversarialPeers''
-  , deletePeer
-  , enumerateAdversaries
-  , fromMap
-  , fromMap'
   , getPeer
   , getPeerIds
   , honestPeers'
   , honestPeers''
-  , isAdversarialPeerId
-  , isHonestPeerId
+    -- ** Modifiers
+  , deletePeer
+  , updatePeer
+    -- ** Conversions
+  , fromMap
+  , fromMap'
   , peers'
   , peersFromPeerIdList
   , peersFromPeerIdList'
   , peersFromPeerList
   , peersList
-  , peersOnlyAdversary
-  , peersOnlyHonest
   , toMap
   , toMap'
-  , unionWithKey
-  , updatePeer
   ) where
 
 import           Control.Monad ((>=>))
