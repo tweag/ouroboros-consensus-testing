@@ -7,8 +7,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | This module contains the definition of point schedule _peers_ as well as
--- all kind of utilities to manipulate them.
+-- | Simulating the protocol requires modeling the /peers/ in the network. This
+-- module defines peer related types and helpers to manipulate them. Peers are
+-- represented opaquely by a 'PeerId'.
 
 module Test.Consensus.PointSchedule.Peers (
     Peer (..)
@@ -238,11 +239,17 @@ peersList Peers {honestPeers, adversarialPeers} =
     )
     honestPeers
 
+-- | Generate the list of all adversarial peer IDs.
+--
+-- > enumerateAdversaries = fmap AdversarialPeer [1 ..]
 enumerateAdversaries :: [PeerId]
 enumerateAdversaries = AdversarialPeer <$> [1 ..]
 
 -- | Construct 'Peers' from values, adding adversary names based on the default schema.
-peers' :: [a] -> [a] -> Peers a
+peers'
+  :: [a]  -- ^ Honest values
+  -> [a]  -- ^ Adversarial values
+  -> Peers a
 peers' hs as =
   Peers
     { honestPeers = Map.fromList $ zip [1 ..] hs,
@@ -289,6 +296,9 @@ toMap' Peers {honestPeers, adversarialPeers} =
     (Map.mapKeysMonotonic HonestPeer honestPeers)
     (Map.mapKeysMonotonic AdversarialPeer adversarialPeers)
 
+-- | Convert 'Peers' to an explicit map from 'PeerId's to wrapped values.
+--
+-- INVARIANT: and $ zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) == True
 toMap :: Peers a -> Map PeerId (Peer a)
 toMap = Map.mapWithKey Peer . toMap'
 
@@ -315,6 +325,7 @@ fromMap' peers =
 fromMap :: Map PeerId (Peer a) -> Peers a
 fromMap = fromMap' . Map.map value
 
+-- | Remove a peer.
 deletePeer :: PeerId -> Peers a -> Peers a
 deletePeer (HonestPeer n) Peers {honestPeers, adversarialPeers} =
   Peers {honestPeers = Map.delete n honestPeers, adversarialPeers}
