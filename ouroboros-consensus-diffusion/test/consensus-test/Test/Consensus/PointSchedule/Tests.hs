@@ -46,7 +46,7 @@ tests =
       , testProperty "tipPointSchedule" prop_tipPointSchedule
       , testProperty "headerPointSchedule" prop_headerPointSchedule
       , testProperty "peerScheduleFromTipPoints" prop_peerScheduleFromTipPoints
-      , testPeers
+      , testProperty "peersToMap" prop_peersToMap
       ]
 
 prop_zipMany :: [[Int]] -> QC.Property
@@ -394,11 +394,9 @@ genSortedVectorWithoutDuplicates n = do
     x0 <- QC.arbitrary
     scanl (+) x0 . map ((+1) . QC.getNonNegative) <$> QC.vector (n - 1)
 
-testPeers :: TestTree
-testPeers = testGroup "Peers"
-  -- 'toMap' returns a coherent map; an index and the peer ID at that index are equal.
-  [ testProperty "and $ zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) == True" $
-    let mapSnd f (a, b) = (a, f b)
-    in \(peers :: Peers Int) -> QC.counterexample ("toMap peers = " ++ show (toMap peers)) $
-        and $ fmap (uncurry (==)) $ fmap (mapSnd name) $ Map.toList $ toMap peers
-  ]
+-- 'toMap' returns a coherent map; an index and the peer ID at that index are equal.
+prop_peersToMap :: Peers Int -> QC.Property
+prop_peersToMap =
+  let mapSnd f (a, b) = (a, f b)
+  in \(peers :: Peers Int) -> QC.counterexample ("toMap peers = " ++ show (toMap peers)) $
+      and $ fmap (uncurry (==)) $ fmap (mapSnd name) $ Map.toList $ toMap peers
