@@ -1,45 +1,50 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | This module contains the definition of point schedule _peers_ as well as
--- all kind of utilities to manipulate them.
+-- | Simulating the protocol requires modeling the /peers/ in the network. This
+-- module defines peer related types and helpers to manipulate them. Peers are
+-- represented opaquely by a 'PeerId'.
 
 module Test.Consensus.PointSchedule.Peers (
+    -- * 'Peer'
     Peer (..)
   , PeerId (..)
+  , enumerateAdversaries
+  , isAdversarialPeerId
+  , isHonestPeerId
+    -- * 'Peers'
   , Peers (..)
+    -- ** Constructors
+  , peersOnlyAdversary
+  , peersOnlyHonest
+    -- ** Combinators
+  , unionWithKey
+    -- ** Queries
   , adversarialPeers'
   , adversarialPeers''
-  , deletePeer
-  , enumerateAdversaries
-  , fromMap
-  , fromMap'
   , getPeer
   , getPeerIds
   , honestPeers'
   , honestPeers''
-  , isAdversarialPeerId
-  , isHonestPeerId
+    -- ** Modifiers
+  , deletePeer
+  , updatePeer
+    -- ** Conversions
+  , fromMap
+  , fromMap'
   , peers'
   , peersFromPeerIdList
   , peersFromPeerIdList'
   , peersFromPeerList
   , peersList
-  , peersOnlyAdversary
-  , peersOnlyHonest
   , toMap
   , toMap'
-  , unionWithKey
-  , updatePeer
   ) where
 
 import           Control.Monad ((>=>))
@@ -55,6 +60,7 @@ import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Util.Condense (Condense (..),
                      CondenseList (..), PaddingDirection (..),
                      condenseListWithPadding)
+import qualified Test.QuickCheck as QC
 
 -- | Identifier used to index maps and specify which peer is active during a tick.
 data PeerId
@@ -101,13 +107,19 @@ instance Aeson.FromJSON PeerId where
       "adversarial" -> pure $ AdversarialPeer peerIndex
       (_ :: String) -> fail $ "Unknown peerType: " ++ peerType
 
--- | General-purpose functor associated with a peer.
+instance QC.Arbitrary PeerId where
+  arbitrary = QC.oneof
+    [ fmap (HonestPeer . QC.getNonNegative) QC.arbitrary
+    , fmap (AdversarialPeer . QC.getNonNegative) QC.arbitrary
+    ]
+
+-- | General-purpose functor for associating data to a peer.
 data Peer a =
   Peer {
     name  :: PeerId,
     value :: a
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 instance Functor Peer where
   fmap f Peer {name, value} = Peer {name, value = f value}
@@ -129,12 +141,18 @@ instance CondenseList a => CondenseList (Peer a) where
       (condenseList $ name <$> peers)
       (condenseList $ value <$> peers)
 
--- | General-purpose functor for a set of peers.
+instance (QC.Arbitrary a) => QC.Arbitrary (Peer a) where
+  arbitrary = do
+    name <- QC.arbitrary
+    value <- QC.arbitrary
+    return Peer {..}
+
+-- | General-purpose functor for associating data to each of a set of peers.
 data Peers a = Peers
   { honestPeers      :: Map Int a,
     adversarialPeers :: Map Int a
   }
-  deriving (Eq, Show, Traversable)
+  deriving (Eq, Show, Generic, Traversable)
 
 -- | Variant of 'honestPeers' that returns a map with 'PeerId's as keys.
 honestPeers' :: Peers a -> Map PeerId a
@@ -164,6 +182,12 @@ instance Functor Peers where
 instance Foldable Peers where
   foldMap f Peers {honestPeers, adversarialPeers} =
     foldMap f honestPeers <> foldMap f adversarialPeers
+
+instance (QC.Arbitrary a) => QC.Arbitrary (Peers a) where
+  arbitrary = do
+    honestPeers <- QC.arbitrary
+    adversarialPeers <- QC.arbitrary
+    return Peers {..}
 
 peersToJSON :: Peers Aeson.Value -> Aeson.Value
 peersToJSON Peers {honestPeers, adversarialPeers} =
@@ -221,6 +245,8 @@ getPeer :: PeerId -> Peers a -> Peer a
 getPeer (HonestPeer n) Peers {honestPeers} = Peer (HonestPeer n) (honestPeers Map.! n)
 getPeer (AdversarialPeer n) Peers {adversarialPeers} = Peer (AdversarialPeer n) (adversarialPeers Map.! n)
 
+-- | Apply a function to the value at a specific peer ID, returning the
+-- updated 'Peers' structure and the result of the function.
 updatePeer :: (a -> (a, b)) -> PeerId -> Peers a -> (Peers a, b)
 updatePeer f (HonestPeer n) Peers {honestPeers, adversarialPeers} =
   let (a, b) = f (honestPeers Map.! n)
@@ -241,11 +267,17 @@ peersList Peers {honestPeers, adversarialPeers} =
     )
     honestPeers
 
+-- | Generate the list of all adversarial peer IDs.
+--
+-- > enumerateAdversaries = fmap AdversarialPeer [1 ..]
 enumerateAdversaries :: [PeerId]
 enumerateAdversaries = AdversarialPeer <$> [1 ..]
 
 -- | Construct 'Peers' from values, adding adversary names based on the default schema.
-peers' :: [a] -> [a] -> Peers a
+peers'
+  :: [a]  -- ^ Honest values
+  -> [a]  -- ^ Adversarial values
+  -> Peers a
 peers' hs as =
   Peers
     { honestPeers = Map.fromList $ zip [1 ..] hs,
@@ -292,6 +324,11 @@ toMap' Peers {honestPeers, adversarialPeers} =
     (Map.mapKeysMonotonic HonestPeer honestPeers)
     (Map.mapKeysMonotonic AdversarialPeer adversarialPeers)
 
+-- | Convert 'Peers' to an explicit map from 'PeerId's to wrapped values.
+--
+-- Returns a coherent map: the peer ID at each entry matches the entry's index. This
+-- is witnessed by the following invariant:
+-- INVARIANT: and ( zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) ) == True
 toMap :: Peers a -> Map PeerId (Peer a)
 toMap = Map.mapWithKey Peer . toMap'
 
@@ -318,6 +355,7 @@ fromMap' peers =
 fromMap :: Map PeerId (Peer a) -> Peers a
 fromMap = fromMap' . Map.map value
 
+-- | Remove a peer.
 deletePeer :: PeerId -> Peers a -> Peers a
 deletePeer (HonestPeer n) Peers {honestPeers, adversarialPeers} =
   Peers {honestPeers = Map.delete n honestPeers, adversarialPeers}

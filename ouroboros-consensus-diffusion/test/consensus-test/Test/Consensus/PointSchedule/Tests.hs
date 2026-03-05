@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -13,6 +14,7 @@ import           Data.Bifunctor (second)
 import           Data.Coerce (coerce)
 import           Data.List as List (foldl', group, isSuffixOf, partition, sort)
 import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Map as Map
 import           Data.Maybe (isNothing)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime)
@@ -20,6 +22,7 @@ import           GHC.Stack (HasCallStack)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockHash)
 import           System.Random.Stateful (runSTGen_)
+import           Test.Consensus.PointSchedule.Peers
 import           Test.Consensus.PointSchedule.SinglePeer
 import           Test.Consensus.PointSchedule.SinglePeer.Indices
 import qualified Test.QuickCheck as QC
@@ -43,6 +46,7 @@ tests =
       , testProperty "tipPointSchedule" prop_tipPointSchedule
       , testProperty "headerPointSchedule" prop_headerPointSchedule
       , testProperty "peerScheduleFromTipPoints" prop_peerScheduleFromTipPoints
+      , testProperty "peersToMap" prop_peersToMap
       ]
 
 prop_zipMany :: [[Int]] -> QC.Property
@@ -389,3 +393,10 @@ genSortedVectorWithoutDuplicates :: (QC.Arbitrary a, Num a, Ord a) => Int -> QC.
 genSortedVectorWithoutDuplicates n = do
     x0 <- QC.arbitrary
     scanl (+) x0 . map ((+1) . QC.getNonNegative) <$> QC.vector (n - 1)
+
+-- 'toMap' returns a coherent map; an index and the peer ID at that index are equal.
+prop_peersToMap :: Peers Int -> QC.Property
+prop_peersToMap =
+  let mapSnd f (a, b) = (a, f b)
+  in \(peers :: Peers Int) -> QC.counterexample ("toMap peers = " ++ show (toMap peers)) $
+      and $ fmap (uncurry (==)) $ fmap (mapSnd name) $ Map.toList $ toMap peers
