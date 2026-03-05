@@ -328,7 +328,7 @@ toMap' Peers {honestPeers, adversarialPeers} =
 --
 -- Returns a coherent map: the peer ID at each entry matches the entry's index. This
 -- is witnessed by the following invariant:
--- INVARIANT: and $ zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) == True
+-- INVARIANT: and ( zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) ) == True
 toMap :: Peers a -> Map PeerId (Peer a)
 toMap = Map.mapWithKey Peer . toMap'
 

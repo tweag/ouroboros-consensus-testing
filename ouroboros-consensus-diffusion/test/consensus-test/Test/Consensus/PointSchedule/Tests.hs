@@ -399,7 +399,6 @@ testPeers = testGroup "Peers"
   -- 'toMap' returns a coherent map; an index and the peer ID at that index are equal.
   [ testProperty "and $ zipWith (==) $ fmap (mapSnd name) $ Map.toList (toMap peers) == True" $
     let mapSnd f (a, b) = (a, f b)
-    in \(peers :: Peers Int) -> QC.property $
-      QC.counterexample ("toMap peers = " ++ show (toMap peers)) $ QC.property $
+    in \(peers :: Peers Int) -> QC.counterexample ("toMap peers = " ++ show (toMap peers)) $
         and $ fmap (uncurry (==)) $ fmap (mapSnd name) $ Map.toList $ toMap peers
   ]
