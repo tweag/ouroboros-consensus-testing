@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module Test.Consensus.Genesis.Setup.GenChains (
@@ -101,7 +102,7 @@ genAlternativeChainSchema (testRecipeH, arHonest) =
         pure $ Just (prefixCount, Vector.toList (getVector v))
 
 genChains :: (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
-genChains  = genChainsWithExtraHonestPeers (pure 0)
+genChains  = genChainsWithExtraHonestPeers undefined (pure 0)
 
 
 -- | Random generator for a block tree. The block tree contains one trunk (the
@@ -118,12 +119,13 @@ genChains  = genChainsWithExtraHonestPeers (pure 0)
 genChainsWithExtraHonestPeers
   :: forall blk
    . (HasHeader blk, IssueTestBlock blk)
-  => QC.Gen Word
+  => TestBlockContext blk
+  -> QC.Gen Word
   -- ^ Number of extra honest peers
   -> QC.Gen Word
   -- ^ Number of forks
   -> QC.Gen (GenesisTest blk ())
-genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
+genChainsWithExtraHonestPeers ctx genNumExtraHonest genNumForks = do
   (_, honestRecipe, someHonestChainSchema) <- genHonestChainSchema
 
   H.SomeHonestChainSchema _ _ honestChainSchema <- pure someHonestChainSchema
@@ -187,22 +189,26 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
         folder (chain, inc) s | S.test S.notInverted s = (issue inc chain, 0)
                               | otherwise = (chain, inc + 1)
         issue :: SlotNo -> [blk] -> [blk]
-        issue inc (h : t) = issueSuccessorBlock Nothing inc h : h : t
+        issue inc (h : t) = issueSuccessorBlock ctx Nothing inc h : h : t
         issue inc [] =
           case pre of
-            []      -> [issueFirstBlock forkNo inc]
-            (h : t) -> issueSuccessorBlock (Just forkNo) inc h : h : t
+            []      -> [issueFirstBlock ctx forkNo inc]
+            (h : t) -> issueSuccessorBlock ctx (Just forkNo) inc h : h : t
 
 -- | Class of block types for which we can issue test blocks.
 class IssueTestBlock blk where
+  type TestBlockContext blk
+  getTestBlockContext :: Proxy blk -> IO (TestBlockContext blk)
   issueFirstBlock
-    :: Int
+    :: TestBlockContext blk
+    -> Int
     -- ^ The fork number
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
   issueSuccessorBlock
-    :: Maybe Int
+    :: TestBlockContext blk
+    -> Maybe Int
     -- ^ A new fork number, if this block should fork off the trunk.
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
@@ -210,9 +216,11 @@ class IssueTestBlock blk where
     -> blk
 
 instance IssueTestBlock TestBlock where
-  issueFirstBlock fork slot =
+  type TestBlockContext TestBlock = ()
+  getTestBlockContext _ = pure ()
+  issueFirstBlock _ fork slot =
     incSlot slot ((TB.firstBlock $ fromIntegral fork) {tbSlot = 0})
-  issueSuccessorBlock fork slot blk =
+  issueSuccessorBlock _ fork slot blk =
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk

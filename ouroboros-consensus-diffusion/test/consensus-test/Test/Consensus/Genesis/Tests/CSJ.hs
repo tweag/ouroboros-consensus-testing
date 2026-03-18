@@ -122,7 +122,7 @@ test_csj description adversariesFlag numHonestSchedules = do
           genChains genForks
           `enrichedWith` genDuplicatedHonestSchedule
         OneSchedulePerHonestPeer ->
-          genChainsWithExtraHonestPeers (choose (2, 4)) genForks
+          genChainsWithExtraHonestPeers undefined (choose (2, 4)) genForks
           `enrichedWith` genUniformSchedulePoints
     )
 
