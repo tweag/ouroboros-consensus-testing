@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Cardano.IssueTestBlock () where
 
 import           Cardano.Crypto.Hash as Hash
 import           Cardano.Crypto.KES as KES
+import           Cardano.Crypto.VRF.Class (deriveVerKeyVRF)
 import           Cardano.Ledger.Alonzo.Tx
 import           Cardano.Ledger.Alonzo.TxAuxData (mkAlonzoTxAuxData)
 import           Cardano.Ledger.Alonzo.TxWits (AlonzoTxWits (..))
@@ -20,27 +21,27 @@ import           Cardano.Ledger.Shelley.API hiding (hashVerKeyVRF)
 import           Cardano.Ledger.Shelley.Core
 import           Cardano.Protocol.Crypto
 import           Cardano.Protocol.TPraos.BHeader
-import           Cardano.Protocol.TPraos.OCert
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Sequence.Strict as StrictSeq
 import           Ouroboros.Consensus.Cardano.Block (CardanoBlock,
                      pattern BlockConway)
+import           Ouroboros.Consensus.Protocol.Praos.Common
 import           Ouroboros.Consensus.Protocol.Praos.Header
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock (..),
                      ShelleyHash (..))
+import           Ouroboros.Consensus.Shelley.Node.Common
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Cardano.Ledger.Binary.Random (mkDummyHash)
 import           Test.Cardano.Ledger.Conway.Examples.Consensus
-import           Test.Cardano.Ledger.Core.KeyPair (KeyPair (..),
-                     mkWitnessesVKey)
+import           Test.Cardano.Ledger.Core.KeyPair (mkWitnessesVKey)
 import qualified Test.Cardano.Ledger.Shelley.Examples.Consensus as SLE
-import           Test.Cardano.Ledger.Shelley.Generator.Core
 import           Test.Cardano.Ledger.Shelley.Utils hiding (mkVRFKeyPair)
 import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock (..))
 
 
+credentials :: ShelleyLeaderCredentials StandardCrypto
+credentials = undefined
 
 instance IssueTestBlock (CardanoBlock StandardCrypto) where
   issueFirstBlock fork slot = makeCardanoBlock (Just fork) 0 slot Nothing
@@ -93,14 +94,17 @@ conwayLedgerBlock ::
   Block (Header StandardCrypto) ConwayEra
 conwayLedgerBlock slot blockNo prev tx = Block blockHeader blockBody
   where
-    keys :: AllIssuerKeys StandardCrypto 'StakePool
-    keys = SLE.exampleKeys
-
-    hotKey = kesSignKey $ snd $ NE.head $ aikHot keys
-    KeyPair vKeyCold _ = aikCold keys
+    PraosCanBeLeader
+        { praosCanBeLeaderSignKeyVRF
+        , praosCanBeLeaderColdVerKey
+        , praosCanBeLeaderOpCert
+        } = shelleyLeaderCredentialsCanBeLeader credentials
 
     blockHeader :: Header StandardCrypto
-    blockHeader = Header blockHeaderBody (unsoundPureSignedKES () 0 blockHeaderBody hotKey)
+    blockHeader =
+        Header blockHeaderBody $
+          unsoundPureSignedKES () 0 blockHeaderBody $
+            shelleyLeaderCredentialsInitSignKey credentials
 
     blockHeaderBody :: HeaderBody StandardCrypto
     blockHeaderBody =
@@ -108,12 +112,12 @@ conwayLedgerBlock slot blockNo prev tx = Block blockHeader blockBody
         { hbBlockNo = blockNo
         , hbSlotNo = slot
         , hbPrev = maybe GenesisHash BlockHash prev
-        , hbVk = coerceKeyRole vKeyCold
-        , hbVrfVk = vrfVerKey $ aikVrf keys
-        , hbVrfRes = mkCertifiedVRF (mkBytes 0) (vrfSignKey $ aikVrf keys)
+        , hbVk = coerceKeyRole praosCanBeLeaderColdVerKey
+        , hbVrfVk = deriveVerKeyVRF praosCanBeLeaderSignKeyVRF
+        , hbVrfRes = mkCertifiedVRF (mkBytes 0) praosCanBeLeaderSignKeyVRF
         , hbBodySize = 2345
         , hbBodyHash = hashTxSeq blockBody
-        , hbOCert = mkOCert keys 0 (KESPeriod 0)
+        , hbOCert = praosCanBeLeaderOpCert
         , hbProtVer = ProtVer (natVersion @2) 0
         }
 
