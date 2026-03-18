@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -26,11 +27,13 @@ import qualified Data.Sequence.Strict as StrictSeq
 import           Ouroboros.Consensus.Cardano.Block (CardanoBlock,
                      pattern BlockConway)
 import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (PraosCanBeLeader (..))
 import           Ouroboros.Consensus.Protocol.Praos.Header
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock (..),
                      ShelleyHash (..))
 import           Ouroboros.Consensus.Shelley.Node.Common
+                     (ShelleyLeaderCredentials (..))
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Cardano.Ledger.Binary.Random (mkDummyHash)
 import           Test.Cardano.Ledger.Conway.Examples.Consensus
@@ -40,18 +43,17 @@ import           Test.Cardano.Ledger.Shelley.Utils hiding (mkVRFKeyPair)
 import           Test.Consensus.Genesis.Setup.GenChains (IssueTestBlock (..))
 
 
-credentials :: ShelleyLeaderCredentials StandardCrypto
-credentials = undefined
-
 instance IssueTestBlock (CardanoBlock StandardCrypto) where
-  issueFirstBlock fork slot = makeCardanoBlock (Just fork) 0 slot Nothing
-  issueSuccessorBlock fork slot (BlockConway (ShelleyBlock
+  type TestBlockContext (CardanoBlock StandardCrypto) = ShelleyLeaderCredentials StandardCrypto
+  getTestBlockContext _ = undefined
+  issueFirstBlock credentials fork slot = makeCardanoBlock credentials (Just fork) 0 slot Nothing
+  issueSuccessorBlock credentials fork slot (BlockConway (ShelleyBlock
       (Block (Header (HeaderBody {hbBlockNo, hbSlotNo}) _) _)
       (ShelleyHash hh))) =
-    makeCardanoBlock fork
+    makeCardanoBlock credentials fork
       (hbBlockNo + 1)
       (hbSlotNo + slot) $ Just $ HashHeader hh
-  issueSuccessorBlock _ _ _ =
+  issueSuccessorBlock _ _ _ _ =
     -- Impossible because we only ever produce 'BlockConway' in
     -- 'makeCardanoBlock'.
     error "issueSuccessorBlock: impossible"
@@ -59,14 +61,15 @@ instance IssueTestBlock (CardanoBlock StandardCrypto) where
 
 -- | Construct a fake 'CardanoBlock' with all of its crypto intact.
 makeCardanoBlock
-  :: Maybe Int
+  :: ShelleyLeaderCredentials StandardCrypto
+  -> Maybe Int
   -> BlockNo
   -> SlotNo
   -> Maybe HashHeader
   -> CardanoBlock StandardCrypto
-makeCardanoBlock fork blockNo slot mhash = BlockConway $
+makeCardanoBlock credentails fork blockNo slot mhash = BlockConway $
   let blk =
-        conwayLedgerBlock slot blockNo mhash $
+        conwayLedgerBlock credentails slot blockNo mhash $
           AlonzoTx
             exampleTxBodyConway
             ( AlonzoTxWits
@@ -84,7 +87,8 @@ makeCardanoBlock fork blockNo slot mhash = BlockConway $
 
 
 -- | Construct a made-up (but believable) cardano block for the Conway era.
-conwayLedgerBlock ::
+conwayLedgerBlock
+  :: ShelleyLeaderCredentials StandardCrypto ->
   SlotNo ->
   BlockNo ->
   Maybe HashHeader ->
@@ -92,7 +96,7 @@ conwayLedgerBlock ::
   Tx ConwayEra ->
   -- ^ Some transaction to stick in the block.
   Block (Header StandardCrypto) ConwayEra
-conwayLedgerBlock slot blockNo prev tx = Block blockHeader blockBody
+conwayLedgerBlock credentials slot blockNo prev tx = Block blockHeader blockBody
   where
     PraosCanBeLeader
         { praosCanBeLeaderSignKeyVRF
