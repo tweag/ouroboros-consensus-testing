@@ -25,6 +25,7 @@ module Test.Consensus.Genesis.TestSuite (
   , group
   , mkTestSuite
   , newTestSuite
+  , suiteKeys
   , toTestTree
   ) where
 
@@ -124,6 +125,10 @@ group :: String -> TestSuite blk key -> TestSuite blk key
 group pfs (TestSuite m) = TestSuite $
   Map.map (\testData ->
              testData {tsPrefix = pfs : tsPrefix testData}) m
+
+-- | Produce the list of test keys contained in a 'TestSuite'.
+suiteKeys :: TestSuite blk key -> [key]
+suiteKeys (TestSuite m) = Map.keys m
 
 -- * Compile 'TestSuite' into a 'TestTree'
 
