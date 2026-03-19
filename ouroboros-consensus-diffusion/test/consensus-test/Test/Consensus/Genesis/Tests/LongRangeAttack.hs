@@ -31,9 +31,13 @@ adjustDesiredPasses :: Int -> Int
 adjustDesiredPasses = (`div` 10)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
-data TestKey = LongRangeAttack
-  deriving stock (Eq, Ord, Generic)
+data TestKey = WithOneAdversary
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    WithOneAdversary -> makeKey "WithOneAdversary"
 
 testSuite ::
    (HasHeader blk
@@ -44,7 +48,7 @@ testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
   -- attack but Genesis is not. This requires to first fix it as mentioned
   -- below.
-  LongRangeAttack -> test_longRangeAttack
+  WithOneAdversary -> test_withOneAdversary
 
 -- | This test case features a long-range attack with one adversary. The honest
 -- peer serves the block tree trunk, while the adversary serves its own chain,
@@ -52,13 +56,13 @@ testSuite = group "long range attack" $ newTestSuite $ \case
 -- The adversary serves the chain more rapidly than the honest peer. We check at
 -- the end that the selection is honest. This property does not hold with Praos,
 -- but should hold with Genesis.
-test_longRangeAttack ::
+test_withOneAdversary ::
    forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   ) => ConformanceTest blk
-test_longRangeAttack =
+test_withOneAdversary =
   mkConformanceTest "one adversary" adjustDesiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain.

@@ -40,8 +40,13 @@ desiredPasses :: Int -> Int
 desiredPasses = (`div` 2)
 
 data TestKey = CanRollback | CannotRollback
-  deriving stock (Eq, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    CanRollback -> makeKey "CanRollback"
+    CannotRollback -> makeKey "CannotRollback"
 
 testSuite ::
   ( IssueTestBlock blk

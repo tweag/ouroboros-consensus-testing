@@ -77,10 +77,19 @@ data TestKey = BlockFetchLeashingAttack
              | Downtime
              | LeashingAttackStalling
              | LeashingAttackTimeLimited
-             | LOEStalling
+             | LoeStalling
              | ServeAdversarialBranches
-  deriving stock (Eq, Show, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    BlockFetchLeashingAttack -> makeKey "BlockFetchLeashingAttack"
+    Downtime -> makeKey "Downtime"
+    LeashingAttackStalling -> makeKey "LeashingAttackStalling"
+    LeashingAttackTimeLimited -> makeKey "LeashingAttackTimeLimited"
+    LoeStalling -> makeKey "LoeStalling"
+    ServeAdversarialBranches -> makeKey "ServeAdversarialBranches"
 
 testSuite ::
   ( AF.HasHeader blk
@@ -93,7 +102,7 @@ testSuite = group "uniform" $ newTestSuite $ \case
     Downtime -> test_downtime
     LeashingAttackStalling -> test_leashingAttackStalling
     LeashingAttackTimeLimited -> test_leashingAttackTimeLimited
-    LOEStalling -> test_loeStalling
+    LoeStalling -> test_loeStalling
     ServeAdversarialBranches -> test_serveAdversarialBranches
 
 -- | The conjunction of

@@ -40,8 +40,13 @@ desiredPasses = (`div` 10)
 
 data TestKey = DoesTimeout
              | DoesNotTimeout
-  deriving stock (Eq, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    DoesTimeout -> makeKey "DoesTimeout"
+    DoesNotTimeout -> makeKey "DoesNotTimeout"
 
 testSuite ::
   ( IssueTestBlock blk

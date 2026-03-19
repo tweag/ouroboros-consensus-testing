@@ -57,8 +57,18 @@ data TestKey = WaitJustEnoughUntilEmpty
              | ServeTooSlow
              | DelayAttackSucceeds
              | DelayAttackFails
-  deriving stock (Eq, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    WaitJustEnoughUntilEmpty -> makeKey "WaitJustEnoughUntilEmpty"
+    WaitTooMuchUntilEmpty -> makeKey "WaitTooMuchUntilEmpty"
+    WaitBehindForecastHorizon -> makeKey "WaitBehindForecastHorizon"
+    ServeJustFastEnough -> makeKey "ServeJustFastEnough"
+    ServeTooSlow -> makeKey "ServeTooSlow"
+    DelayAttackSucceeds -> makeKey "DelayAttackSucceeds"
+    DelayAttackFails -> makeKey "DelayAttackFails"
 
 testSuite ::
   ( HasHeader blk
