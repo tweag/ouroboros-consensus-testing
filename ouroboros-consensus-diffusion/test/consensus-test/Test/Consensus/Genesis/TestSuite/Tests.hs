@@ -14,6 +14,6 @@ tests :: TestTree
 tests = testGroup "TestSuite"
   [ testCase "All test keys have distinct names" $
       assertBool "Test key names must be unique" $
-        not . anySame $ fmap toKey $ allKeys @All.TestKey
+        not . anySame $ fmap toKey $ getAllKeys @All.TestKey
   ,  Test.Consensus.Genesis.TestSuite.SmallKey.Tests.tests
   ]

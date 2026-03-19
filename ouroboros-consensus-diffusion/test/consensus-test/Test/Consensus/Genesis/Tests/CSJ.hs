@@ -75,16 +75,25 @@ testSuite ::
   , Ord blk
   , Condense (Header blk)
   , Eq (Header blk)
-  ) => TestSuite blk TestKey
-testSuite = group "CSJ" $ newTestSuite $ \case
-  WithNoAdversariesAndOneScheduleForAllPeers ->
-    test_csj "adversary free: honest peers are synchronised" NoAdversaries OneScheduleForAllPeers
-  WithNoAdversariesAndOneSchedulePerHonestPeer ->
-    test_csj "adversary free: peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
-  WithAdversariesAndOneScheduleForAllPeers ->
-    test_csj "with some adversaries: honest peers are synchronised" WithAdversaries OneScheduleForAllPeers
-  WithAdversariesAndOneSchedulePerHonestPeer ->
-    test_csj "with some adversaries: honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
+  ) =>
+  TestSuite blk TestKey
+testSuite =
+  let keyToFlags :: TestKey -> (WithAdversariesFlag, NumHonestSchedulesFlag)
+      keyToFlags = \case
+        WithNoAdversariesAndOneScheduleForAllPeers -> (NoAdversaries, OneScheduleForAllPeers)
+        WithNoAdversariesAndOneSchedulePerHonestPeer -> (NoAdversaries, OneSchedulePerHonestPeer)
+        WithAdversariesAndOneScheduleForAllPeers -> (WithAdversaries, OneScheduleForAllPeers)
+        WithAdversariesAndOneSchedulePerHonestPeer -> (WithAdversaries, OneSchedulePerHonestPeer)
+      groupName key = case fst (keyToFlags key) of
+        NoAdversaries   -> "Happy path"
+        WithAdversaries -> "With some adversaries"
+      testDescription key = case snd (keyToFlags key) of
+        OneScheduleForAllPeers   -> "honest peers are synchronised"
+        OneSchedulePerHonestPeer -> "honest peers do their own thing"
+   in group "CSJ" $
+        grouping groupName $
+          newTestSuite $
+            \key -> uncurry (test_csj $ testDescription key) (keyToFlags key)
 
 -- | A flag to indicate if properties are tested with adversarial peers
 data WithAdversariesFlag = NoAdversaries | WithAdversaries

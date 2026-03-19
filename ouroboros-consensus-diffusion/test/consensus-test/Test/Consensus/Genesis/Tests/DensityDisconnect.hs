@@ -104,7 +104,7 @@ testSuite = group "density disconnect" $ newTestSuite $ \case
 
 tests :: TestTree
 tests =
-  testGroup "density disconnect"
+  testGroup "gdd"
     [ testProperty "basic" prop_densityDisconnectStatic
     , testProperty "monotonicity" prop_densityDisconnectMonotonic
     ]
