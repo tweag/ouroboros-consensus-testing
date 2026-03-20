@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
@@ -32,6 +33,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           System.IO.Unsafe (unsafeDupablePerformIO)
 import qualified Test.Consensus.BlockTree as BT
 import           Test.Consensus.PointSchedule
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Adversarial as A
@@ -101,8 +103,16 @@ genAlternativeChainSchema (testRecipeH, arHonest) =
         let H.ChainSchema _ v = A.uniformAdversarialChain (Just alternativeAsc) testRecipeA'' seed
         pure $ Just (prefixCount, Vector.toList (getVector v))
 
-genChains :: (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
-genChains  = genChainsWithExtraHonestPeers undefined (pure 0)
+genChains :: forall blk. (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
+genChains num_forks =
+  -- TODO(isovector): unsafePerformIO is not the right tool here, but making
+  -- this is a big change otherwise, and I want to verify that this approach
+  -- works before doing all the plumbing. Thankfully, this is /effectively/
+  -- pure; since we shouldn't expect our configuration to get swapped out from
+  -- underneath us during a test run.
+  unsafeDupablePerformIO $ do
+    ctx <- getTestBlockContext $ Proxy @blk
+    pure $ genChainsWithExtraHonestPeers ctx (pure 0) num_forks
 
 
 -- | Random generator for a block tree. The block tree contains one trunk (the

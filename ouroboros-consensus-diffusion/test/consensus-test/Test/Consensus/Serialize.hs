@@ -174,10 +174,11 @@ toReifiedTestCase key testVersion blockTree pointSchedule shrinkIndex seed =
 -- think of this as a fold.
 fromReifiedTestCase
   :: forall blk key u. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
-  => (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed -> u)
+  => TestBlockContext blk
+  -> (key -> TestVersion -> BlockTree blk -> PointSchedule blk -> ShrinkIndex -> Seed -> u)
   -> ReifiedTestCase key BlockRep -> Either String u
-fromReifiedTestCase f ReifiedTestCase{..} = do
-  (blockTree, knownBlocks) <- fromReifiedBlockTree rtcBlockTree
+fromReifiedTestCase ctx f ReifiedTestCase{..} = do
+  (blockTree, knownBlocks) <- fromReifiedBlockTree ctx rtcBlockTree
   pointSchedule <- fromReifiedPointSchedule knownBlocks rtcPointSchedule
   pure $ f rtcTestKey rtcTestVersion blockTree pointSchedule rtcShrinkIndex rtcSeed
 
@@ -424,9 +425,10 @@ knownBlockIds (KnownBlocks m) = M.keys m
 -- TODO: Unify this with the tree generation code in @genChains@.
 fromReifiedBlockTree
   :: forall blk. (AF.HasHeader blk, IssueTestBlock blk, Show blk)
-  => ReifiedBlockTree BlockRep
+  => TestBlockContext blk
+  -> ReifiedBlockTree BlockRep
   -> Either String (BlockTree blk, KnownBlocks blk)
-fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
+fromReifiedBlockTree ctx ReifiedBlockTree{rbtTrunk, rbtBranches} = do
   let
     -- Construct the anchor of a chain. For non-trunk branches we
     -- need to make sure the anchor has already been issued; it's
@@ -463,9 +465,9 @@ fromReifiedBlockTree ReifiedBlockTree{rbtTrunk, rbtBranches} = do
 
       blk <- pure $ case accBlocks of
         []  -> case mAnchorBlk of
-          Nothing        -> issueFirstBlock forkNo' slotNumber
-          Just anchorBlk -> issueSuccessorBlock (Just forkNo') slotSuccOffset anchorBlk
-        h:_ -> issueSuccessorBlock Nothing slotSuccOffset h
+          Nothing        -> issueFirstBlock ctx forkNo' slotNumber
+          Just anchorBlk -> issueSuccessorBlock ctx (Just forkNo') slotSuccOffset anchorBlk
+        h:_ -> issueSuccessorBlock ctx Nothing slotSuccOffset h
 
       let blockId = BlockId slotNumber (brBlockNo rep) forkNo
       pure
