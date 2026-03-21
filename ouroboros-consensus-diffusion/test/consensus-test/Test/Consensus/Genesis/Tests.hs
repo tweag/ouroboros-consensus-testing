@@ -10,6 +10,7 @@ module Test.Consensus.Genesis.Tests (
   , tests
   ) where
 
+import qualified Data.Aeson as Aeson
 import           Ouroboros.Consensus.Block.Abstract (GetHeader, HasHeader,
                      Header)
 import           Ouroboros.Consensus.Util.Condense (Condense)
@@ -37,6 +38,19 @@ data GenesisTestKey = Uniform !Uniform.TestKey
              | LoP !LoP.TestKey
   deriving stock (Eq, Ord, Generic)
   deriving SmallKey via Generically GenesisTestKey
+
+instance Aeson.ToJSON GenesisTestKey where
+  toJSON = error "ToJSON GenesisTestKey: not yet implemented"
+    -- TODO(nbloomf): fix this once test keys are implemented
+    -- Aeson.toJSON . keyName
+
+instance Aeson.FromJSON GenesisTestKey where
+  parseJSON = Aeson.withText "GenesisTestKey" $ \_ ->
+    error "FromJSON GenesisTestKey: not yet implemented"
+    -- TODO(nbloomf): fix this once test keys are implemented
+    -- case parseKeyName $ T.unpack t of
+    --  Just k -> pure k
+    --  Nothing -> fail $ "Unrecognized key name: " <> show t
 
 testSuite ::
   ( HasHeader blk
