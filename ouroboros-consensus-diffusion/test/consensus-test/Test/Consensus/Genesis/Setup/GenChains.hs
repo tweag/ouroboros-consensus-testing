@@ -207,7 +207,12 @@ genChainsWithExtraHonestPeers ctx genNumExtraHonest genNumForks = do
 
 -- | Class of block types for which we can issue test blocks.
 class IssueTestBlock blk where
+  -- | Context required to generate blocks of the given type. A value of
+  -- 'TestBlockContext' is computed once before issuing blocks, and is passed
+  -- into each issuing call.
   type TestBlockContext blk
+  -- | Construct a 'TestBlockContext'. This might need to do IO for real
+  -- blocks, since they will depend on keys that we don't want to hardcode.
   getTestBlockContext :: Proxy blk -> IO (TestBlockContext blk)
   issueFirstBlock
     :: TestBlockContext blk
