@@ -5,6 +5,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module Test.Consensus.Genesis.Setup.GenChains (
@@ -31,6 +33,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           System.IO.Unsafe (unsafeDupablePerformIO)
 import qualified Test.Consensus.BlockTree as BT
 import           Test.Consensus.PointSchedule
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Adversarial as A
@@ -100,8 +103,16 @@ genAlternativeChainSchema (testRecipeH, arHonest) =
         let H.ChainSchema _ v = A.uniformAdversarialChain (Just alternativeAsc) testRecipeA'' seed
         pure $ Just (prefixCount, Vector.toList (getVector v))
 
-genChains :: (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
-genChains  = genChainsWithExtraHonestPeers (pure 0)
+genChains :: forall blk. (HasHeader blk, IssueTestBlock blk) => QC.Gen Word -> QC.Gen (GenesisTest blk ())
+genChains num_forks =
+  -- TODO(isovector): unsafePerformIO is not the right tool here, but making
+  -- this is a big change otherwise, and I want to verify that this approach
+  -- works before doing all the plumbing. Thankfully, this is /effectively/
+  -- pure; since we shouldn't expect our configuration to get swapped out from
+  -- underneath us during a test run.
+  unsafeDupablePerformIO $ do
+    ctx <- getTestBlockContext $ Proxy @blk
+    pure $ genChainsWithExtraHonestPeers ctx (pure 0) num_forks
 
 
 -- | Random generator for a block tree. The block tree contains one trunk (the
@@ -118,12 +129,13 @@ genChains  = genChainsWithExtraHonestPeers (pure 0)
 genChainsWithExtraHonestPeers
   :: forall blk
    . (HasHeader blk, IssueTestBlock blk)
-  => QC.Gen Word
+  => TestBlockContext blk
+  -> QC.Gen Word
   -- ^ Number of extra honest peers
   -> QC.Gen Word
   -- ^ Number of forks
   -> QC.Gen (GenesisTest blk ())
-genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
+genChainsWithExtraHonestPeers ctx genNumExtraHonest genNumForks = do
   (_, honestRecipe, someHonestChainSchema) <- genHonestChainSchema
 
   H.SomeHonestChainSchema _ _ honestChainSchema <- pure someHonestChainSchema
@@ -187,22 +199,31 @@ genChainsWithExtraHonestPeers genNumExtraHonest genNumForks = do
         folder (chain, inc) s | S.test S.notInverted s = (issue inc chain, 0)
                               | otherwise = (chain, inc + 1)
         issue :: SlotNo -> [blk] -> [blk]
-        issue inc (h : t) = issueSuccessorBlock Nothing inc h : h : t
+        issue inc (h : t) = issueSuccessorBlock ctx Nothing inc h : h : t
         issue inc [] =
           case pre of
-            []      -> [issueFirstBlock forkNo inc]
-            (h : t) -> issueSuccessorBlock (Just forkNo) inc h : h : t
+            []      -> [issueFirstBlock ctx forkNo inc]
+            (h : t) -> issueSuccessorBlock ctx (Just forkNo) inc h : h : t
 
 -- | Class of block types for which we can issue test blocks.
 class IssueTestBlock blk where
+  -- | Context required to generate blocks of the given type. A value of
+  -- 'TestBlockContext' is computed once before issuing blocks, and is passed
+  -- into each issuing call.
+  type TestBlockContext blk
+  -- | Construct a 'TestBlockContext'. This might need to do IO for real
+  -- blocks, since they will depend on keys that we don't want to hardcode.
+  getTestBlockContext :: Proxy blk -> IO (TestBlockContext blk)
   issueFirstBlock
-    :: Int
+    :: TestBlockContext blk
+    -> Int
     -- ^ The fork number
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
     -> blk
   issueSuccessorBlock
-    :: Maybe Int
+    :: TestBlockContext blk
+    -> Maybe Int
     -- ^ A new fork number, if this block should fork off the trunk.
     -> SlotNo
     -- ^ The amount of lapsed slots before this block was issued.
@@ -210,9 +231,11 @@ class IssueTestBlock blk where
     -> blk
 
 instance IssueTestBlock TestBlock where
-  issueFirstBlock fork slot =
+  type TestBlockContext TestBlock = ()
+  getTestBlockContext _ = pure ()
+  issueFirstBlock _ fork slot =
     incSlot slot ((TB.firstBlock $ fromIntegral fork) {tbSlot = 0})
-  issueSuccessorBlock fork slot blk =
+  issueSuccessorBlock _ fork slot blk =
     incSlot slot $
       TB.modifyFork (maybe id (const . fromIntegral) fork) $
         TB.successorBlock blk

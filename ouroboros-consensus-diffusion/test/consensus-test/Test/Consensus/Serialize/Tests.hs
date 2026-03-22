@@ -257,7 +257,8 @@ prop_serialize_weak_inverse _ value =
 prop_fromReifiedBlockTree_inverse
   :: forall blk. (Show blk, Eq blk, HasHeader blk, IssueTestBlock blk)
   => BlockTree blk -> QC.Property
-prop_fromReifiedBlockTree_inverse blockTree =
+prop_fromReifiedBlockTree_inverse blockTree = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reified, _) = toReifiedBlockTree blockTree
     cannotConvertMsg err = mconcat
@@ -266,7 +267,7 @@ prop_fromReifiedBlockTree_inverse blockTree =
       , "ReifiedBlockTree: ", show reified, "\n"
       , "Error: ", err
       ]
-  in case fromReifiedBlockTree reified of
+  pure $ case fromReifiedBlockTree ctx reified of
       Left err              -> QC.counterexample (cannotConvertMsg err) False
       Right (blockTree', _) -> eqBlockTree blockTree blockTree'
 
@@ -298,7 +299,8 @@ eqBlockTree (BlockTree trunk1 branches1) (BlockTree trunk2 branches2) =
 prop_toReifiedBlockTree_weak_inverse
   :: forall blk. (Show blk, HasHeader blk, IssueTestBlock blk)
   => BlockTree blk -> QC.Property
-prop_toReifiedBlockTree_weak_inverse blockTree =
+prop_toReifiedBlockTree_weak_inverse blockTree = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reified1, _) = toReifiedBlockTree blockTree
     cannotConvertMsg err = mconcat
@@ -312,8 +314,8 @@ prop_toReifiedBlockTree_weak_inverse blockTree =
       , "After:   ", show reified2
       ]
     fromReified1 :: Either String (BlockTree blk, KnownBlocks blk)
-    fromReified1 = fromReifiedBlockTree reified1
-  in case fromReified1 of
+    fromReified1 = fromReifiedBlockTree ctx reified1
+  pure $ case fromReified1 of
       Left err               -> QC.counterexample (cannotConvertMsg err) False
       Right (blockTree', _ ) ->
         let (reified2, _) = toReifiedBlockTree blockTree'
@@ -347,7 +349,8 @@ prop_toReifiedPointSchedule_weak_inverse
   :: forall blk.
      (Show blk, HasHeader blk, IssueTestBlock blk)
   => BlockTree blk -> Schedule.PointSchedule blk -> QC.Property
-prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule =
+prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reifiedTree, knownForks) = toReifiedBlockTree blockTree
     reifiedSchedule1 = toReifiedPointSchedule knownForks pointSchedule
@@ -369,8 +372,8 @@ prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule =
       , "After:    ", show reifiedSchedule2
       ]
     fromReifiedTree :: Either String (BlockTree blk, KnownBlocks blk)
-    fromReifiedTree = fromReifiedBlockTree reifiedTree
-  in case fromReifiedTree of
+    fromReifiedTree = fromReifiedBlockTree ctx reifiedTree
+  pure $ case fromReifiedTree of
       Left err -> QC.counterexample (cannotConvertTreeMsg err) False
       Right (_, knownBlocks) ->
         case fromReifiedPointSchedule knownBlocks reifiedSchedule1 of
@@ -386,7 +389,8 @@ prop_toReifiedPointSchedule_weak_inverse blockTree pointSchedule =
 prop_fromReifiedTestCase_faithful_on_metadata
   :: ((), TestVersion, BlockTree TestBlock, Schedule.PointSchedule TestBlock, ShrinkIndex, Seed)
   -> QC.Property
-prop_fromReifiedTestCase_faithful_on_metadata (testKey, testVersion, blockTree, pointSchedule, shrinkIndex, seed) =
+prop_fromReifiedTestCase_faithful_on_metadata (testKey, testVersion, blockTree, pointSchedule, shrinkIndex, seed) = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @TestBlock
   let
     reified = toReifiedTestCase testKey testVersion blockTree pointSchedule shrinkIndex seed
     cannotConvertMsg err = mconcat
@@ -394,8 +398,8 @@ prop_fromReifiedTestCase_faithful_on_metadata (testKey, testVersion, blockTree, 
       , "Error: ", err, "\n"
       , "ReifiedTestCase: ", show reified
       ]
-    fromReified = fromReifiedTestCase (,,,,,) reified
-  in case fromReified of
+    fromReified = fromReifiedTestCase ctx (,,,,,) reified
+  pure $ case fromReified of
       Left err -> QC.counterexample (cannotConvertMsg err) False
       Right (testKey', testVersion', blockTree', pointSchedule', shrinkIndex', seed') ->
         let
@@ -551,7 +555,8 @@ prop_deserializeReifiedTestCase_ignores_unknown_fields reified =
 prop_fromReifiedBlockTree_knownBlocks_complete
   :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
   => BlockTree blk -> QC.Property
-prop_fromReifiedBlockTree_knownBlocks_complete blockTree =
+prop_fromReifiedBlockTree_knownBlocks_complete blockTree = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reified, _) = toReifiedBlockTree blockTree
     expectedIds = Set.fromList $
@@ -562,8 +567,8 @@ prop_fromReifiedBlockTree_knownBlocks_complete blockTree =
       , "Error: ", err
       ]
     fromReified :: Either String (BlockTree blk, KnownBlocks blk)
-    fromReified = fromReifiedBlockTree reified
-  in case fromReified of
+    fromReified = fromReifiedBlockTree ctx reified
+  pure $ case fromReified of
       Left err -> QC.counterexample (cannotConvertMsg err) False
       Right (_, knownBlocks) ->
         let
@@ -582,11 +587,12 @@ prop_fromReifiedBlockTree_knownBlocks_complete blockTree =
 prop_fromReifiedBlockTree_rejects_dangling_anchor
   :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
   => BlockTree blk -> QC.Property
-prop_fromReifiedBlockTree_rejects_dangling_anchor blockTree =
+prop_fromReifiedBlockTree_rejects_dangling_anchor blockTree = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reified, _) = toReifiedBlockTree blockTree
     mMutated = mutateDanglingAnchor reified
-  in case mMutated of
+  pure $ case mMutated of
       Nothing -> QC.property True
       Just mutated ->
         let
@@ -595,7 +601,7 @@ prop_fromReifiedBlockTree_rejects_dangling_anchor blockTree =
             , "Original reified tree: ", show reified, "\n"
             , "Mutated reified tree: ", show mutated
             ]
-        in case fromReifiedBlockTree mutated :: Either String (BlockTree blk, KnownBlocks blk) of
+        in case fromReifiedBlockTree ctx mutated :: Either String (BlockTree blk, KnownBlocks blk) of
             Left _  -> QC.property True
             Right _ -> QC.counterexample msgSuccess False
 
@@ -604,7 +610,8 @@ prop_fromReifiedBlockTree_rejects_dangling_anchor blockTree =
 prop_fromReifiedPointSchedule_rejects_unknown_point
   :: forall blk. (HasHeader blk, IssueTestBlock blk, Show blk)
   => BlockTree blk -> Schedule.PointSchedule blk -> QC.Property
-prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule =
+prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule = QC.ioProperty $ do
+  ctx <- getTestBlockContext $ Proxy @blk
   let
     (reifiedTree, knownForks) = toReifiedBlockTree blockTree
     reifiedSchedule = toReifiedPointSchedule knownForks pointSchedule
@@ -615,8 +622,8 @@ prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule =
       , "Error: ", err
       ]
     fromReifiedTree :: Either String (BlockTree blk, KnownBlocks blk)
-    fromReifiedTree = fromReifiedBlockTree reifiedTree
-  in case fromReifiedTree of
+    fromReifiedTree = fromReifiedBlockTree ctx reifiedTree
+  pure $ case fromReifiedTree of
       Left err -> QC.counterexample (cannotConvertTreeMsg err) False
       Right (_, knownBlocks) ->
         let

@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | ChainSync Jumping tests.
 module Test.Consensus.Genesis.Tests.CSJ (
@@ -15,6 +16,7 @@ module Test.Consensus.Genesis.Tests.CSJ (
 import           Data.List (nub)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
+import           Data.Proxy (Proxy (..))
 import           Ouroboros.Consensus.Block (HasHeader, Header, blockSlot,
                      succWithOrigin, unSlotNo)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -24,6 +26,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (mustReplyTimeout), idleTimeout)
+import           System.IO.Unsafe (unsafeDupablePerformIO)
 import           Test.Consensus.BlockTree (BlockTree (..))
 import           Test.Consensus.Genesis.Setup
 import           Test.Consensus.Genesis.Tests.Uniform (genUniformSchedulePoints)
@@ -112,77 +115,85 @@ test_csj :: forall blk.
   , Condense (Header blk)
   , Eq (Header blk)
   ) => String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> ConformanceTest blk
-test_csj description adversariesFlag numHonestSchedules = do
-  let genForks = case adversariesFlag of
-                   NoAdversaries   -> pure 0
-                   WithAdversaries -> choose (2, 4)
-  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
-    ( disableBoringTimeouts <$> case numHonestSchedules of
-        OneScheduleForAllPeers ->
-          genChains genForks
-          `enrichedWith` genDuplicatedHonestSchedule
-        OneSchedulePerHonestPeer ->
-          genChainsWithExtraHonestPeers (choose (2, 4)) genForks
-          `enrichedWith` genUniformSchedulePoints
-    )
+test_csj description adversariesFlag numHonestSchedules =
+  -- TODO(isovector): unsafePerformIO is not the right tool here, but making
+  -- this is a big change otherwise, and I want to verify that this approach
+  -- works before doing all the plumbing. Thankfully, this is /effectively/
+  -- pure; since we shouldn't expect our configuration to get swapped out from
+  -- underneath us during a test run.
+  unsafeDupablePerformIO $ do
+    ctx <- getTestBlockContext $ Proxy @blk
+    pure $ do
+      let genForks = case adversariesFlag of
+                      NoAdversaries   -> pure 0
+                      WithAdversaries -> choose (2, 4)
+      mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
+        ( disableBoringTimeouts <$> case numHonestSchedules of
+            OneScheduleForAllPeers ->
+              genChains genForks
+              `enrichedWith` genDuplicatedHonestSchedule
+            OneSchedulePerHonestPeer ->
+              genChainsWithExtraHonestPeers ctx (choose (2, 4)) genForks
+              `enrichedWith` genUniformSchedulePoints
+        )
 
-    ( defaultSchedulerConfig
-      { scEnableCSJ = True
-      , scEnableLoE = True
-      , scEnableLoP = True
-      , scEnableChainSelStarvation = adversariesFlag == NoAdversaries
-      -- ^ NOTE: When there are adversaries and the ChainSel
-      -- starvation detection of BlockFetch is enabled, then our property does
-      -- not actually hold, because peer simulator-based tests have virtually
-      -- infinite CPU, and therefore ChainSel gets starved at every tick, which
-      -- makes us cycle the dynamos, which can lead to some extra headers being
-      -- downloaded.
-      }
-    )
+        ( defaultSchedulerConfig
+          { scEnableCSJ = True
+          , scEnableLoE = True
+          , scEnableLoP = True
+          , scEnableChainSelStarvation = adversariesFlag == NoAdversaries
+          -- ^ NOTE: When there are adversaries and the ChainSel
+          -- starvation detection of BlockFetch is enabled, then our property does
+          -- not actually hold, because peer simulator-based tests have virtually
+          -- infinite CPU, and therefore ChainSel gets starved at every tick, which
+          -- makes us cycle the dynamos, which can lead to some extra headers being
+          -- downloaded.
+          }
+        )
 
-    shrinkPeerSchedules
+        shrinkPeerSchedules
 
-    ( \gt StateView{svTrace} ->
-        let
-          -- The list of 'TraceDownloadedHeader' events that are not newer than
-          -- jumpSize from the tip of the chain. These are the ones that we
-          -- expect to see only once per header if CSJ works properly.
-          headerHonestDownloadEvents =
-            mapMaybe
-              (\case
-                TraceChainSyncClientEvent pid (TraceDownloadedHeader hdr)
-                  | not (isNewerThanJumpSizeFromTip gt hdr)
-                  , Peers.HonestPeer _ <- pid
-                  -> Just (pid, hdr)
-                _ -> Nothing
+        ( \gt StateView{svTrace} ->
+            let
+              -- The list of 'TraceDownloadedHeader' events that are not newer than
+              -- jumpSize from the tip of the chain. These are the ones that we
+              -- expect to see only once per header if CSJ works properly.
+              headerHonestDownloadEvents =
+                mapMaybe
+                  (\case
+                    TraceChainSyncClientEvent pid (TraceDownloadedHeader hdr)
+                      | not (isNewerThanJumpSizeFromTip gt hdr)
+                      , Peers.HonestPeer _ <- pid
+                      -> Just (pid, hdr)
+                    _ -> Nothing
+                  )
+                  svTrace
+              -- We receive headers at most once from honest peer. The only
+              -- exception is when an honest peer gets to be the objector, until an
+              -- adversary dies, and then the dynamo. In that specific case, we
+              -- might re-download jumpSize blocks. TODO: If we ever choose to
+              -- promote objectors to dynamo to reuse their state, then we could
+              -- make this bound tighter.
+              receivedHeadersAtMostOnceFromHonestPeers =
+                length headerHonestDownloadEvents <=
+                  length (nub $ snd <$> headerHonestDownloadEvents) +
+                    (fromIntegral $ unSlotNo $ csjpJumpSize $ gtCSJParams gt)
+            in
+              tabulate ""
+                [ if headerHonestDownloadEvents == []
+                    then "All headers are within the last jump window"
+                    else "There exist headers that have to be downloaded exactly once"
+                ] $
+              counterexample
+              ("Downloaded headers (except jumpSize slots near the tip):\n" ++
+                ( unlines $ fmap ("  " ++) $ zipWith
+                  (\peer header -> peer ++ " | " ++ header)
+                  (condenseListWithPadding PadRight $ fst <$> headerHonestDownloadEvents)
+                  (condenseListWithPadding PadRight $ snd <$> headerHonestDownloadEvents)
+                )
               )
-              svTrace
-          -- We receive headers at most once from honest peer. The only
-          -- exception is when an honest peer gets to be the objector, until an
-          -- adversary dies, and then the dynamo. In that specific case, we
-          -- might re-download jumpSize blocks. TODO: If we ever choose to
-          -- promote objectors to dynamo to reuse their state, then we could
-          -- make this bound tighter.
-          receivedHeadersAtMostOnceFromHonestPeers =
-            length headerHonestDownloadEvents <=
-              length (nub $ snd <$> headerHonestDownloadEvents) +
-                (fromIntegral $ unSlotNo $ csjpJumpSize $ gtCSJParams gt)
-        in
-          tabulate ""
-            [ if headerHonestDownloadEvents == []
-                then "All headers are within the last jump window"
-                else "There exist headers that have to be downloaded exactly once"
-            ] $
-          counterexample
-          ("Downloaded headers (except jumpSize slots near the tip):\n" ++
-            ( unlines $ fmap ("  " ++) $ zipWith
-              (\peer header -> peer ++ " | " ++ header)
-              (condenseListWithPadding PadRight $ fst <$> headerHonestDownloadEvents)
-              (condenseListWithPadding PadRight $ snd <$> headerHonestDownloadEvents)
-            )
-          )
-          receivedHeadersAtMostOnceFromHonestPeers
-    )
+              receivedHeadersAtMostOnceFromHonestPeers
+        )
   where
     isNewerThanJumpSizeFromTip :: GenesisTestFull blk -> Header blk -> Bool
     isNewerThanJumpSizeFromTip gt hdr =
