@@ -26,6 +26,8 @@ import           Test.Consensus.Genesis.Tests.CSJ (genDuplicatedHonestSchedule)
 import           Test.Consensus.Genesis.Tests.Uniform
                      (genBlockFetchLeashingSchedule, genLeashingSchedule,
                      genTimeLimitedSchedule, genUniformSchedulePoints)
+import qualified Test.Consensus.Genesis.TestSuite.All as All
+import           Test.Consensus.Genesis.TestSuite.SmallKey
 import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Consensus.Serialize
 import qualified Test.QuickCheck as QC
@@ -92,6 +94,14 @@ tests = testGroup "JSON Serialization"
         \(blockTree, pointSchedule) ->
           prop_fromReifiedPointSchedule_rejects_unknown_point blockTree pointSchedule
     ]
+   , testGroup "TestKey" $
+    [ testProperty "toJSON . fromJSON . toJSON == toJSON" $
+      QC.forAll (genKey)
+        (prop_serialize_weak_inverse (Proxy @(All.TestKey)))
+    , testProperty "fromJSON . toJSON == id" $
+      QC.forAll (genKey)
+        (prop_deserialize_inverse (Proxy @(All.TestKey)))
+    ]
   ]
   where
     branchFactor = pure 5
@@ -146,6 +156,9 @@ genTestBlockTreeWithPointSchedule branchFactor = do
     , genBlockFetchLeashingSchedule
     ]
   pure (gtBlockTree genesisTest, schedule)
+
+genKey :: (SmallKey k) => QC.Gen k
+genKey = QC.elements allKeys
 
 shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
 shrinkBlockTree (BlockTree trunk branches) = mconcat
