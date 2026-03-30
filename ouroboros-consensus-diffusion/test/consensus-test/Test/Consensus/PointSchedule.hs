@@ -661,8 +661,6 @@ ensureScheduleDuration gt PointSchedule{psSchedule, psStartOrder, psMinEndTime} 
     peerCount = length (peersList psSchedule)
     adversaryCount = Map.size (adversarialPeers psSchedule)
 
-
-
 -- | This class exists to house some of the functions required of a block
 -- type in order to be used by point schedule tests in 'nodeLifecycle'. It
 -- was introduced to help generalize the tests from TestBlocks to live block
