@@ -98,7 +98,7 @@ test_wait ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_wait description mustTimeout =
-  mkConformanceTest description adjustDesiredPasses
+  mkConformanceTest description (TestVersion 0) adjustDesiredPasses
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
     -- significantly more time than the one that does. This is because the former
@@ -150,7 +150,7 @@ test_waitBehindForecastHorizon ::
   , Ord blk
   ) => ConformanceTest blk
 test_waitBehindForecastHorizon =
-  mkConformanceTest "wait behind forecast horizon" adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let ps = dullSchedule (btTrunk gtBlockTree)
@@ -204,7 +204,7 @@ test_serve ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_serve description mustTimeout =
-  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let lbpRate = borderlineRate (AF.length (btTrunk gtBlockTree))
@@ -265,7 +265,7 @@ test_delayAttack ::
   ) =>
   String -> Bool -> ConformanceTest blk
 test_delayAttack description lopEnabled =
-  mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}

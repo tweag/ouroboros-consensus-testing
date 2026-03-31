@@ -60,7 +60,7 @@ test_chainSyncKillsBlockFetch ::
   , Eq blk
   ) => ConformanceTest blk
 test_chainSyncKillsBlockFetch =
-  mkConformanceTest "ChainSync kills BlockFetch" id id
+  mkConformanceTest "ChainSync kills BlockFetch" (TestVersion 0) id id
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
     )

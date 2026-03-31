@@ -511,7 +511,7 @@ test_densityDisconnectTriggersChainSel ::
   , Ord blk
   ) => ConformanceTest blk
 test_densityDisconnectTriggersChainSel =
-  mkConformanceTest "re-triggers chain selection on disconnection" adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree
