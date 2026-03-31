@@ -87,8 +87,12 @@ adjustTestMaxSize = (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = TriggersChainSelection
-  deriving stock (Eq,Ord,Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    TriggersChainSelection -> makeKey "TriggersChainSelection"
 
 testSuite ::
   ( HasHeader blk

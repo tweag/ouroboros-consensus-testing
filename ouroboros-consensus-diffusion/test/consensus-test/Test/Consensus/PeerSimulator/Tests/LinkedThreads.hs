@@ -34,8 +34,12 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleHeaderPoint,
 import           Test.Util.Orphans.IOLike ()
 
 data TestKey = ChainSyncKillsBlockFetch
-  deriving (Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    ChainSyncKillsBlockFetch -> makeKey "ChainSyncKillsBlockFetch"
 
 testSuite ::
   ( IssueTestBlock blk

@@ -46,8 +46,13 @@ adjustTestMaxSize = (`div` 5)
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = AdversaryDoesNotHitTimeouts
              | AdversaryHitsTimeouts
-  deriving stock (Eq, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    AdversaryDoesNotHitTimeouts -> makeKey "AdversaryDoesNotHitTimeouts"
+    AdversaryHitsTimeouts -> makeKey "AdversaryHitsTimeouts"
 
 testSuite ::
   ( HasHeader blk

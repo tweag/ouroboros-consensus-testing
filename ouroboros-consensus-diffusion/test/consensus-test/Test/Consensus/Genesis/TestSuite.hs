@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,9 +28,20 @@ module Test.Consensus.Genesis.TestSuite (
   , newTestSuite
   , suiteKeys
   , toTestTree
+    -- * Key type rendering and serialization
+  , Key
+  , KeyType (..)
+  , keyName
+  , makeKey
+  , parseJSONKeyType
+  , superKey
+  , toJSONKeyType
   ) where
 
+import           Data.Aeson (FromJSON (..), ToJSON (..), Value)
+import qualified Data.Aeson.Types as Aeson
 import           Data.Foldable (toList)
+import           Data.List (intercalate)
 import           Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MMap
 import           Data.Map.Strict (Map)
@@ -57,6 +69,65 @@ import           Test.Consensus.PointSchedule (HasPointScheduleTestParams)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Util.TersePrinting (Terse)
+
+{-------------------------------------------------------------------------------
+  Key type rendering and serialization
+-------------------------------------------------------------------------------}
+
+-- | A typeclass for types used as structured test keys.
+-- Instances convert a domain-specific key type @k@ into a 'Key'.
+class KeyType k where
+   toKey :: k -> Key
+
+-- | A structured test key representation to produce a stable, human-readable
+-- hierarchical name for a test, suitable for rendering and JSON serialization.
+--
+-- Keys can be nested by combining them with '<>'.
+newtype Key = Key {getKeySegments :: [String]}
+  deriving newtype (Eq, Semigroup, Monoid)
+
+instance ToJSON Key where
+  toJSON = toJSON . getKeySegments
+
+instance FromJSON Key where
+  parseJSON = fmap Key . parseJSON
+
+-- | Serialize a 'KeyType' to JSON by means of the 'Key' representation of its value.
+toJSONKeyType :: KeyType key => key -> Value
+toJSONKeyType = toJSON . toKey
+
+-- | Parse a JSON 'Value' as a 'SmallKey' by comparing it against the 'Key'
+-- representation of all its values.
+parseJSONKeyType :: (KeyType key, SmallKey key) => Value -> Aeson.Parser key
+parseJSONKeyType v = do
+  key <- parseJSON v
+  case filter (\k -> toKey k == key) allKeys of
+    [k] -> pure k
+    []  -> fail $ "parseJSONKeyType: unknown key " <> renderKeyName key
+    _   -> fail $ "parseJSONKeyType: ambiguous key " <> renderKeyName key
+
+-- | Create a 'Key' from a 'String'.
+makeKey :: String -> Key
+makeKey = Key . pure
+
+-- | Render a 'Key' as a human-readable string.
+renderKeyName :: Key -> String
+-- Produce a dot-separated string, e.g. @"group.subgroup.case"@.
+renderKeyName = intercalate "." . getKeySegments
+
+-- | Render the name of a 'KeyType' value as a human-readable string.
+keyName :: KeyType k => k -> String
+keyName = renderKeyName . toKey
+
+-- | Nest a key under a named group.
+--
+-- Useful for grouping related test keys under a common prefix.
+superKey :: KeyType k => String -> k -> Key
+superKey name x = makeKey name <> toKey x
+
+{-------------------------------------------------------------------------------
+  TestSuite API
+-------------------------------------------------------------------------------}
 
 data TestSuiteData blk = TestSuiteData
   { -- | A prefix representing a path through the test group tree.

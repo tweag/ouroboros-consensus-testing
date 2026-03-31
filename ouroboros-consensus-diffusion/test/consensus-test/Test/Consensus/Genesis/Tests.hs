@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Test.Consensus.Genesis.Tests (
-    GenesisTestKey
+    TestKey
   , testSuite
   , tests
   ) where
@@ -29,14 +29,23 @@ tests = testGroup "Genesis tests" $
   [GDD.tests] <> toTestTree @TestBlock testSuite
 
 -- | Each value of this type uniquely corresponds to a Genesis test.
-data GenesisTestKey = Uniform !Uniform.TestKey
+data TestKey = Uniform !Uniform.TestKey
              | CSJ !CSJ.TestKey
              | GDD !GDD.TestKey
              | LongRangeAttack !LongRangeAttack.TestKey
              | LoE !LoE.TestKey
              | LoP !LoP.TestKey
-  deriving stock (Eq, Ord, Generic)
-  deriving SmallKey via Generically GenesisTestKey
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    Uniform k -> superKey "Uniform" k
+    CSJ k -> superKey "CSJ" k
+    GDD k -> superKey "GDD" k
+    LongRangeAttack k -> superKey "LongRangeAttack" k
+    LoE k -> superKey "LoE" k
+    LoP k -> superKey "LoP" k
 
 testSuite ::
   ( HasHeader blk
@@ -45,11 +54,11 @@ testSuite ::
   , Condense (Header blk)
   , Ord blk
   , Eq (Header blk)
-  ) => TestSuite blk GenesisTestKey
+  ) => TestSuite blk TestKey
 testSuite = mkTestSuite $ \case
-  Uniform t -> at Uniform.testSuite t
-  CSJ t -> at CSJ.testSuite t
-  GDD t -> at GDD.testSuite t
-  LongRangeAttack t -> at LongRangeAttack.testSuite t
-  LoE t -> at LoE.testSuite t
-  LoP t -> at LoP.testSuite t
+  Uniform k -> at Uniform.testSuite k
+  CSJ k -> at CSJ.testSuite k
+  GDD k -> at GDD.testSuite k
+  LongRangeAttack k -> at LongRangeAttack.testSuite k
+  LoE k -> at LoE.testSuite k
+  LoP k -> at LoP.testSuite k

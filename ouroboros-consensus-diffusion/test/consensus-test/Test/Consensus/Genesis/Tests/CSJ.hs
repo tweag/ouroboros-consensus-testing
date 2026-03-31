@@ -58,8 +58,15 @@ data TestKey = WithNoAdversariesAndOneScheduleForAllPeers
              | WithNoAdversariesAndOneSchedulePerHonestPeer
              | WithAdversariesAndOneScheduleForAllPeers
              | WithAdversariesAndOneSchedulePerHonestPeer
-  deriving stock (Eq, Ord, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
+
+instance KeyType TestKey where
+  toKey = \case
+    WithNoAdversariesAndOneScheduleForAllPeers -> makeKey "WithNoAdversariesAndOneScheduleForAllPeers"
+    WithNoAdversariesAndOneSchedulePerHonestPeer -> makeKey "WithNoAdversariesAndOneSchedulePerHonestPeer"
+    WithAdversariesAndOneScheduleForAllPeers -> makeKey "WithAdversariesAndOneScheduleForAllPeers"
+    WithAdversariesAndOneSchedulePerHonestPeer -> makeKey "WithAdversariesAndOneSchedulePerHonestPeer"
 
 testSuite ::
   ( HasHeader blk
