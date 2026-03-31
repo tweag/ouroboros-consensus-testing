@@ -63,7 +63,7 @@ test_withOneAdversary ::
   , IssueTestBlock blk
   ) => ConformanceTest blk
 test_withOneAdversary =
-  mkConformanceTest "one adversary" adjustDesiredPasses id
+   mkConformanceTest "one adversary" (TestVersion 0) adjustDesiredPasses id
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)

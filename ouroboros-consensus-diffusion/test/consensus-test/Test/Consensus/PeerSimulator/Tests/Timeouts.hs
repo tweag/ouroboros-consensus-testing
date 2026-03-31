@@ -67,7 +67,7 @@ test_timeouts ::
   , Condense (Header blk)
   ) => String -> Bool -> ConformanceTest blk
 test_timeouts description mustTimeout =
-  mkConformanceTest description desiredPasses id
+  mkConformanceTest description (TestVersion 0) desiredPasses id
 
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)

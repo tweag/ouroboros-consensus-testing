@@ -11,6 +11,7 @@
 module Test.Consensus.Genesis.Setup (
     ConformanceTest (..)
   , module Test.Consensus.Genesis.Setup.GenChains
+  , TestVersion (..)
   , castHeaderHash
   , honestImmutableTip
   , mkConformanceTest
@@ -24,6 +25,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
 import           Control.Tracer (debugTracer, traceWith)
 import           Data.Maybe (mapMaybe)
+import           Data.Word (Word8)
 import           Ouroboros.Consensus.Block.Abstract (ChainHash (..),
                      ConvertRawHash, GetHeader, Header)
 import           Ouroboros.Consensus.Block.SupportsDiffusionPipelining
@@ -69,6 +71,11 @@ import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
 import           Test.Util.Tracer (recordingTracerM)
 import           Text.Printf (printf)
 
+-- | The version of a 'ConformanceTest'. Used to ensure that the serialized
+-- representation of a 'ConformanceTest' agrees with the version in code.
+newtype TestVersion = TestVersion Word8
+  deriving (Eq, Ord, Show)
+
 -- | Contains all necessary data to run a 'GenesisTest'.
 -- It is defined to reify the testing infrastructure for
 -- the conformance @testgen@ executable.
@@ -87,11 +94,19 @@ data ConformanceTest blk = ConformanceTest
     -- ^ Adjust the default test case maximum size.
   , ctDescription :: String
     -- ^ A description for the test.
+  , ctVersion :: TestVersion
+    -- ^ A version for the test. Since we serialize references to
+    -- 'ConformanceTest's, the version is used to ensure the test on disk is
+    -- cromulent with the current code. The version must be incremented every
+    -- time the generator, shrinker, or configuration is changed.
   }
 
 mkConformanceTest ::
   (Testable prop)
   => String  -- ^ Test description.
+  -> TestVersion
+  -- ^ Test version. Please increment this value every time the generator,
+  -- shrinker or configuration is changed.
   -> (Int -> Int) -- ^ Transformation of the default desired test passes/successes.
   -> (Int -> Int) -- ^ Transformation of the default max test size.
   -> Gen (GenesisTestFull blk) -- ^ Test generator.
@@ -99,7 +114,7 @@ mkConformanceTest ::
   -> (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) -- ^ Result inspecting shrinker.
   -> (GenesisTestFull blk -> StateView blk -> prop) -- ^ Property on test result.
   -> ConformanceTest blk
-mkConformanceTest ctDescription ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+mkConformanceTest ctDescription ctVersion ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest {..}
 

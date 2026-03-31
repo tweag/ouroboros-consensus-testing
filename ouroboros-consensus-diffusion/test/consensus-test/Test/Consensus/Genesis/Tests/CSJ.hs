@@ -134,7 +134,7 @@ test_csj description adversariesFlag numHonestSchedules =
       let genForks = case adversariesFlag of
                       NoAdversaries   -> pure 0
                       WithAdversaries -> choose (2, 4)
-      mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
+      mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
         ( disableBoringTimeouts <$> case numHonestSchedules of
             OneScheduleForAllPeers ->
               genChains genForks

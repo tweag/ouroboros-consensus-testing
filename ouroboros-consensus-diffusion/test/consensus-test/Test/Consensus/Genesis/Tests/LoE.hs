@@ -81,7 +81,7 @@ test_adversaryHitsTimeouts ::
   , IssueTestBlock blk
   ) => String -> Bool -> ConformanceTest blk
 test_adversaryHitsTimeouts description timeoutsEnabled =
-    mkConformanceTest description adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree
