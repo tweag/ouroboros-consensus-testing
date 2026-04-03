@@ -75,15 +75,15 @@ import           Test.Util.TersePrinting (terseHFragment, terseHWTFragment,
                      terseHeader)
 import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = TriggersChainSelection
@@ -104,10 +104,15 @@ testSuite = group "density disconnect" $ newTestSuite $ \case
 
 tests :: TestTree
 tests =
-  testGroup "gdd"
-    [ testProperty "basic" prop_densityDisconnectStatic
-    , testProperty "monotonicity" prop_densityDisconnectMonotonic
-    ]
+  let AdjustTestCount atc = adjustTestCount
+      AdjustMaxSize ams = adjustMaxSize
+   in adjustQuickCheckTests atc $
+        adjustQuickCheckMaxSize ams $
+          testGroup
+            "gdd"
+            [ testProperty "basic" prop_densityDisconnectStatic
+            , testProperty "monotonicity" prop_densityDisconnectMonotonic
+            ]
 
 branchTip :: AnchoredFragment TestBlock -> Tip TestBlock
 branchTip =
@@ -511,7 +516,8 @@ test_densityDisconnectTriggersChainSel ::
   , Ord blk
   ) => ConformanceTest blk
 test_densityDisconnectTriggersChainSel =
-  mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree

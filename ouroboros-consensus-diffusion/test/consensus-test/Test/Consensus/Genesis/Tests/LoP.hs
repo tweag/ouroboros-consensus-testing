@@ -39,15 +39,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WaitJustEnoughUntilEmpty
@@ -98,14 +98,14 @@ test_wait ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_wait description mustTimeout =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses
+  mkConformanceTest description (TestVersion 0) adjustTestCount
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
     -- significantly more time than the one that does. This is because the former
     -- does all the computation (serving the headers, validating them, serving the
     -- block, validating them) while the latter does nothing, because it timeouts
     -- before reaching the last tick of the point schedule.
-    (case mustTimeout of False -> adjustTestMaxSize; True -> id)
+    (case mustTimeout of False -> adjustMaxSize; True -> AdjustMaxSize id)
 
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
@@ -113,6 +113,7 @@ test_wait description mustTimeout =
             gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}
         pure $ gt' $> ps
     )
+
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
 
@@ -150,7 +151,8 @@ test_waitBehindForecastHorizon ::
   , Ord blk
   ) => ConformanceTest blk
 test_waitBehindForecastHorizon =
-  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustTestCound adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let ps = dullSchedule (btTrunk gtBlockTree)
@@ -204,7 +206,8 @@ test_serve ::
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
 test_serve description mustTimeout =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let lbpRate = borderlineRate (AF.length (btTrunk gtBlockTree))
@@ -265,7 +268,8 @@ test_delayAttack ::
   ) =>
   String -> Bool -> ConformanceTest blk
 test_delayAttack description lopEnabled =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}

@@ -34,10 +34,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (SchedulePoint (..),
 import           Test.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-desiredPasses :: Int -> Int
-desiredPasses = (`div` 2)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (`div` 2)
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
 
 data TestKey = CanRollback | CannotRollback
   deriving stock (Show, Eq, Ord, Generic)
@@ -68,7 +73,8 @@ test_rollback ::
   , Eq blk
   ) => ConformanceTest blk
 test_rollback =
-  mkConformanceTest "can rollback" (TestVersion 0) desiredPasses id
+  mkConformanceTest "can rollback" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do
         -- Create a block tree with @1@ alternative chain, such that we can rollback
         -- from the trunk to that chain.
@@ -96,7 +102,8 @@ test_cannotRollback ::
   , Eq blk
   ) => ConformanceTest blk
 test_cannotRollback =
-  mkConformanceTest "cannot rollback" (TestVersion 0) desiredPasses id
+  mkConformanceTest "cannot rollback" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do gt@GenesisTest{gtSecurityParam, gtBlockTree} <- genChains (pure 1)
         pure gt {gtSchedule = rollbackSchedule (fromIntegral (unNonZero $ maxRollbacks gtSecurityParam) + 1) gtBlockTree})
 

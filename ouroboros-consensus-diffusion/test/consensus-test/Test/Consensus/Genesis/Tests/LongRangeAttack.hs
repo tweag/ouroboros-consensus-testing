@@ -25,10 +25,15 @@ import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (`div` 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (`div` 10)
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WithOneAdversary
@@ -63,7 +68,8 @@ test_withOneAdversary ::
   , IssueTestBlock blk
   ) => ConformanceTest blk
 test_withOneAdversary =
-   mkConformanceTest "one adversary" (TestVersion 0) adjustDesiredPasses id
+   mkConformanceTest "one adversary" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)

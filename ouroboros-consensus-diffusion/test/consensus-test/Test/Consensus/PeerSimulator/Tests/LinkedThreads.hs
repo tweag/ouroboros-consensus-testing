@@ -33,6 +33,16 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleHeaderPoint,
                      scheduleTipPoint)
 import           Test.Util.Orphans.IOLike ()
 
+-- | Default adjustment of the required number of test runs.
+-- Can be set individually on each test definition.
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount id
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
+
 data TestKey = ChainSyncKillsBlockFetch
   deriving (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
@@ -60,7 +70,8 @@ test_chainSyncKillsBlockFetch ::
   , Eq blk
   ) => ConformanceTest blk
 test_chainSyncKillsBlockFetch =
-  mkConformanceTest "ChainSync kills BlockFetch" (TestVersion 0) id id
+  mkConformanceTest "ChainSync kills BlockFetch" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
     )

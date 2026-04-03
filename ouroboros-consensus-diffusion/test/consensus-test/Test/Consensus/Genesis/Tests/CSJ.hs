@@ -43,15 +43,15 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WithNoAdversariesAndOneScheduleForAllPeers
@@ -143,7 +143,8 @@ test_csj description adversariesFlag numHonestSchedules =
       let genForks = case adversariesFlag of
                       NoAdversaries   -> pure 0
                       WithAdversaries -> choose (2, 4)
-      mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+      mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
         ( disableBoringTimeouts <$> case numHonestSchedules of
             OneScheduleForAllPeers ->
               genChains genForks

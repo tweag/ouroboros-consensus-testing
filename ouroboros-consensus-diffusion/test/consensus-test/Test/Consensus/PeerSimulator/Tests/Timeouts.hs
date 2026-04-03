@@ -35,8 +35,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
 import           Test.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 
-desiredPasses :: Int -> Int
-desiredPasses = (`div` 10)
+-- | Default adjustment of the required number of test runs.
+-- Can be set individually on each test definition.
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (`div` 10)
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
 
 data TestKey = DoesTimeout
              | DoesNotTimeout
@@ -67,7 +74,7 @@ test_timeouts ::
   , Condense (Header blk)
   ) => String -> Bool -> ConformanceTest blk
 test_timeouts description mustTimeout =
-  mkConformanceTest description (TestVersion 0) desiredPasses id
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)

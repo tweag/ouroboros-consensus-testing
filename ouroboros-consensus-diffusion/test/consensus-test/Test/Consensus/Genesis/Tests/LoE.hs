@@ -33,15 +33,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = AdversaryDoesNotHitTimeouts
@@ -81,7 +81,8 @@ test_adversaryHitsTimeouts ::
   , IssueTestBlock blk
   ) => String -> Bool -> ConformanceTest blk
 test_adversaryHitsTimeouts description timeoutsEnabled =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
       ( do
           gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
           let ps = delaySchedule gtBlockTree

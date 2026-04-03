@@ -8,7 +8,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Genesis.Setup (
-    ConformanceTest (..)
+    AdjustMaxSize (..)
+  , AdjustTestCount (..)
+  , ConformanceTest (..)
   , module Test.Consensus.Genesis.Setup.GenChains
   , TestVersion (..)
   , castHeaderHash
@@ -87,9 +89,9 @@ data ConformanceTest blk = ConformanceTest
     -- ^ A shrinker allowed to inspect the output value of a test.
   , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to test.
-  , ctAdjustPasses   :: Int -> Int
+  , ctAdjustTestCount :: AdjustTestCount
     -- ^ Adjust the default number of test runs to check the property.
-  , ctAdjustMaxSize :: Int -> Int
+  , ctAdjustMaxSize :: AdjustMaxSize
     -- ^ Adjust the default test case maximum size.
   , ctDescription :: String
     -- ^ A description for the test.
@@ -100,17 +102,23 @@ data ConformanceTest blk = ConformanceTest
     -- time the generator, shrinker, or configuration is changed.
   }
 
+-- | A 'ConformanceTest' field type for the adjustment of required number of test runs.
+newtype AdjustTestCount = AdjustTestCount (Int -> Int)
+
+-- | A 'ConformanceTest' field type for maximum test case size adjustment.
+newtype AdjustMaxSize = AdjustMaxSize (Int -> Int)
+
 mkConformanceTest ::
   Testable prop =>
   -- | Test description.
   String ->
   -- | Test version. Please increment this value every time the generator,
   -- shrinker or configuration is changed.
-  TestVersion->
-  -- | Transformation of the default desired test passes/successes.
-  (Int -> Int) ->
-  -- | Transformation of the default max test size.
-  (Int -> Int) ->
+  TestVersion ->
+  -- | Adjustment of the default number of required test runs.
+  AdjustTestCount ->
+  -- | Adjustment of the default maximum test size.
+  AdjustMaxSize ->
   -- | Test generator.
   Gen (GenesisTestFull blk) ->
   -- | Peer simulator scheduler configuration.
@@ -120,11 +128,12 @@ mkConformanceTest ::
   -- | Property on test result.
   (GenesisTestFull blk -> StateView blk -> prop) ->
   ConformanceTest blk
-mkConformanceTest ctDescription ctVersion ctAdjustPasses ctAdjustMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+mkConformanceTest ctDescription ctVersion ctAdjustTestCount ctAdjustMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
    in ConformanceTest
         { ctDescription
-        , ctAdjustPasses
+        , ctVersion
+        , ctAdjustTestCount
         , ctAdjustMaxSize
         , ctGenerator
         , ctSchedulerConfig
@@ -161,8 +170,9 @@ runGenesisTest ::
   , Eq blk
   , Terse blk
   , Condense (NodeState blk)
-  )
-  => ProtocolInfoArgs blk -> SchedulerConfig ->
+  ) =>
+  ProtocolInfoArgs blk ->
+  SchedulerConfig ->
   GenesisTestFull blk ->
   RunGenesisTestResult blk
 runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
@@ -223,7 +233,7 @@ runConformanceTest ::
   ) =>
   ConformanceTest blk -> TestTree
 runConformanceTest conformanceTest =
-  adjustQuickCheckTests ctAdjustPasses . adjustQuickCheckMaxSize ctAdjustMaxSize $
+  adjustQuickCheckTests atc . adjustQuickCheckMaxSize ams $
     QC.testProperty ctDescription . idempotentIOProperty $ do
       protocolInfoArgs <- getProtocolInfoArgs
       pure $
@@ -253,8 +263,8 @@ runConformanceTest conformanceTest =
                   $ ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
  where
   ConformanceTest
-    { ctAdjustPasses
-    , ctAdjustMaxSize
+    { ctAdjustTestCount = AdjustTestCount atc
+    , ctAdjustMaxSize = AdjustMaxSize ams
     , ctDescription
     , ctGenerator
     , ctSchedulerConfig
