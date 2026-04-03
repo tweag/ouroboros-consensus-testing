@@ -63,17 +63,17 @@ testSuite ::
   , Condense (Header blk)
   ) => TestSuite blk TestKey
 testSuite = group "timeouts" . newTestSuite $ \case
-  DoesTimeout -> test_timeouts "does time out" True
-  DoesNotTimeout -> test_timeouts "does not time out" False
+  DoesTimeout -> testTimeouts "does time out" True
+  DoesNotTimeout -> testTimeouts "does not time out" False
 
-test_timeouts ::
+testTimeouts ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Condense (HeaderHash blk)
   , Condense (Header blk)
   ) => String -> Bool -> ConformanceTest blk
-test_timeouts description mustTimeout =
+testTimeouts description mustTimeout =
   mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)

@@ -61,9 +61,9 @@ testSuite ::
   ) => TestSuite blk TestKey
 testSuite = group "LoE" $ newTestSuite $ \case
   AdversaryDoesNotHitTimeouts ->
-    test_adversaryHitsTimeouts "adversary does not hit timeouts" False
+    testAdversaryHitsTimeouts "adversary does not hit timeouts" False
   AdversaryHitsTimeouts ->
-    test_adversaryHitsTimeouts "adversary hits timeouts" True
+    testAdversaryHitsTimeouts "adversary hits timeouts" True
 
 -- | Tests that the selection advances in presence of the LoE when a peer is
 -- killed by something that is not LoE-aware, eg. the timeouts. This test
@@ -74,13 +74,13 @@ testSuite = group "LoE" $ newTestSuite $ \case
 -- the case where timeouts are disabled, we check that we do in fact remain
 -- stuck at the intersection between trunk and other chain.
 --
--- NOTE: Same as 'LoP.prop_delayAttack' with timeouts instead of LoP.
-test_adversaryHitsTimeouts ::
+-- NOTE: Same as 'LoP.testDelayAttack' with timeouts instead of LoP.
+testAdversaryHitsTimeouts ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
   ) => String -> Bool -> ConformanceTest blk
-test_adversaryHitsTimeouts description timeoutsEnabled =
+testAdversaryHitsTimeouts description timeoutsEnabled =
   mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
 
       ( do
@@ -88,6 +88,7 @@ test_adversaryHitsTimeouts description timeoutsEnabled =
           let ps = delaySchedule gtBlockTree
           pure $ gt $> ps
       )
+
       -- NOTE: Crucially, there must be timeouts for this test.
       ( defaultSchedulerConfig
           { scEnableChainSyncTimeouts = timeoutsEnabled,

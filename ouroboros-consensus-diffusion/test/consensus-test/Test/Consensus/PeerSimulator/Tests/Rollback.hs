@@ -60,19 +60,19 @@ testSuite ::
   , Eq blk
   ) => TestSuite blk TestKey
 testSuite = group "rollback" . newTestSuite $ \case
-  CanRollback -> test_rollback
-  CannotRollback -> test_cannotRollback
+  CanRollback -> testRollback
+  CannotRollback -> testCannotRollback
 
 -- | Tests that the selection of the node under test
 -- changes branches when sent a rollback to a block no older than 'k' blocks
 -- before the current selection.
-test_rollback ::
+testRollback ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Eq blk
   ) => ConformanceTest blk
-test_rollback =
+testRollback =
   mkConformanceTest "can rollback" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do
@@ -95,13 +95,13 @@ test_rollback =
 -- | Tests that the selection of the node under test *does
 -- not* change branches when sent a rollback to a block strictly older than 'k'
 -- blocks before the current selection.
-test_cannotRollback ::
+testCannotRollback ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , AF.HasHeader (Header blk)
   , Eq blk
   ) => ConformanceTest blk
-test_cannotRollback =
+testCannotRollback =
   mkConformanceTest "cannot rollback" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do gt@GenesisTest{gtSecurityParam, gtBlockTree} <- genChains (pure 1)

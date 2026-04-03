@@ -53,7 +53,7 @@ testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
   -- attack but Genesis is not. This requires to first fix it as mentioned
   -- below.
-  WithOneAdversary -> test_withOneAdversary
+  WithOneAdversary -> testWithOneAdversary
 
 -- | This test case features a long-range attack with one adversary. The honest
 -- peer serves the block tree trunk, while the adversary serves its own chain,
@@ -61,13 +61,13 @@ testSuite = group "long range attack" $ newTestSuite $ \case
 -- The adversary serves the chain more rapidly than the honest peer. We check at
 -- the end that the selection is honest. This property does not hold with Praos,
 -- but should hold with Genesis.
-test_withOneAdversary ::
+testWithOneAdversary ::
    forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   ) => ConformanceTest blk
-test_withOneAdversary =
+testWithOneAdversary =
    mkConformanceTest "one adversary" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do

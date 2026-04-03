@@ -100,7 +100,7 @@ testSuite ::
   , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "density disconnect" $ newTestSuite $ \case
-  TriggersChainSelection -> test_densityDisconnectTriggersChainSel
+  TriggersChainSelection -> testDensityDisconnectTriggersChainSel
 
 tests :: TestTree
 tests =
@@ -510,12 +510,12 @@ prop_densityDisconnectMonotonic =
 -- | Tests that a GDD disconnection re-triggers chain selection, i.e. when the current
 -- selection is blocked by LoE, and the leashing adversary reveals it is not dense enough,
 -- it gets disconnected and then the selection progresses.
-test_densityDisconnectTriggersChainSel ::
+testDensityDisconnectTriggersChainSel ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_densityDisconnectTriggersChainSel =
+testDensityDisconnectTriggersChainSel =
   mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustTestCount adjustMaxSize
 
     ( do

@@ -77,13 +77,13 @@ testSuite ::
   , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "LoP" $ newTestSuite $ \case
-  WaitJustEnoughUntilEmpty -> test_wait "wait just enough" False
-  WaitTooMuchUntilEmpty -> test_wait "wait too much" True
-  WaitBehindForecastHorizon -> test_waitBehindForecastHorizon
-  ServeJustFastEnough -> test_serve "serve just fast enough" False
-  ServeTooSlow -> test_serve "serve too slow" True
-  DelayAttackSucceeds -> test_delayAttack "delaying attack succeeds without LoP" False
-  DelayAttackFails -> test_delayAttack "delaying attack fails with LoP" True
+  WaitJustEnoughUntilEmpty -> testWait "wait just enough" False
+  WaitTooMuchUntilEmpty -> testWait "wait too much" True
+  WaitBehindForecastHorizon -> testWaitBehindForecastHorizon
+  ServeJustFastEnough -> testServe "serve just fast enough" False
+  ServeTooSlow -> testServe "serve too slow" True
+  DelayAttackSucceeds -> testDelayAttack "delaying attack succeeds without LoP" False
+  DelayAttackFails -> testDelayAttack "delaying attack fails with LoP" True
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
 -- the block tree trunk and then does nothing. If the given boolean,
@@ -92,12 +92,12 @@ testSuite = group "LoP" $ newTestSuite $ \case
 -- client. If @mustTimeout@ is @False@, then we wait not quite as long, so the
 -- LoP bucket should not be empty at the end of the test and we should observe
 -- no exception in the ChainSync client.
-test_wait ::
+testWait ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
-test_wait description mustTimeout =
+testWait description mustTimeout =
   mkConformanceTest description (TestVersion 0) adjustTestCount
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
@@ -145,12 +145,12 @@ test_wait description mustTimeout =
 -- then be disabled and that, therefore, one could wait forever in this state.
 -- We disable the timeouts and check that, indeed, the ChainSync client observes
 -- no exception.
-test_waitBehindForecastHorizon ::
+testWaitBehindForecastHorizon ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_waitBehindForecastHorizon =
+testWaitBehindForecastHorizon =
   mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustTestCound adjustMaxSize
 
     ( do
@@ -200,12 +200,12 @@ test_waitBehindForecastHorizon =
 -- We will have two versions of this test: one where we serve the @n-1@th block
 -- but succumb before serving the @n@th block, and one where we do manage to
 -- serve the @n@th block, barely.
-test_serve ::
+testServe ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
-test_serve description mustTimeout =
+testServe description mustTimeout =
   mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
 
     ( do
@@ -259,15 +259,15 @@ test_serve description mustTimeout =
         psMinEndTime = Time 0
       }
 
--- | Same as 'Test.Consensus.Genesis.LoE.test_adversaryHitsTimeouts'
+-- | Same as 'Test.Consensus.Genesis.LoE.testAdversaryHitsTimeouts'
 -- with LoP instead of timeouts.
-test_delayAttack ::
+testDelayAttack ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
   ) =>
   String -> Bool -> ConformanceTest blk
-test_delayAttack description lopEnabled =
+testDelayAttack description lopEnabled =
   mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
 
     ( do

@@ -93,7 +93,7 @@ testSuite =
    in group "CSJ" $
         grouping groupName $
           newTestSuite $
-            \key -> uncurry (test_csj $ testDescription key) (keyToFlags key)
+            \key -> uncurry (testCsj $ testDescription key) (keyToFlags key)
 
 -- | A flag to indicate if properties are tested with adversarial peers
 data WithAdversariesFlag = NoAdversaries | WithAdversaries
@@ -123,7 +123,7 @@ data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
 -- jumpers takes its place and starts serving headers. This might lead to
 -- duplication of headers, but only in a window of @jumpSize@ slots near the tip
 -- of the chain.
-test_csj :: forall blk.
+testCsj :: forall blk.
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
@@ -131,7 +131,7 @@ test_csj :: forall blk.
   , Condense (Header blk)
   , Eq (Header blk)
   ) => String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> ConformanceTest blk
-test_csj description adversariesFlag numHonestSchedules =
+testCsj description adversariesFlag numHonestSchedules =
   -- TODO(isovector): unsafePerformIO is not the right tool here, but making
   -- this is a big change otherwise, and I want to verify that this approach
   -- works before doing all the plumbing. Thankfully, this is /effectively/
