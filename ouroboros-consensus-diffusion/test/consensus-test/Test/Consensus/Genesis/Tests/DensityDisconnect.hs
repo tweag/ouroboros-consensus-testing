@@ -74,6 +74,8 @@ import           Test.Util.PartialAccessors
 import           Test.Util.TersePrinting (terseHFragment, terseHWTFragment,
                      terseHeader)
 import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
+import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
+                     adjustQuickCheckTests)
 
 -- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.

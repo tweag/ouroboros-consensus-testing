@@ -151,7 +151,7 @@ testWaitBehindForecastHorizon ::
   , Ord blk
   ) => ConformanceTest blk
 testWaitBehindForecastHorizon =
-  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustTestCound adjustMaxSize
+  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustTestCount adjustMaxSize
 
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)

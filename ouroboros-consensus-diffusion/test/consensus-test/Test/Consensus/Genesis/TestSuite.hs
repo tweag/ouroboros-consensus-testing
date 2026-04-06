@@ -190,7 +190,7 @@ newTestSuite toConformanceTest =
 at :: Ord key => TestSuite blk key -> key ->  TestSuiteData blk
 at (TestSuite m) k = case Map.lookup k m of
   Just t  -> t
-  Nothing -> error "TestSuite.get: Impossible! A TestSuite is a total map."
+  Nothing -> error "TestSuite.at: Impossible! A TestSuite is a total map."
 
 getTest :: TestSuiteData blk ->  ConformanceTest blk
 getTest = tsTest
