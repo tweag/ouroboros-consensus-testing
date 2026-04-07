@@ -39,15 +39,15 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleBlockPoint,
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WaitJustEnoughUntilEmpty
@@ -77,13 +77,13 @@ testSuite ::
   , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "LoP" $ newTestSuite $ \case
-  WaitJustEnoughUntilEmpty -> test_wait "wait just enough" False
-  WaitTooMuchUntilEmpty -> test_wait "wait too much" True
-  WaitBehindForecastHorizon -> test_waitBehindForecastHorizon
-  ServeJustFastEnough -> test_serve "serve just fast enough" False
-  ServeTooSlow -> test_serve "serve too slow" True
-  DelayAttackSucceeds -> test_delayAttack "delaying attack succeeds without LoP" False
-  DelayAttackFails -> test_delayAttack "delaying attack fails with LoP" True
+  WaitJustEnoughUntilEmpty -> testWait "wait just enough" False
+  WaitTooMuchUntilEmpty -> testWait "wait too much" True
+  WaitBehindForecastHorizon -> testWaitBehindForecastHorizon
+  ServeJustFastEnough -> testServe "serve just fast enough" False
+  ServeTooSlow -> testServe "serve too slow" True
+  DelayAttackSucceeds -> testDelayAttack "delaying attack succeeds without LoP" False
+  DelayAttackFails -> testDelayAttack "delaying attack fails with LoP" True
 
 -- | Simple test in which we connect to only one peer, who advertises the tip of
 -- the block tree trunk and then does nothing. If the given boolean,
@@ -92,20 +92,20 @@ testSuite = group "LoP" $ newTestSuite $ \case
 -- client. If @mustTimeout@ is @False@, then we wait not quite as long, so the
 -- LoP bucket should not be empty at the end of the test and we should observe
 -- no exception in the ChainSync client.
-test_wait ::
+testWait ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
-test_wait description mustTimeout =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses
+testWait description mustTimeout =
+  mkConformanceTest description (TestVersion 0) adjustTestCount
 
     -- NOTE: Running the test that must _not_ timeout (@prop_smoke False@) takes
     -- significantly more time than the one that does. This is because the former
     -- does all the computation (serving the headers, validating them, serving the
     -- block, validating them) while the latter does nothing, because it timeouts
     -- before reaching the last tick of the point schedule.
-    (case mustTimeout of False -> adjustTestMaxSize; True -> id)
+    (case mustTimeout of False -> adjustMaxSize; True -> AdjustMaxSize id)
 
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
@@ -113,6 +113,7 @@ test_wait description mustTimeout =
             gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}
         pure $ gt' $> ps
     )
+
     -- NOTE: Crucially, there must not be timeouts for this test.
     (defaultSchedulerConfig {scEnableChainSyncTimeouts = False, scEnableLoP = True})
 
@@ -144,13 +145,14 @@ test_wait description mustTimeout =
 -- then be disabled and that, therefore, one could wait forever in this state.
 -- We disable the timeouts and check that, indeed, the ChainSync client observes
 -- no exception.
-test_waitBehindForecastHorizon ::
+testWaitBehindForecastHorizon ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_waitBehindForecastHorizon =
-  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testWaitBehindForecastHorizon =
+  mkConformanceTest "wait behind forecast horizon" (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let ps = dullSchedule (btTrunk gtBlockTree)
@@ -198,13 +200,14 @@ test_waitBehindForecastHorizon =
 -- We will have two versions of this test: one where we serve the @n-1@th block
 -- but succumb before serving the @n@th block, and one where we do manage to
 -- serve the @n@th block, barely.
-test_serve ::
+testServe ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => String -> Bool -> ConformanceTest blk
-test_serve description mustTimeout =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testServe description mustTimeout =
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 0)
         let lbpRate = borderlineRate (AF.length (btTrunk gtBlockTree))
@@ -256,16 +259,17 @@ test_serve description mustTimeout =
         psMinEndTime = Time 0
       }
 
--- | Same as 'Test.Consensus.Genesis.LoE.test_adversaryHitsTimeouts'
+-- | Same as 'Test.Consensus.Genesis.LoE.testAdversaryHitsTimeouts'
 -- with LoP instead of timeouts.
-test_delayAttack ::
+testDelayAttack ::
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
   ) =>
   String -> Bool -> ConformanceTest blk
-test_delayAttack description lopEnabled =
-  mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testDelayAttack description lopEnabled =
+  mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let gt' = gt {gtLoPBucketParams = LoPBucketParams {lbpCapacity = 10, lbpRate = 1}}

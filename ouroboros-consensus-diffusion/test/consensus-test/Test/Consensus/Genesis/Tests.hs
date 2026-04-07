@@ -25,8 +25,10 @@ import           Test.Tasty
 import           Test.Util.TestBlock (TestBlock)
 
 tests :: TestTree
-tests = testGroup "Genesis tests" $
-  [GDD.tests] <> toTestTree @TestBlock testSuite
+tests =
+  testGroup "Genesis tests" $
+    [GDD.tests] -- Tests with distinctive mechanisms, not (yet) integrated into a 'TestSuite'
+      <> toTestTree @TestBlock testSuite
 
 -- | Each value of this type uniquely corresponds to a Genesis test.
 data TestKey = Uniform !Uniform.TestKey

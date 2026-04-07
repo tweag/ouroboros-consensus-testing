@@ -74,16 +74,18 @@ import           Test.Util.PartialAccessors
 import           Test.Util.TersePrinting (terseHFragment, terseHWTFragment,
                      terseHeader)
 import           Test.Util.TestBlock (TestBlock, singleNodeTestConfig)
+import           Test.Util.TestEnv (adjustQuickCheckMaxSize,
+                     adjustQuickCheckTests)
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = TriggersChainSelection
@@ -100,14 +102,19 @@ testSuite ::
   , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "density disconnect" $ newTestSuite $ \case
-  TriggersChainSelection -> test_densityDisconnectTriggersChainSel
+  TriggersChainSelection -> testDensityDisconnectTriggersChainSel
 
 tests :: TestTree
 tests =
-  testGroup "density disconnect"
-    [ testProperty "basic" prop_densityDisconnectStatic
-    , testProperty "monotonicity" prop_densityDisconnectMonotonic
-    ]
+  let AdjustTestCount atc = adjustTestCount
+      AdjustMaxSize ams = adjustMaxSize
+   in adjustQuickCheckTests atc $
+        adjustQuickCheckMaxSize ams $
+          testGroup
+            "gdd"
+            [ testProperty "basic" prop_densityDisconnectStatic
+            , testProperty "monotonicity" prop_densityDisconnectMonotonic
+            ]
 
 branchTip :: AnchoredFragment TestBlock -> Tip TestBlock
 branchTip =
@@ -505,13 +512,14 @@ prop_densityDisconnectMonotonic =
 -- | Tests that a GDD disconnection re-triggers chain selection, i.e. when the current
 -- selection is blocked by LoE, and the leashing adversary reveals it is not dense enough,
 -- it gets disconnected and then the selection progresses.
-test_densityDisconnectTriggersChainSel ::
+testDensityDisconnectTriggersChainSel ::
   ( HasHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_densityDisconnectTriggersChainSel =
-  mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testDensityDisconnectTriggersChainSel =
+  mkConformanceTest "re-triggers chain selection on disconnection" (TestVersion 0) adjustTestCount adjustMaxSize
+
     ( do
         gt@GenesisTest {gtBlockTree} <- genChains (pure 1)
         let ps = lowDensitySchedule gtBlockTree

@@ -43,15 +43,15 @@ import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.PartialAccessors
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WithNoAdversariesAndOneScheduleForAllPeers
@@ -75,16 +75,25 @@ testSuite ::
   , Ord blk
   , Condense (Header blk)
   , Eq (Header blk)
-  ) => TestSuite blk TestKey
-testSuite = group "CSJ" $ newTestSuite $ \case
-  WithNoAdversariesAndOneScheduleForAllPeers ->
-    test_csj "adversary free: honest peers are synchronised" NoAdversaries OneScheduleForAllPeers
-  WithNoAdversariesAndOneSchedulePerHonestPeer ->
-    test_csj "adversary free: peers do their own thing" NoAdversaries OneSchedulePerHonestPeer
-  WithAdversariesAndOneScheduleForAllPeers ->
-    test_csj "with some adversaries: honest peers are synchronised" WithAdversaries OneScheduleForAllPeers
-  WithAdversariesAndOneSchedulePerHonestPeer ->
-    test_csj "with some adversaries: honest peers do their own thing" WithAdversaries OneSchedulePerHonestPeer
+  ) =>
+  TestSuite blk TestKey
+testSuite =
+  let keyToFlags :: TestKey -> (WithAdversariesFlag, NumHonestSchedulesFlag)
+      keyToFlags = \case
+        WithNoAdversariesAndOneScheduleForAllPeers -> (NoAdversaries, OneScheduleForAllPeers)
+        WithNoAdversariesAndOneSchedulePerHonestPeer -> (NoAdversaries, OneSchedulePerHonestPeer)
+        WithAdversariesAndOneScheduleForAllPeers -> (WithAdversaries, OneScheduleForAllPeers)
+        WithAdversariesAndOneSchedulePerHonestPeer -> (WithAdversaries, OneSchedulePerHonestPeer)
+      groupName key = case fst (keyToFlags key) of
+        NoAdversaries   -> "Happy path"
+        WithAdversaries -> "With some adversaries"
+      testDescription key = case snd (keyToFlags key) of
+        OneScheduleForAllPeers   -> "honest peers are synchronised"
+        OneSchedulePerHonestPeer -> "honest peers do their own thing"
+   in group "CSJ" $
+        grouping groupName $
+          newTestSuite $
+            \key -> uncurry (testCsj $ testDescription key) (keyToFlags key)
 
 -- | A flag to indicate if properties are tested with adversarial peers
 data WithAdversariesFlag = NoAdversaries | WithAdversaries
@@ -114,7 +123,7 @@ data NumHonestSchedulesFlag = OneScheduleForAllPeers | OneSchedulePerHonestPeer
 -- jumpers takes its place and starts serving headers. This might lead to
 -- duplication of headers, but only in a window of @jumpSize@ slots near the tip
 -- of the chain.
-test_csj :: forall blk.
+testCsj :: forall blk.
   ( HasHeader blk
   , HasHeader (Header blk)
   , IssueTestBlock blk
@@ -122,7 +131,7 @@ test_csj :: forall blk.
   , Condense (Header blk)
   , Eq (Header blk)
   ) => String -> WithAdversariesFlag -> NumHonestSchedulesFlag -> ConformanceTest blk
-test_csj description adversariesFlag numHonestSchedules =
+testCsj description adversariesFlag numHonestSchedules =
   -- TODO(isovector): unsafePerformIO is not the right tool here, but making
   -- this is a big change otherwise, and I want to verify that this approach
   -- works before doing all the plumbing. Thankfully, this is /effectively/
@@ -134,7 +143,8 @@ test_csj description adversariesFlag numHonestSchedules =
       let genForks = case adversariesFlag of
                       NoAdversaries   -> pure 0
                       WithAdversaries -> choose (2, 4)
-      mkConformanceTest description (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+      mkConformanceTest description (TestVersion 0) adjustTestCount adjustMaxSize
+
         ( disableBoringTimeouts <$> case numHonestSchedules of
             OneScheduleForAllPeers ->
               genChains genForks

@@ -158,7 +158,7 @@ genTestBlockTreeWithPointSchedule branchFactor = do
   pure (gtBlockTree genesisTest, schedule)
 
 genKey :: (SmallKey k) => QC.Gen k
-genKey = QC.elements allKeys
+genKey = QC.elements getAllKeys
 
 shrinkBlockTree :: (HasHeader blk) => BlockTree blk -> [BlockTree blk]
 shrinkBlockTree (BlockTree trunk branches) = mconcat

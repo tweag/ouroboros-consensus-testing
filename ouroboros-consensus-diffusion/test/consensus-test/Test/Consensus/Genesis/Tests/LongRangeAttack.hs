@@ -25,10 +25,15 @@ import qualified Test.Consensus.PointSchedule as Schedule
 import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.IOLike ()
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (`div` 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (`div` 10)
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = WithOneAdversary
@@ -48,7 +53,7 @@ testSuite = group "long range attack" $ newTestSuite $ \case
   -- NOTE: We want to keep this test to show that Praos is vulnerable to this
   -- attack but Genesis is not. This requires to first fix it as mentioned
   -- below.
-  WithOneAdversary -> test_withOneAdversary
+  WithOneAdversary -> testWithOneAdversary
 
 -- | This test case features a long-range attack with one adversary. The honest
 -- peer serves the block tree trunk, while the adversary serves its own chain,
@@ -56,14 +61,15 @@ testSuite = group "long range attack" $ newTestSuite $ \case
 -- The adversary serves the chain more rapidly than the honest peer. We check at
 -- the end that the selection is honest. This property does not hold with Praos,
 -- but should hold with Genesis.
-test_withOneAdversary ::
+testWithOneAdversary ::
    forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   ) => ConformanceTest blk
-test_withOneAdversary =
-   mkConformanceTest "one adversary" (TestVersion 0) adjustDesiredPasses id
+testWithOneAdversary =
+   mkConformanceTest "one adversary" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do
         -- Create a block tree with @1@ alternative chain.
         gt@GenesisTest{gtBlockTree} <- genChains (pure 1)

@@ -25,9 +25,9 @@ tests :: TestTree
 tests = testGroup "PeerSimulator" $ toTestTree @TestBlock testSuite
 
 -- | Each value of this type uniquely corresponds to a basic functionality test.
-data TestKey = LinkedThreads LinkedThreads.TestKey
-             | Rollback Rollback.TestKey
-             | Timeouts Timeouts.TestKey
+data TestKey = LinkedThreads !LinkedThreads.TestKey
+             | Rollback !Rollback.TestKey
+             | Timeouts !Timeouts.TestKey
   deriving stock (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
 

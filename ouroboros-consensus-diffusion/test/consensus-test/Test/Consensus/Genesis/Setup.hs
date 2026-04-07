@@ -5,11 +5,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Genesis.Setup (
-    ConformanceTest (..)
+    AdjustMaxSize (..)
+  , AdjustTestCount (..)
+  , ConformanceTest (..)
   , module Test.Consensus.Genesis.Setup.GenChains
   , TestVersion (..)
   , castHeaderHash
@@ -88,9 +89,9 @@ data ConformanceTest blk = ConformanceTest
     -- ^ A shrinker allowed to inspect the output value of a test.
   , ctProperty        :: GenesisTestFull blk -> StateView blk -> Property
     -- ^ The property to test.
-  , ctDesiredPasses   :: Int -> Int
+  , ctAdjustTestCount :: AdjustTestCount
     -- ^ Adjust the default number of test runs to check the property.
-  , ctMaxSize :: Int -> Int
+  , ctAdjustMaxSize :: AdjustMaxSize
     -- ^ Adjust the default test case maximum size.
   , ctDescription :: String
     -- ^ A description for the test.
@@ -101,22 +102,44 @@ data ConformanceTest blk = ConformanceTest
     -- time the generator, shrinker, or configuration is changed.
   }
 
+-- | A 'ConformanceTest' field type for the adjustment of required number of test runs.
+newtype AdjustTestCount = AdjustTestCount (Int -> Int)
+
+-- | A 'ConformanceTest' field type for maximum test case size adjustment.
+newtype AdjustMaxSize = AdjustMaxSize (Int -> Int)
+
 mkConformanceTest ::
-  (Testable prop)
-  => String  -- ^ Test description.
-  -> TestVersion
-  -- ^ Test version. Please increment this value every time the generator,
+  Testable prop =>
+  -- | Test description.
+  String ->
+  -- | Test version. Please increment this value every time the generator,
   -- shrinker or configuration is changed.
-  -> (Int -> Int) -- ^ Transformation of the default desired test passes/successes.
-  -> (Int -> Int) -- ^ Transformation of the default max test size.
-  -> Gen (GenesisTestFull blk) -- ^ Test generator.
-  -> SchedulerConfig -- ^ Peer simulator scheduler configuration.
-  -> (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) -- ^ Result inspecting shrinker.
-  -> (GenesisTestFull blk -> StateView blk -> prop) -- ^ Property on test result.
-  -> ConformanceTest blk
-mkConformanceTest ctDescription ctVersion ctDesiredPasses ctMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
+  TestVersion ->
+  -- | Adjustment of the default number of required test runs.
+  AdjustTestCount ->
+  -- | Adjustment of the default maximum test size.
+  AdjustMaxSize ->
+  -- | Test generator.
+  Gen (GenesisTestFull blk) ->
+  -- | Peer simulator scheduler configuration.
+  SchedulerConfig ->
+  -- | Result inspecting shrinker.
+  (GenesisTestFull blk -> StateView blk -> [GenesisTestFull blk]) ->
+  -- | Property on test result.
+  (GenesisTestFull blk -> StateView blk -> prop) ->
+  ConformanceTest blk
+mkConformanceTest ctDescription ctVersion ctAdjustTestCount ctAdjustMaxSize ctGenerator ctSchedulerConfig ctShrinker mkProperty =
   let ctProperty = fmap property . mkProperty
-   in ConformanceTest {..}
+   in ConformanceTest
+        { ctDescription
+        , ctVersion
+        , ctAdjustTestCount
+        , ctAdjustMaxSize
+        , ctGenerator
+        , ctSchedulerConfig
+        , ctShrinker
+        , ctProperty
+        }
 
 -- | Like 'runSimStrictShutdown' but fail when the main thread terminates if
 -- there are other threads still running or blocked. If one is trying to follow
@@ -147,8 +170,9 @@ runGenesisTest ::
   , Eq blk
   , Terse blk
   , Condense (NodeState blk)
-  )
-  => ProtocolInfoArgs blk -> SchedulerConfig ->
+  ) =>
+  ProtocolInfoArgs blk ->
+  SchedulerConfig ->
   GenesisTestFull blk ->
   RunGenesisTestResult blk
 runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
@@ -167,6 +191,11 @@ runGenesisTest protocolInfoArgs schedulerConfig genesisTest =
 -- | Variant of 'runGenesisTest' that also takes a property on the final
 -- 'StateView' and returns a QuickCheck property. The trace is printed in case
 -- of counter-example.
+-- TODO: This function was unused before the introduction of 'ConformanceTest';
+-- we should decide if its worth keeping around. When testing other
+-- implementations of the protocol (via the Conformance Testing of Consensus
+-- harness) we won't have a 'StateView' to check properties on. However, it seems
+-- plausible this functionality could be leveraged for internal testing purposes.
 _runGenesisTest' ::
   Testable prop =>
   SchedulerConfig ->
@@ -182,7 +211,8 @@ _runGenesisTest' schedulerConfig genesisTest makeProperty = idempotentIOProperty
 -- | All-in-one helper that generates a 'GenesisTest' and a 'Peers
 -- PeerSchedule' from a 'ConformanceTest', runs them with 'runGenesisTest',
 -- and checks whether the given property holds on the resulting 'StateView'.
-runConformanceTest :: forall blk.
+runConformanceTest ::
+  forall blk.
   ( Condense (StateView blk)
   , CondenseList (NodeState blk)
   , ShowProxy blk
@@ -202,49 +232,66 @@ runConformanceTest :: forall blk.
   , Condense (NodeState blk)
   ) =>
   ConformanceTest blk -> TestTree
-runConformanceTest ConformanceTest {..} =
-  adjustQuickCheckTests ctDesiredPasses $
-  adjustQuickCheckMaxSize ctMaxSize $
-  QC.testProperty ctDescription $ idempotentIOProperty $ do
-    protocolInfoArgs <- getProtocolInfoArgs
-    pure $ forAllGenRunShrinkCheck ctGenerator (runGenesisTest protocolInfoArgs ctSchedulerConfig) shrinker' $ \genesisTest result ->
-      let cls = classifiers genesisTest
-          resCls = resultClassifiers genesisTest result
-          schCls = scheduleClassifiers genesisTest
-          stateView = rgtrStateView result
-      in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection" $
-          classify (allAdversariesForecastable cls) "All adversaries have at least 1 forecastable block after intersection" $
-          classify (allAdversariesKPlus1InForecast cls) "All adversaries have k+1 blocks in forecast window after intersection" $
-          classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection" $
-          classify (adversaryRollback schCls) "An adversary did a rollback" $
-          classify (honestRollback schCls) "The honest peer did a rollback" $
-          classify (allAdversariesEmpty schCls) "All adversaries have empty schedules" $
-          classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules" $
-          tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls] $
-          tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls] $
-          tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls] $
-          tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls] $
-          counterexample (rgtrTrace result) $
-          ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
-  where
-    shrinker' gt = ctShrinker gt . rgtrStateView
-    hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
-      conjoin $ isExpectedException <$> mapMaybe
-        (pscrToException . pseResult)
-        svPeerSimulatorResults
-    isExpectedException exn
-      | Just EmptyBucket           <- e = true
-      | Just DensityTooLow         <- e = true
-      | Just (ExceededTimeLimit _) <- e = true
-      | Just AsyncCancelled        <- e = true
-      | Just CandidateTooSparse{}  <- e = true
-      | otherwise = counterexample
-        ("Encountered unexpected exception: " ++ show exn)
-        False
-      where
-        e :: (Exception e) => Maybe e
-        e = fromException exn
-        true = property True
+runConformanceTest conformanceTest =
+  adjustQuickCheckTests atc . adjustQuickCheckMaxSize ams $
+    QC.testProperty ctDescription . idempotentIOProperty $ do
+      protocolInfoArgs <- getProtocolInfoArgs
+      pure $
+        forAllGenRunShrinkCheck ctGenerator (runGenesisTest protocolInfoArgs ctSchedulerConfig) shrinker' $
+          \genesisTest result ->
+            let cls = classifiers genesisTest
+                resCls = resultClassifiers genesisTest result
+                schCls = scheduleClassifiers genesisTest
+                stateView = rgtrStateView result
+             in classify (allAdversariesSelectable cls) "All adversaries have more than k blocks after intersection"
+                  $ classify
+                    (allAdversariesForecastable cls)
+                    "All adversaries have at least 1 forecastable block after intersection"
+                  $ classify
+                    (allAdversariesKPlus1InForecast cls)
+                    "All adversaries have k+1 blocks in forecast window after intersection"
+                  $ classify (genesisWindowAfterIntersection cls) "Full genesis window after intersection"
+                  $ classify (adversaryRollback schCls) "An adversary did a rollback"
+                  $ classify (honestRollback schCls) "The honest peer did a rollback"
+                  $ classify (allAdversariesEmpty schCls) "All adversaries have empty schedules"
+                  $ classify (allAdversariesTrivial schCls) "All adversaries have trivial schedules"
+                  $ tabulate "Adversaries killed by LoP" [printf "%.1f%%" $ adversariesKilledByLoP resCls]
+                  $ tabulate "Adversaries killed by GDD" [printf "%.1f%%" $ adversariesKilledByGDD resCls]
+                  $ tabulate "Adversaries killed by Timeout" [printf "%.1f%%" $ adversariesKilledByTimeout resCls]
+                  $ tabulate "Surviving adversaries" [printf "%.1f%%" $ adversariesSurvived resCls]
+                  $ counterexample (rgtrTrace result)
+                  $ ctProperty genesisTest stateView .&&. hasOnlyExpectedExceptions stateView
+ where
+  ConformanceTest
+    { ctAdjustTestCount = AdjustTestCount atc
+    , ctAdjustMaxSize = AdjustMaxSize ams
+    , ctDescription
+    , ctGenerator
+    , ctSchedulerConfig
+    , ctShrinker
+    , ctProperty
+    } = conformanceTest
+  shrinker' gt = ctShrinker gt . rgtrStateView
+  hasOnlyExpectedExceptions StateView{svPeerSimulatorResults} =
+    conjoin $
+      isExpectedException
+        <$> mapMaybe
+          (pscrToException . pseResult)
+          svPeerSimulatorResults
+  isExpectedException exn
+    | Just EmptyBucket <- e = true
+    | Just DensityTooLow <- e = true
+    | Just (ExceededTimeLimit _) <- e = true
+    | Just AsyncCancelled <- e = true
+    | Just CandidateTooSparse{} <- e = true
+    | otherwise =
+        counterexample
+          ("Encountered unexpected exception: " ++ show exn)
+          False
+   where
+    e :: Exception e => Maybe e
+    e = fromException exn
+    true = property True
 
 -- | The 'StateView.svSelectedChain' produces an 'AnchoredFragment (Header blk)';
 -- this function casts this type's hash to its instance, so that it can be used

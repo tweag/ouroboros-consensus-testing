@@ -62,15 +62,15 @@ import           Test.Util.PartialAccessors
 import           Test.Util.QuickCheck (le)
 import           Text.Printf (printf)
 
--- | Default adjustment of required property test passes.
+-- | Default adjustment of the required number of test runs.
 -- Can be set individually on each test definition.
-adjustDesiredPasses :: Int -> Int
-adjustDesiredPasses = (* 10)
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount (* 10)
 
 -- | Default adjustment of max test case size.
 -- Can be set individually on each test definition.
-adjustTestMaxSize :: Int -> Int
-adjustTestMaxSize = (`div` 5)
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize (`div` 5)
 
 -- | Each value of this type uniquely corresponds to a test defined in this module.
 data TestKey = BlockFetchLeashingAttack
@@ -98,12 +98,12 @@ testSuite ::
   , Ord blk
   ) => TestSuite blk TestKey
 testSuite = group "uniform" $ newTestSuite $ \case
-    BlockFetchLeashingAttack -> test_blockFetchLeashingAttack
-    Downtime -> test_downtime
-    LeashingAttackStalling -> test_leashingAttackStalling
-    LeashingAttackTimeLimited -> test_leashingAttackTimeLimited
-    LoeStalling -> test_loeStalling
-    ServeAdversarialBranches -> test_serveAdversarialBranches
+    BlockFetchLeashingAttack -> testBlockFetchLeashingAttack
+    Downtime -> testDowntime
+    LeashingAttackStalling -> testLeashingAttackStalling
+    LeashingAttackTimeLimited -> testLeashingAttackTimeLimited
+    LoeStalling -> testLoeStalling
+    ServeAdversarialBranches -> testServeAdversarialBranches
 
 -- | The conjunction of
 --
@@ -169,14 +169,14 @@ fromBlockPoint _                                      = Nothing
 
 -- | Tests that the immutable tip is not delayed and stays honest with the
 -- adversarial peers serving adversarial branches.
-test_serveAdversarialBranches ::
+testServeAdversarialBranches ::
   ( AF.HasHeader blk
   , GetHeader blk
   , Ord blk
   , IssueTestBlock blk
   ) => ConformanceTest blk
-test_serveAdversarialBranches =
-  mkConformanceTest "serve adversarial branches" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testServeAdversarialBranches =
+  mkConformanceTest "serve adversarial branches" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genUniformSchedulePoints)
 
@@ -237,14 +237,14 @@ genUniformSchedulePoints gt = stToGen (uniformPoints pointsGeneratorParams (gtBl
 -- | Test that the leashing attacks do not delay the immutable tip.
 --
 -- See Note [Leashing attacks]
-test_leashingAttackStalling :: forall blk.
+testLeashingAttackStalling :: forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_leashingAttackStalling =
-  mkConformanceTest "stalling leashing attack" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testLeashingAttackStalling =
+  mkConformanceTest "stalling leashing attack" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genLeashingSchedule)
 
@@ -290,14 +290,14 @@ dropRandomPoints ps = do
 -- all of its ticks.
 --
 -- See Note [Leashing attacks]
-test_leashingAttackTimeLimited :: forall blk.
+testLeashingAttackTimeLimited :: forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_leashingAttackTimeLimited =
-  mkConformanceTest "time limited leashing attack" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testLeashingAttackTimeLimited =
+  mkConformanceTest "time limited leashing attack" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (genChains (QC.choose (1, 4)) `enrichedWith` genTimeLimitedSchedule)
 
@@ -380,14 +380,14 @@ headCallStack = \case
 
 -- | Test that enabling the LoE causes the selection to remain at
 -- the first fork intersection (keeping the immutable tip honest).
-test_loeStalling :: forall blk.
+testLoeStalling :: forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_loeStalling =
-  mkConformanceTest "the LoE stalls the chain, but the immutable tip is honest" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testLoeStalling =
+  mkConformanceTest "the LoE stalls the chain, but the immutable tip is honest" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (do gt <- genChains (QC.choose (1, 4))
                 `enrichedWith`
@@ -425,14 +425,16 @@ test_loeStalling =
 -- is greater than 11 seconds, and restarts it while only preserving the immutable DB after advancing the time.
 --
 -- This ensures that a user may shut down their machine while syncing without additional vulnerabilities.
-test_downtime ::
+testDowntime ::
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_downtime =
-  mkConformanceTest "the node is shut down and restarted after some time" (TestVersion 0) adjustDesiredPasses (adjustTestMaxSize . const 10)
+testDowntime =
+  mkConformanceTest "the node is shut down and restarted after some time" (TestVersion 0) adjustTestCount
+
+    (let AdjustMaxSize ams = adjustMaxSize in AdjustMaxSize $ ams . const 10)
 
     (genChains (QC.choose (1, 4)) `enrichedWith` \ gt ->
       ensureScheduleDuration gt <$> stToGen (uniformPoints (pointsGeneratorParams gt) (gtBlockTree gt)))
@@ -469,14 +471,14 @@ test_downtime =
 -- make progress.
 --
 -- See Note [Leashing attacks]
-test_blockFetchLeashingAttack :: forall blk.
+testBlockFetchLeashingAttack :: forall blk.
   ( AF.HasHeader blk
   , GetHeader blk
   , IssueTestBlock blk
   , Ord blk
   ) => ConformanceTest blk
-test_blockFetchLeashingAttack =
-  mkConformanceTest "block fetch leashing attack" (TestVersion 0) adjustDesiredPasses adjustTestMaxSize
+testBlockFetchLeashingAttack =
+  mkConformanceTest "block fetch leashing attack" (TestVersion 0) adjustTestCount adjustMaxSize
 
     (genChains (pure 0) `enrichedWith` genBlockFetchLeashingSchedule)
 

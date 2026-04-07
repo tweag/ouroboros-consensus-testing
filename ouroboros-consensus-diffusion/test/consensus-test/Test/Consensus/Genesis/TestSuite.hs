@@ -24,6 +24,7 @@ module Test.Consensus.Genesis.TestSuite (
   , at
   , getTest
   , group
+  , grouping
   , mkTestSuite
   , newTestSuite
   , suiteKeys
@@ -63,7 +64,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense, CondenseList)
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 import           Test.Consensus.Genesis.Setup (ConformanceTest (..),
                      runConformanceTest)
-import           Test.Consensus.Genesis.TestSuite.SmallKey (SmallKey (..))
+import           Test.Consensus.Genesis.TestSuite.SmallKey
 import           Test.Consensus.PeerSimulator.StateView (StateView)
 import           Test.Consensus.PointSchedule (HasPointScheduleTestParams)
 import           Test.Consensus.PointSchedule.NodeState (NodeState)
@@ -101,7 +102,7 @@ toJSONKeyType = toJSON . toKey
 parseJSONKeyType :: (KeyType key, SmallKey key) => Value -> Aeson.Parser key
 parseJSONKeyType v = do
   key <- parseJSON v
-  case filter (\k -> toKey k == key) allKeys of
+  case filter (\k -> toKey k == key) getAllKeys of
     [k] -> pure k
     []  -> fail $ "parseJSONKeyType: unknown key " <> renderKeyName key
     _   -> fail $ "parseJSONKeyType: ambiguous key " <> renderKeyName key
@@ -151,7 +152,7 @@ mkTestSuite :: (Ord key, SmallKey key)
                  => (key -> TestSuiteData blk)
                  -> TestSuite blk key
 mkTestSuite toData =
-  TestSuite . Map.fromList . fmap ((,) <$> id <*> toData) $ allKeys
+  TestSuite . Map.fromList . fmap ((,) <$> id <*> toData) $ getAllKeys
 
 -- | Build a 'TestSuite' from a function mapping a @key@ type to 'ConformanceTest'
 -- making all tests top-level.
@@ -171,37 +172,50 @@ newTestSuite toConformanceTest =
 --
 -- NOTE [DeriveSmallKey]
 -- The 'SmallKey' constraint on 'TestSuite' @key@s is meant to be derived
--- 'via Generically' only; because of this, some its class methods are not
+-- @via Generically@ only; because of this, some its class methods are not
 -- exported to prevent users of this class from instantiating it for large
 -- finite data types (such as 'Int' or 'Word32'), which are likely to flood the
 -- memory when constructing a 'TestSuite' because 'allKeys' are used
 -- operationally to drive its exhaustive construction. As precaution, product
--- and syntactically-recursive types are forbidden from instanciating it and some
--- large types have been explicitly black-listed.
+-- and syntactically-recursive types are forbidden from instanciating it and
+-- some large types have been explicitly black-listed.
 --
 -- The rationale behind the enforced restrictions is that @keys@ are expected
--- to be constructed primarily from user defined sum types of nullary
--- constructors corresponding to single test properties.
+-- to be constructed /primarily/ from user defined enumeration types (i.e.
+-- coproducts of nullary constructors) corresponding to single tests
+-- module wise, but this is not a hard requirement. For instance, keys can be
+-- aggregated into higher order types to define hierarchical 'TestSuite's
+-- by means of 'mkTestSuite' and 'at'.
 
 at :: Ord key => TestSuite blk key -> key ->  TestSuiteData blk
 at (TestSuite m) k = case Map.lookup k m of
   Just t  -> t
-  Nothing -> error "TestSuite.get: Impossible! A TestSuite is a total map."
+  Nothing -> error "TestSuite.at: Impossible! A TestSuite is a total map."
 
 getTest :: TestSuiteData blk ->  ConformanceTest blk
 getTest = tsTest
 
--- | Appends the given string to the prefix of all tests.
+-- | Appends the given string to the prefix of all tests in the 'TestSuite',
+-- effectively grouping them on a `TestTree` of the given name when compiled.
 group :: String -> TestSuite blk key -> TestSuite blk key
-group pfs (TestSuite m) = TestSuite $
-  Map.map (\testData ->
-             testData {tsPrefix = pfs : tsPrefix testData}) m
+group name = grouping (const name)
+
+-- | A more general version of 'group' that allows to group tests by a key
+-- specific prefix.
+grouping :: (key -> String) -> TestSuite blk key -> TestSuite blk key
+grouping f (TestSuite m) =
+  TestSuite $
+    Map.mapWithKey
+      (\k testData -> testData{tsPrefix = f k : tsPrefix testData})
+      m
 
 -- | Produce the list of test keys contained in a 'TestSuite'.
 suiteKeys :: TestSuite blk key -> [key]
 suiteKeys (TestSuite m) = Map.keys m
 
--- * Compile 'TestSuite' into a 'TestTree'
+{-------------------------------------------------------------------------------
+   Compile a TestSuite into a TestTree
+-------------------------------------------------------------------------------}
 
 -- | Intermediary representation for a 'TestSuite' to be compiled into a 'TestTree'.
 data TestTrie = TestTrie

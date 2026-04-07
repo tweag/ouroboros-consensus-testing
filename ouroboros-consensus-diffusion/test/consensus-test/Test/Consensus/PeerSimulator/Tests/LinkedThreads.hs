@@ -33,6 +33,16 @@ import           Test.Consensus.PointSchedule.SinglePeer (scheduleHeaderPoint,
                      scheduleTipPoint)
 import           Test.Util.Orphans.IOLike ()
 
+-- | Default adjustment of the required number of test runs.
+-- Can be set individually on each test definition.
+adjustTestCount :: AdjustTestCount
+adjustTestCount = AdjustTestCount id
+
+-- | Default adjustment of max test case size.
+-- Can be set individually on each test definition.
+adjustMaxSize :: AdjustMaxSize
+adjustMaxSize = AdjustMaxSize id
+
 data TestKey = ChainSyncKillsBlockFetch
   deriving (Show, Eq, Ord, Generic)
   deriving SmallKey via Generically TestKey
@@ -47,20 +57,21 @@ testSuite ::
   , Eq blk
   ) => TestSuite blk TestKey
 testSuite = group "ChainSync kills BlockFetch" . newTestSuite $ \case
-  ChainSyncKillsBlockFetch -> test_chainSyncKillsBlockFetch
+  ChainSyncKillsBlockFetch -> testChainSyncKillsBlockFetch
 
 -- | Check that when the scheduled ChainSync server gets killed, it takes the
 -- BlockFetch one with it. For this, we rely on ChainSync timeouts: the
 -- ChainSync server serves just one header and then waits long enough to get
 -- disconnected. After that, we give a tick for the BlockFetch server to serve
 -- the corresponding block. We check that the block is not served.
-test_chainSyncKillsBlockFetch ::
+testChainSyncKillsBlockFetch ::
   ( IssueTestBlock blk
   , AF.HasHeader blk
   , Eq blk
   ) => ConformanceTest blk
-test_chainSyncKillsBlockFetch =
-  mkConformanceTest "ChainSync kills BlockFetch" (TestVersion 0) id id
+testChainSyncKillsBlockFetch =
+  mkConformanceTest "ChainSync kills BlockFetch" (TestVersion 0) adjustTestCount adjustMaxSize
+
     (do gt@GenesisTest{gtBlockTree} <- genChains (pure 0)
         pure $ enableMustReplyTimeout $ gt $> dullSchedule (btTrunk gtBlockTree)
     )
