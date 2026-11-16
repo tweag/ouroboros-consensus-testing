@@ -1,10 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Consensus.Serialize.Tests (tests) where
 
@@ -25,24 +22,24 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "JSON Serialization"
-  [ testGroup "ReifiedTestCase ()"
+  [ testGroup "ReifiedTestCase All.TestKey"
     [ testProperty "toJSON . fromJSON . toJSON == toJSON" $
-      QC.forAll QC.arbitrary
+      QC.forAll genTestCase
         (prop_serialize_weak_inverse (Proxy @(ReifiedTestCase All.TestKey)))
     , testProperty "fromJSON . toJSON == id" $
-      QC.forAll QC.arbitrary
+      QC.forAll genTestCase
         (prop_deserialize_inverse (Proxy @(ReifiedTestCase All.TestKey)))
     , testProperty "serializeReifiedTestCase emits exactly expected top-level keys" $
-      QC.forAll QC.arbitrary $
-        prop_serializeReifiedTestCase_emits_expected_keys @All.TestKey
+      QC.forAll genTestCase
+        prop_serializeReifiedTestCase_emits_expected_keys
     , testProperty "deserializeReifiedTestCase rejects missing required fields" $
-      QC.forAll QC.arbitrary $
+      QC.forAll genTestCase $
         prop_deserializeReifiedTestCase_rejects_missing_required_field @All.TestKey
     , testProperty "deserializeReifiedTestCase rejects invalid required field types" $
-      QC.forAll QC.arbitrary $
+      QC.forAll genTestCase $
         prop_deserializeReifiedTestCase_rejects_bad_field_type @All.TestKey
     , testProperty "deserializeReifiedTestCase ignores unknown fields" $
-      QC.forAll QC.arbitrary $
+      QC.forAll genTestCase $
         prop_deserializeReifiedTestCase_ignores_unknown_fields @All.TestKey
     ]
    , testGroup "TestKey" $
@@ -63,8 +60,8 @@ tests = testGroup "JSON Serialization"
 genKey :: (SmallKey k) => QC.Gen k
 genKey = QC.elements getAllKeys
 
-instance QC.Arbitrary (All.TestKey) where
-  arbitrary = genKey
+genTestCase :: QC.Gen (ReifiedTestCase All.TestKey)
+genTestCase = genReifiedTestCase genKey
 
 
 
@@ -131,7 +128,7 @@ prop_serialize_weak_inverse _ value =
 
 -- | Serialized test cases have the expected keys.
 prop_serializeReifiedTestCase_emits_expected_keys
-  :: forall key. (Aeson.ToJSON key, Aeson.FromJSON key)
+  :: Aeson.ToJSON key
   => ReifiedTestCase key -> QC.Property
 prop_serializeReifiedTestCase_emits_expected_keys reified =
   case serializeReifiedTestCase FormatVersionOne reified of

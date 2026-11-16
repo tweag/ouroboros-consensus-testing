@@ -7,7 +7,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -18,13 +17,14 @@ module Test.Consensus.Serialize (
   , ReifiedTestCase (..)
   , Seed (..)
   , TestVersion (..)
+  , genReifiedTestCase
   , serializeReifiedTestCase
   ) where
 
 import           Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as Aeson
-import           Data.Scientific (toBoundedInteger)
 import qualified Data.Text as T
+import           Test.Consensus.Genesis.Setup (TestVersion (..))
 import           Test.Consensus.Genesis.ShrinkIndex (ShrinkIndex, path)
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random
@@ -33,7 +33,7 @@ import           Text.Read (readMaybe)
 -- $intro
 --
 -- This module implements JSON serialization for consensus test cases. Every
--- @ConsensusTest@ has a canonical test case generator and shrinker, so we can
+-- @ConformanceTest@ has a canonical test case generator and shrinker, so we can
 -- get away with representing a test case as a seed for running @Gen@ computations
 -- and a path into the shrink tree. We also include a test key to identify which
 -- consensus test the data corresponds to, and a test version to allow for backward
@@ -42,7 +42,7 @@ import           Text.Read (readMaybe)
 -- | A uniquely identified consensus test case.
 data ReifiedTestCase key = ReifiedTestCase
   { rtcTestKey     :: key
-  -- ^ A key used by the test runner to identify a @ConsensusTest@.
+  -- ^ A key used by the test runner to identify a @ConformanceTest@.
 
   , rtcTestVersion :: TestVersion
   -- ^ Since serialized tests can exist beyond a single run, and tests can
@@ -56,14 +56,23 @@ data ReifiedTestCase key = ReifiedTestCase
   -- ^ Used for deterministically generating test cases.
   } deriving (Eq, Show)
 
-instance (QC.Arbitrary key) => QC.Arbitrary (ReifiedTestCase key) where
-  arbitrary = do
-    rtcTestKey <- QC.arbitrary
-    rtcTestVersion <- QC.arbitrary
-    rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
-    rtcSeed <- fmap Seed QC.arbitrary
-    pure ReifiedTestCase {..}
+-- | Generate a 'ReifiedTestCase' using the given generator for test keys.
+genReifiedTestCase :: QC.Gen key -> QC.Gen (ReifiedTestCase key)
+genReifiedTestCase genKey = do
+  rtcTestKey <- genKey
+  rtcTestVersion <- QC.arbitrary
+  rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
+  rtcSeed <- fmap Seed QC.arbitrary
+  pure ReifiedTestCase
+    { rtcTestKey
+    , rtcTestVersion
+    , rtcShrinkIndex
+    , rtcSeed
+    }
 
+-- | Serialize a 'ReifiedTestCase' using the given 'FormatVersion'.
+--
+-- See Note [Updating the FormatVersion].
 serializeReifiedTestCase
   :: (Aeson.ToJSON key)
   => FormatVersion
@@ -78,7 +87,7 @@ serializeReifiedTestCase fmtVersion testCase = Aeson.object
   ]
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key) where
-  -- If the default format version changes, update this.
+  -- See Note [Updating the FormatVersion].
   toJSON = serializeReifiedTestCase FormatVersionOne
 
 instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
@@ -87,11 +96,17 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
     case fmtVersion of
       FormatVersionOne -> do
         -- Currently we only have one format version.
+        -- See Note [Updating the FormatVersion].
         rtcTestKey <- obj .: "key"
         rtcTestVersion <- obj .: "testVersion"
         rtcShrinkIndex <- obj .: "shrinkIndex"
         rtcSeed <- obj .: "seed"
-        pure ReifiedTestCase {..}
+        pure ReifiedTestCase
+          { rtcTestKey
+          , rtcTestVersion
+          , rtcShrinkIndex
+          , rtcSeed
+          }
 
 
 
@@ -101,8 +116,8 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
 newtype Seed = Seed QCGen
   deriving (Show)
 
--- QCGen does not have an Eq instance, but
--- Read/Show is a canonical serialization.
+-- | 'QCGen' does not have an 'Eq' instance, but
+-- 'Read'/'Show' is a canonical serialization.
 instance Eq Seed where
   Seed a == Seed b = show a == show b
 
@@ -119,6 +134,8 @@ instance Aeson.FromJSON Seed where
 -- allow for backward compatibility in case the JSON format needs to change.
 -- This only exists in the JSON, and consumers of this library should not
 -- use or rely on it.
+--
+-- See Note [Updating the FormatVersion].
 data FormatVersion = FormatVersionOne
   deriving (Eq, Ord, Show)
 
@@ -131,25 +148,20 @@ instance Aeson.FromJSON FormatVersion where
       "v1" -> pure FormatVersionOne
       _    -> fail $ "Invalid FormatVersion: " <> T.unpack txt
 
--- | A version number for the property test itself (as represented by 'key').
--- This is included to allow for backward compatibility in case the property
--- needs to change.
-newtype TestVersion = TestVersion Int
-  deriving (Eq, Ord, Show)
+{- Note [Updating the FormatVersion]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+When the JSON format of 'ReifiedTestCase' changes, a new constructor must be
+added to 'FormatVersion', and the following places must be updated together:
 
-instance Aeson.ToJSON TestVersion where
-  toJSON (TestVersion v) = Aeson.Number (fromIntegral v)
+  * 'FormatVersion' and its 'Aeson.ToJSON' / 'Aeson.FromJSON' instances.
+  * 'serializeReifiedTestCase', to emit the new format.
+  * The 'Aeson.ToJSON' instance of 'ReifiedTestCase', to use the new default
+    format version.
+  * The 'Aeson.FromJSON' instance of 'ReifiedTestCase', which must keep
+    parsing all previous format versions for backward compatibility.
+  * The tests in "Test.Consensus.Serialize.Tests", which hardcode the
+    expected format version and top-level keys.
 
-instance Aeson.FromJSON TestVersion where
-  parseJSON = Aeson.withScientific "TestVersion" $ \sci ->
-    case toBoundedInteger sci of
-      Just v  -> pure (TestVersion v)
-      Nothing -> fail $ "Invalid TestVersion: " <> show sci
+This is not enforced by the type checker, so take care to keep these in sync.
+-}
 
-instance QC.Arbitrary TestVersion where
-  arbitrary = do
-    QC.NonNegative m <- QC.arbitrary
-    pure $ TestVersion m
-  shrink (TestVersion x) = do
-    QC.NonNegative m <- QC.shrink (QC.NonNegative x)
-    pure $ TestVersion m

@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
@@ -25,6 +26,7 @@ import           Control.Monad.Class.MonadAsync
                      (AsyncCancelled (AsyncCancelled))
 import           Control.Monad.IOSim (IOSim, runSimStrictShutdown)
 import           Control.Tracer (debugTracer, traceWith)
+import qualified Data.Aeson as Aeson
 import           Data.Maybe (mapMaybe)
 import           Data.Word (Word8)
 import           Ouroboros.Consensus.Block.Abstract (ChainHash (..),
@@ -75,7 +77,8 @@ import           Text.Printf (printf)
 -- | The version of a 'ConformanceTest'. Used to ensure that the serialized
 -- representation of a 'ConformanceTest' agrees with the version in code.
 newtype TestVersion = TestVersion Word8
-  deriving (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Aeson.ToJSON, Aeson.FromJSON, Arbitrary)
 
 -- | Contains all necessary data to run a 'GenesisTest'.
 -- It is defined to reify the testing infrastructure for
