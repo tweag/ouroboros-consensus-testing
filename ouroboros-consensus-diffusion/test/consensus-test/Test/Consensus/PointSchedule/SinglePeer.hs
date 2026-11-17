@@ -80,7 +80,6 @@
 -- > |   3.1s | E              | E              | E              |
 -- > +--------+----------------+----------------+----------------+
 --
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}

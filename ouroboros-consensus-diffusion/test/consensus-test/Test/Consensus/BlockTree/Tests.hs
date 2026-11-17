@@ -1,8 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Consensus.BlockTree.Tests (tests) where
 
@@ -21,8 +17,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.TestBlock (TestBlock)
 import           Test.Util.TestEnv
-
-
 
 genTestBlockTree :: QC.Gen Word -> QC.Gen (BlockTree TestBlock)
 genTestBlockTree = fmap gtBlockTree . genChains
@@ -62,8 +56,6 @@ tests =
       ]
     ]
 
-
-
 -- | The nonempty prefixes of an `AF.AnchoredFragment` are in fact prefixes.
 prop_nonemptyPrefixesOf_nonemptyPrefixesArePrefixes
   :: (Eq blk, HasHeader blk) => AF.AnchoredFragment blk -> QC.Property
@@ -93,8 +85,6 @@ prop_nonemptyPrefixesOf_allShareInputAnchor
 prop_nonemptyPrefixesOf_allShareInputAnchor fragment =
   let sharesTrunkAnchor = ((==) `on` AF.anchor) fragment
   in QC.property . all sharesTrunkAnchor . nonemptyPrefixesOf $ fragment
-
-
 
 -- | The head points of all the branches are distinct.
 -- (Points uniquely determine positions in the tree.)

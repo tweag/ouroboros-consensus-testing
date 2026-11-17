@@ -1,4 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -17,8 +16,6 @@ import           Test.Consensus.Serialize
 import qualified Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-
 
 tests :: TestTree
 tests = testGroup "JSON Serialization"
@@ -52,10 +49,9 @@ tests = testGroup "JSON Serialization"
     ]
   ]
 
-
-
--- Generators --
-----------------
+{-------------------------------------------------------------------------------
+  Generators
+-------------------------------------------------------------------------------}
 
 genKey :: (SmallKey k) => QC.Gen k
 genKey = QC.elements getAllKeys
@@ -63,10 +59,9 @@ genKey = QC.elements getAllKeys
 genTestCase :: QC.Gen (ReifiedTestCase All.TestKey)
 genTestCase = genReifiedTestCase genKey
 
-
-
--- Properties --
-----------------
+{-------------------------------------------------------------------------------
+  Properties
+-------------------------------------------------------------------------------}
 
 -- | fromJSON . toJSON == id
 --
@@ -123,8 +118,6 @@ prop_serialize_weak_inverse _ value =
       in case json1 == json2 of
         False -> QC.counterexample (jsonNotStableMsg json2) False
         True  -> QC.property True
-
-
 
 -- | Serialized test cases have the expected keys.
 prop_serializeReifiedTestCase_emits_expected_keys

@@ -1,12 +1,9 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -68,7 +65,7 @@ data BlockTreeBranch blk = BlockTreeBranch {
   deriving (Eq, Show)
 
 instance Foldable BlockTreeBranch where
-  foldMap f BlockTreeBranch{..} = foldMap f $ AF.toOldestFirst btbFull
+  foldMap f BlockTreeBranch{btbFull} = foldMap f $ AF.toOldestFirst btbFull
 
 -- | Represent a block tree with a main trunk and branches leaving from the
 -- trunk in question. All the branches are represented by their prefix to and
@@ -105,7 +102,7 @@ pattern BlockTree :: AF.AnchoredFragment blk -> [BlockTreeBranch blk] -> BlockTr
 pattern BlockTree {btTrunk, btBranches} <- RawBlockTree btTrunk btBranches _
 
 instance Foldable BlockTree where
-  foldMap f BlockTree{..} = foldMap f $ AF.toOldestFirst btTrunk
+  foldMap f BlockTree{btTrunk, btBranches} = foldMap f $ AF.toOldestFirst btTrunk
     <> foldMap (AF.toOldestFirst . btbFull) btBranches
 
 {-# COMPLETE BlockTree #-}
@@ -136,7 +133,8 @@ addBranch branch bt = do
   -- NOTE: We could use the monadic bind for @Maybe@ here but we would rather
   -- catch bugs quicker.
   let btbFull = fromJust $ AF.join btbPrefix btbSuffix
-  pure $ mkBlockTree (btTrunk bt) (BlockTreeBranch { .. } : btBranches bt)
+  pure $ mkBlockTree (btTrunk bt) (BlockTreeBranch {btbPrefix, btbSuffix, btbTrunkSuffix, btbFull} : btBranches bt)
+
 
 -- | Build a block tree from a trunk and a list of anchored branches from genesis to tips.
 fromTrunkAndBranches

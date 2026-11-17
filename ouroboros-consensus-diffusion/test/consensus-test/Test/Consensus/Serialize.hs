@@ -1,24 +1,21 @@
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Test.Consensus.Serialize (
     -- * JSON serialization for test cases
     -- $intro
-    FormatVersion (..)
-  , ReifiedTestCase (..)
-  , Seed (..)
+    ReifiedTestCase (..)
   , TestVersion (..)
   , genReifiedTestCase
   , serializeReifiedTestCase
+    -- * Helper types
+    -- $updateFormatVersion
+  , FormatVersion (..)
+  , Seed (..)
   ) where
 
 import           Data.Aeson ((.:), (.=))
@@ -72,7 +69,7 @@ genReifiedTestCase genKey = do
 
 -- | Serialize a 'ReifiedTestCase' using the given 'FormatVersion'.
 --
--- See Note [Updating the FormatVersion].
+-- See NOTE [UpdatingFormatVersion].
 serializeReifiedTestCase
   :: (Aeson.ToJSON key)
   => FormatVersion
@@ -87,7 +84,7 @@ serializeReifiedTestCase fmtVersion testCase = Aeson.object
   ]
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key) where
-  -- See Note [Updating the FormatVersion].
+  -- See NOTE [UpdatingFormatVersion].
   toJSON = serializeReifiedTestCase FormatVersionOne
 
 instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
@@ -96,7 +93,7 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
     case fmtVersion of
       FormatVersionOne -> do
         -- Currently we only have one format version.
-        -- See Note [Updating the FormatVersion].
+        -- See NOTE [UpdatingFormatVersion].
         rtcTestKey <- obj .: "key"
         rtcTestVersion <- obj .: "testVersion"
         rtcShrinkIndex <- obj .: "shrinkIndex"
@@ -109,9 +106,9 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
           }
 
 
-
--- Helper Types --
-------------------
+{-------------------------------------------------------------------------------
+  Helper Types
+-------------------------------------------------------------------------------}
 
 newtype Seed = Seed QCGen
   deriving (Show)
@@ -135,7 +132,7 @@ instance Aeson.FromJSON Seed where
 -- This only exists in the JSON, and consumers of this library should not
 -- use or rely on it.
 --
--- See Note [Updating the FormatVersion].
+-- See NOTE [UpdatingFormatVersion].
 data FormatVersion = FormatVersionOne
   deriving (Eq, Ord, Show)
 
@@ -148,20 +145,20 @@ instance Aeson.FromJSON FormatVersion where
       "v1" -> pure FormatVersionOne
       _    -> fail $ "Invalid FormatVersion: " <> T.unpack txt
 
-{- Note [Updating the FormatVersion]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-When the JSON format of 'ReifiedTestCase' changes, a new constructor must be
-added to 'FormatVersion', and the following places must be updated together:
-
-  * 'FormatVersion' and its 'Aeson.ToJSON' / 'Aeson.FromJSON' instances.
-  * 'serializeReifiedTestCase', to emit the new format.
-  * The 'Aeson.ToJSON' instance of 'ReifiedTestCase', to use the new default
-    format version.
-  * The 'Aeson.FromJSON' instance of 'ReifiedTestCase', which must keep
-    parsing all previous format versions for backward compatibility.
-  * The tests in "Test.Consensus.Serialize.Tests", which hardcode the
-    expected format version and top-level keys.
-
-This is not enforced by the type checker, so take care to keep these in sync.
--}
-
+-- $updateFormatVersion
+--
+-- NOTE [UpdatingFormatVersion]
+--
+-- When the JSON format of 'ReifiedTestCase' changes, a new constructor must be
+-- added to 'FormatVersion', and the following places must be updated together:
+--
+--   * 'FormatVersion' and its 'Aeson.ToJSON' / 'Aeson.FromJSON' instances.
+--   * 'serializeReifiedTestCase', to emit the new format.
+--   * The 'Aeson.ToJSON' instance of 'ReifiedTestCase', to use the new default
+--     format version.
+--   * The 'Aeson.FromJSON' instance of 'ReifiedTestCase', which must keep
+--     parsing all previous format versions for backward compatibility.
+--   * The tests in "Test.Consensus.Serialize.Tests", which hardcode the
+--     expected format version and top-level keys.
+--
+-- This is not enforced by the type checker, so take care to keep these in sync.
