@@ -16,6 +16,7 @@ module Test.Consensus.Genesis.ShrinkIndex (
   , next
   , parent
   , path
+  , stripPrefix
   , stretch
   , succ
   ) where
@@ -153,3 +154,12 @@ next (Ix (xs :|> x)) = Ix (xs :|> (x + 1))
 parent :: ShrinkIndex -> Maybe ShrinkIndex
 parent (Ix Empty)      = Nothing
 parent (Ix (xs :|> _)) = Just $ Ix xs
+
+-- | Strip the prefix of a 'ShrinkIndex' from another 'ShrinkIndex'.
+-- Returns 'Nothing' if the first index is not a prefix of the second.
+stripPrefix :: ShrinkIndex -> ShrinkIndex -> Maybe ShrinkIndex
+stripPrefix (Ix Empty) y = Just y
+stripPrefix _ (Ix Empty) = Nothing
+stripPrefix (Ix (x :<| xs)) (Ix (y :<| ys))
+  | x == y    = stripPrefix (Ix xs) (Ix ys)
+  | otherwise = Nothing
