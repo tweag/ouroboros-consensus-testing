@@ -18,7 +18,7 @@ module Test.Consensus.Serialize (
   , Seed (..)
   ) where
 
-import           Data.Aeson ((.:), (.=))
+import           Data.Aeson ((.!=), (.:), (.:?), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as T
 import           Test.Consensus.Genesis.Setup (TestVersion (..))
@@ -51,6 +51,9 @@ data ReifiedTestCase key = ReifiedTestCase
 
   , rtcSeed        :: Seed
   -- ^ Used for deterministically generating test cases.
+
+  , rtcSize        :: Int
+  -- ^ The how big of a test case should we generate?
   } deriving (Eq, Show)
 
 -- | Generate a 'ReifiedTestCase' using the given generator for test keys.
@@ -60,11 +63,13 @@ genReifiedTestCase genKey = do
   rtcTestVersion <- QC.arbitrary
   rtcShrinkIndex <- fmap (path . fmap QC.getNonNegative) QC.arbitrary
   rtcSeed <- fmap Seed QC.arbitrary
+  rtcSize <- fmap QC.getNonNegative QC.arbitrary
   pure ReifiedTestCase
     { rtcTestKey
     , rtcTestVersion
     , rtcShrinkIndex
     , rtcSeed
+    , rtcSize
     }
 
 -- | Serialize a 'ReifiedTestCase' using the given 'FormatVersion'.
@@ -81,6 +86,7 @@ serializeReifiedTestCase fmtVersion testCase = Aeson.object
   , "testVersion" .= rtcTestVersion testCase
   , "shrinkIndex" .= rtcShrinkIndex testCase
   , "seed" .= rtcSeed testCase
+  , "size" .= rtcSize testCase
   ]
 
 instance (Aeson.ToJSON key) => Aeson.ToJSON (ReifiedTestCase key) where
@@ -98,11 +104,19 @@ instance (Aeson.FromJSON key) => Aeson.FromJSON (ReifiedTestCase key) where
         rtcTestVersion <- obj .: "testVersion"
         rtcShrinkIndex <- obj .: "shrinkIndex"
         rtcSeed <- obj .: "seed"
+        -- The size parameter was originally missing when we first landed this
+        -- code. Adding it is thus technically a breaking change, but nobody
+        -- actually uses this code yet. So in @FormatVersionOne@ we default it
+        -- to 100 if it's missing. Which it probably never will be, but it's a
+        -- good default (the same as QuickCheck's default) and its better to be
+        -- safe than sorry!
+        rtcSize <- obj .:? "size" .!= 100
         pure ReifiedTestCase
           { rtcTestKey
           , rtcTestVersion
           , rtcShrinkIndex
           , rtcSeed
+          , rtcSize
           }
 
 

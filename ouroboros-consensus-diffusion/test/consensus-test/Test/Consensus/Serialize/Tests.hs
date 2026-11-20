@@ -38,6 +38,9 @@ tests = testGroup "JSON Serialization"
     , testProperty "deserializeReifiedTestCase ignores unknown fields" $
       QC.forAll genTestCase $
         prop_deserializeReifiedTestCase_ignores_unknown_fields @All.TestKey
+    , testProperty "deserializeReifiedTestCase defaults missing size" $
+      QC.forAll genTestCase $
+        prop_deserializeReifiedTestCase_defaults_size @All.TestKey
     ]
    , testGroup "TestKey" $
     [ testProperty "toJSON . fromJSON . toJSON == toJSON" $
@@ -134,6 +137,7 @@ prop_serializeReifiedTestCase_emits_expected_keys reified =
           , "testVersion"
           , "shrinkIndex"
           , "seed"
+          , "size"
           ]
         msg = mconcat
           [ "Unexpected top-level JSON keys in serializeReifiedTestCase output.\n"
@@ -192,6 +196,7 @@ prop_deserializeReifiedTestCase_rejects_bad_field_type reified =
         , ("testVersion", Aeson.String "0.0")
         , ("shrinkIndex", Aeson.Bool True)
         , ("seed", Aeson.Number 0)
+        , ("size", Aeson.String "10")
         ]
     value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
   where
@@ -233,6 +238,27 @@ prop_deserializeReifiedTestCase_ignores_unknown_fields reified =
               , "Parsed: ", show parsed
               ])
             (QC.property (parsed == reified))
+    value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
+
+-- | A missing "size" field should parse as 100.
+prop_deserializeReifiedTestCase_defaults_size
+  :: forall key. (Aeson.FromJSON key, Aeson.ToJSON key, Eq key, Show key)
+  => ReifiedTestCase key -> QC.Property
+prop_deserializeReifiedTestCase_defaults_size reified =
+  case serializeReifiedTestCase FormatVersionOne reified of
+    Aeson.Object obj ->
+      let mutated = Aeson.Object $ AesonKeyMap.delete "size" obj
+          expected = reified { rtcSize = 100 }
+      in case parseReifiedTestCaseValue @key mutated of
+          Left err -> QC.counterexample
+            ("Expected parse success without size, got error: " <> err)
+            False
+          Right parsed -> QC.counterexample
+            (mconcat
+              [ "Expected: ", show expected, "\n"
+              , "Parsed: ", show parsed
+              ])
+            (QC.property (parsed == expected))
     value -> QC.counterexample ("Expected object JSON, got: " <> show value) False
 
 parseReifiedTestCaseValue
